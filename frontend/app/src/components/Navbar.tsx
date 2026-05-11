@@ -20,9 +20,6 @@ export default function Navbar() {
           <NavLink to="/routes" className={navClass}>
             Routes
           </NavLink>
-          <NavLink to="/copilot" className={navClass}>
-            Copilot
-          </NavLink>
         </nav>
       </div>
       <div className="topbar-right">

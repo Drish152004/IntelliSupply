@@ -1,7 +1,7 @@
 import Navbar from '@/components/Navbar';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router';
-import { Package, Truck, Brain, TrendingUp, Clock, Users } from 'lucide-react';
+import { Package, Truck, TrendingUp, Clock, Users } from 'lucide-react';
 
 const kpiCards = [
   {
@@ -53,13 +53,6 @@ const navigationBoxes = [
     color: 'from-gray-900 to-gray-800',
     path: '/routes',
   },
-  {
-    title: 'AI Copilot',
-    description: 'Get intelligent insights and recommendations for supply chain operations',
-    icon: Brain,
-    color: 'from-black to-gray-900',
-    path: '/copilot',
-  },
 ];
 
 export default function Overview() {
@@ -110,7 +103,7 @@ export default function Overview() {
                 </div>
                 <div className="flex items-end justify-between">
                   <p className="text-xs text-gray-500">{card.subtitle}</p>
-                  <span className="text-xs font-semibold text-green-600">{card.trend}</span>
+                  <span className="text-xs font-semibold text-neutral-700">{card.trend}</span>
                 </div>
               </motion.div>
             );
@@ -125,7 +118,7 @@ export default function Overview() {
           className="mb-8"
         >
           <h2 className="text-2xl font-bold text-black mb-6">Quick Access</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {navigationBoxes.map((box, idx) => {
               const Icon = box.icon;
               return (
@@ -182,7 +175,7 @@ export default function Overview() {
             </p>
             <div className="flex items-center gap-3">
               <span className="text-3xl font-bold text-black">92.4%</span>
-              <span className="text-sm text-green-600 font-semibold">↑ 3.2%</span>
+              <span className="text-sm text-neutral-700 font-semibold">↑ 3.2%</span>
             </div>
             <div className="mt-4 w-full bg-gray-300 rounded-full h-2">
               <div className="bg-black h-2 rounded-full" style={{ width: '92.4%' }}></div>
@@ -206,7 +199,7 @@ export default function Overview() {
             </p>
             <div className="flex items-center gap-3">
               <span className="text-3xl font-bold text-black">₹1.28Cr</span>
-              <span className="text-sm text-green-600 font-semibold">↓ 4.1%</span>
+              <span className="text-sm text-neutral-700 font-semibold">↓ 4.1%</span>
             </div>
             <p className="mt-3 text-xs text-gray-600">vs last month</p>
           </div>

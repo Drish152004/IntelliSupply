@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import Navbar from '@/components/Navbar';
 import InventoryCopilot from '@/components/InventoryCopilot';
+import DemandForecastCopilot from '@/components/DemandForecastCopilot';
 
 const products = [
   { id: '01', name: 'Paracetamol 500mg', category: 'Pharma', sold: '9,204', share: 90, pct: '19.0%', status: 'In Stock', tag: 'tag-g' },
@@ -20,6 +21,7 @@ const heatmap = [
 export default function Inventory() {
   const [isInsightsOpen, setIsInsightsOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [isCopilotFocused, setIsCopilotFocused] = useState(false);
 
   const metrics = useMemo(
     () => [
@@ -39,7 +41,7 @@ export default function Inventory() {
   return (
     <div className="h-screen bg-white text-black overflow-hidden">
       <Navbar />
-      <div className="layout">
+      <div className={`layout ${isCopilotFocused ? 'bot-focus' : ''}`}>
         <main className="left custom-scrollbar">
           <div className="panel-header">
             <span className="panel-title">Inventory — Sales Overview</span>
@@ -135,11 +137,12 @@ export default function Inventory() {
                   <div className="insight-card"><div className="metric-label">Demand Spike Risk</div><div className="metric-value">Delhi — Sun</div><div className="metric-sub">Score 96</div></div>
                   <div className="insight-card"><div className="metric-label">Lowest Pressure</div><div className="metric-value">Delhi — Tue</div><div className="metric-sub">Score 29</div></div>
                 </div>
+                <DemandForecastCopilot />
               </div>
             </div>
           </div>
         </main>
-        <InventoryCopilot />
+        <InventoryCopilot isFocused={isCopilotFocused} onToggleFocus={() => setIsCopilotFocused(!isCopilotFocused)} />
       </div>
     </div>
   );

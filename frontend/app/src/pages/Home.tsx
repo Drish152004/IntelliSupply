@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import Navbar from '@/components/Navbar';
-import AICopilot from '@/components/AICopilot';
 import RouteMap from '@/components/RouteMap';
 import ShipmentPanel from '@/components/ShipmentPanel';
 
@@ -17,7 +16,6 @@ export default function Home() {
       <div className="flex flex-1 overflow-hidden">
         <ShipmentPanel selectedRouteId={selectedRouteId} onRouteSelect={handleRouteSelect} />
         <RouteMap selectedRouteId={selectedRouteId} onRouteSelect={handleRouteSelect} />
-        <AICopilot />
       </div>
     </div>
   );
