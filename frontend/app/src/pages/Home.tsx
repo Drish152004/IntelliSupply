@@ -2,6 +2,7 @@ import { useState } from 'react';
 import Navbar from '@/components/Navbar';
 import RouteMap from '@/components/RouteMap';
 import ShipmentPanel from '@/components/ShipmentPanel';
+import AICopilot from '@/components/AICopilot';
 
 export default function Home() {
   const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
@@ -16,6 +17,7 @@ export default function Home() {
       <div className="flex flex-1 overflow-hidden">
         <ShipmentPanel selectedRouteId={selectedRouteId} onRouteSelect={handleRouteSelect} />
         <RouteMap selectedRouteId={selectedRouteId} onRouteSelect={handleRouteSelect} />
+        <AICopilot />
       </div>
     </div>
   );

@@ -6,7 +6,7 @@ import FloatingCopilot from './components/FloatingCopilot';
 
 export default function App() {
   const location = useLocation();
-  const showFloatingCopilot = location.pathname !== '/inventory';
+  const showFloatingCopilot = location.pathname === '/overview';
 
   return (
     <>

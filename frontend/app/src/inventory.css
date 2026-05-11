@@ -58,7 +58,7 @@
 
 .layout {
   display: grid;
-  grid-template-columns: 1fr 420px;
+  grid-template-columns: 1fr 400px;
   height: calc(100vh - 52px);
   min-height: calc(100vh - 52px);
   overflow: hidden;
