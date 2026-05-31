@@ -1,0 +1,52 @@
+product_id,product_name,category,unit_price,supplier_name
+P001,iPhone 14,Smartphones,59900,Apple Inc.
+P002,iPhone 14 Plus,Smartphones,69900,Apple Inc.
+P003,iPhone 14 Pro,Smartphones,119900,Apple Inc.
+P004,iPhone 14 Pro Max,Smartphones,139900,Apple Inc.
+P005,iPhone 15,Smartphones,69900,Apple Inc.
+P006,iPhone 15 Plus,Smartphones,79900,Apple Inc.
+P007,iPhone 15 Pro,Smartphones,134900,Apple Inc.
+P008,iPhone 15 Pro Max,Smartphones,159900,Apple Inc.
+P009,iPhone 16,Smartphones,79900,Apple Inc.
+P010,iPhone 16 Plus,Smartphones,89900,Apple Inc.
+P011,iPhone 16 Pro,Smartphones,139900,Apple Inc.
+P012,iPhone 16 Pro Max,Smartphones,164900,Apple Inc.
+P013,iPhone 17,Smartphones,89900,Apple Inc.
+P014,iPhone 17 Air,Smartphones,99900,Apple Inc.
+P015,iPhone 17 Pro,Smartphones,149900,Apple Inc.
+P016,iPhone 17 Pro Max,Smartphones,174900,Apple Inc.
+P017,MacBook Air M1,Laptops,69900,Apple Inc.
+P018,MacBook Air M2,Laptops,99900,Apple Inc.
+P019,MacBook Air M3,Laptops,114900,Apple Inc.
+P020,MacBook Air M4,Laptops,129900,Apple Inc.
+P021,MacBook Air M5,Laptops,144900,Apple Inc.
+P022,MacBook Pro M1,Laptops,129900,Apple Inc.
+P023,MacBook Pro M2,Laptops,149900,Apple Inc.
+P024,MacBook Pro M3,Laptops,169900,Apple Inc.
+P025,MacBook Pro M4,Laptops,199900,Apple Inc.
+P026,MacBook Pro M5,Laptops,229900,Apple Inc.
+P027,iPad 10th Gen,Tablets,39900,Apple Inc.
+P028,iPad Mini 6,Tablets,49900,Apple Inc.
+P029,iPad Air M1,Tablets,59900,Apple Inc.
+P030,iPad Air M2,Tablets,69900,Apple Inc.
+P031,iPad Pro M2,Tablets,99900,Apple Inc.
+P032,iPad Pro M4,Tablets,129900,Apple Inc.
+P033,Apple Watch SE,Wearables,29900,Apple Inc.
+P034,Apple Watch Series 8,Wearables,45900,Apple Inc.
+P035,Apple Watch Series 9,Wearables,41900,Apple Inc.
+P036,Apple Watch Series 10,Wearables,46900,Apple Inc.
+P037,Apple Watch Ultra,Wearables,89900,Apple Inc.
+P038,Apple Watch Ultra 2,Wearables,89900,Apple Inc.
+P039,AirPods 2,Audio Devices,12900,Apple Inc.
+P040,AirPods 3,Audio Devices,19900,Apple Inc.
+P041,AirPods Pro,Audio Devices,24900,Apple Inc.
+P042,AirPods Pro 2,Audio Devices,24900,Apple Inc.
+P043,AirPods Max,Audio Devices,59900,Apple Inc.
+P044,Apple Pencil USB-C,Accessories,7900,Apple Inc.
+P045,Apple Pencil 2,Accessories,11900,Apple Inc.
+P046,Magic Keyboard,Accessories,29900,Apple Inc.
+P047,Magic Mouse,Accessories,7900,Apple Inc.
+P048,MagSafe Charger,Accessories,4500,Apple Inc.
+P049,HomePod Mini,Smart Home,10900,Apple Inc.
+P050,Apple TV 4K,Smart Home,14900,Apple Inc.
+P051,Apple Vision Pro,XR Devices,349000,Apple Inc.
