@@ -1,0 +1,16 @@
+pandas
+numpy
+scikit-learn
+matplotlib
+seaborn
+pyarrow
+tqdm
+python-dotenv
+lightgbm
+xgboost
+fastapi
+uvicorn
+pandas
+numpy
+scikit-learn
+lightgbm
