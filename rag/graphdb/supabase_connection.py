@@ -1,9 +1,12 @@
 import os
+from pathlib import Path
 from urllib.parse import quote_plus
+
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
 
-load_dotenv()
+_ENV_FILE = Path(__file__).resolve().parent / ".env"
+load_dotenv(_ENV_FILE)
 
 
 def get_supabase_engine():

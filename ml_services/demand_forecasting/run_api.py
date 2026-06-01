@@ -1,4 +1,4 @@
-"""Start inference API on port 8000."""
+"""Start legacy demand-only API on port 8000. Prefer: python fastapi/run.py"""
 
 import sys
 from pathlib import Path

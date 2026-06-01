@@ -5,7 +5,9 @@ from openai import OpenAI
 
 from graphdb.neo4j_connection import Neo4jConnection
 
-load_dotenv()
+from pathlib import Path
+
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
 
 # =========================================================
