@@ -64,4 +64,11 @@ secrets/
 credentials/
 *.pem
 *.key
+*.json
+*.csv
+*.pth
+*.lgb
+*.html
+*.ipynb
+*.ipynb_checkpoints
 ```
