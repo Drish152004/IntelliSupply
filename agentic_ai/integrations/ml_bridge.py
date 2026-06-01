@@ -57,3 +57,13 @@ def run_route_next_stop(payload: dict[str, Any]) -> dict[str, Any]:
 def run_route_sequence(payload: dict[str, Any]) -> dict[str, Any]:
     route = _load_fastapi_module("services/route_prediction.py")
     return route.predict_route_sequence(payload)
+
+
+def run_demand_prediction(records: list[dict[str, Any]]) -> dict[str, Any]:
+    """Call hosted demand model on Hugging Face (no local sklearn bundle)."""
+    demand_root = str(REPO_ROOT / "ml_services" / "demand_forecasting")
+    if demand_root not in sys.path:
+        sys.path.insert(0, demand_root)
+    from hf_client import predict_demand
+
+    return {"predictions": predict_demand(records)}

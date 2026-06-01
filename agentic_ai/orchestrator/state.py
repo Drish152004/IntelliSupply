@@ -19,3 +19,4 @@ class AgentState(TypedDict):
     final_response: str
     ml_payload_partial: NotRequired[dict[str, Any]]
     logistics_session: NotRequired[dict[str, Any]]
+    inventory_session: NotRequired[dict[str, Any]]

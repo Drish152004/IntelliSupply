@@ -40,6 +40,7 @@ def run_orchestrator(
     user_query: str,
     ml_payload_partial: dict | None = None,
     logistics_session: dict | None = None,
+    inventory_session: dict | None = None,
 ) -> AgentState:
     """Run the full orchestration pipeline for a single user query."""
     initial_state: AgentState = {
@@ -54,4 +55,6 @@ def run_orchestrator(
         initial_state["ml_payload_partial"] = ml_payload_partial
     if logistics_session:
         initial_state["logistics_session"] = logistics_session
+    if inventory_session:
+        initial_state["inventory_session"] = inventory_session
     return ORCHESTRATOR_APP.invoke(initial_state)

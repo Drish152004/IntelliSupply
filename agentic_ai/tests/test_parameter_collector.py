@@ -40,3 +40,28 @@ def test_eta_finalize() -> None:
     assert next_collection_step("predict_eta", partial) is None
     out = finalize_partial("predict_eta", partial)
     assert out["delivery_user_id"] == 1
+
+
+def test_demand_finalize_is_idempotent() -> None:
+    """Avoid double-wrap when execute_tool finalizes an already-built payload."""
+    flat = {
+        "city": "Hangzhou",
+        "region_id": "56",
+        "day_of_week": 3,
+        "month": 11,
+        "day_of_month": 5,
+        "day_of_year": 309,
+        "is_weekend": 0,
+        "lag_1": 120.0,
+        "lag_2": 115.0,
+        "lag_7": 98.0,
+        "lag_14": 105.0,
+        "rolling_mean_7": 110.0,
+        "rolling_std_7": 25.0,
+        "rolling_mean_28": 108.0,
+        "ds": "2024-11-01",
+    }
+    once = finalize_partial("predict_demand", flat)
+    twice = finalize_partial("predict_demand", once)
+    assert once == twice
+    assert twice["records"][0]["city"] == "Hangzhou"

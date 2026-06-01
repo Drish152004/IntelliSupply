@@ -42,7 +42,34 @@ ORDER_STOP_FIELDS: list[FieldSpec] = [
     ("aoi_id", "Area ID for this stop?", str),
 ]
 
+DEMAND_RECORD_FIELDS: list[FieldSpec] = [
+    ("city", "Which city is this demand forecast for?", str),
+    ("region_id", "What is the region ID? (e.g. 56)", str),
+    (
+        "day_of_week",
+        "What day of week is it? (0=Monday through 6=Sunday)",
+        int,
+    ),
+    ("month", "Which month (1-12)?", int),
+    ("day_of_month", "What day of the month (1-31)?", int),
+    ("day_of_year", "What day of the year (1-366)?", int),
+    ("is_weekend", "Is it a weekend? (0=no, 1=yes)", int),
+    ("lag_1", "What was demand 1 day ago?", float),
+    ("lag_2", "What was demand 2 days ago?", float),
+    ("lag_7", "What was demand 7 days ago?", float),
+    ("lag_14", "What was demand 14 days ago?", float),
+    ("rolling_mean_7", "What is the 7-day rolling mean demand?", float),
+    ("rolling_std_7", "What is the 7-day rolling standard deviation?", float),
+    ("rolling_mean_28", "What is the 28-day rolling mean demand?", float),
+    (
+        "ds",
+        "Forecast date (YYYY-MM-DD)? Type 'skip' if not needed.",
+        str,
+    ),
+]
+
 TOOL_FIELD_PLANS: dict[str, dict[str, Any]] = {
+    "predict_demand": {"scalars": DEMAND_RECORD_FIELDS},
     "predict_eta": {"scalars": ETA_FIELDS},
     "predict_next_stop": {
         "scalars": NEXT_STOP_SCALAR_FIELDS,
@@ -163,4 +190,13 @@ def finalize_partial(tool_name: str, partial: dict[str, Any]) -> dict[str, Any]:
     out = {k: v for k, v in partial.items() if not k.startswith("_")}
     if tool_name == "predict_next_stop" and "stops_completed" not in out:
         out["stops_completed"] = 0
+    if tool_name == "predict_demand":
+        records = out.get("records")
+        if isinstance(records, list) and records:
+            return {"records": records}
+        record = dict(out)
+        ds = record.get("ds")
+        if ds is None or str(ds).strip().lower() in {"", "skip", "none", "n/a"}:
+            record.pop("ds", None)
+        return {"records": [record]}
     return out

@@ -1,7 +1,7 @@
 """
 CLI entrypoint for the agentic_ai orchestration system.
 
-Interactive session: the logistics agent uses GraphRAG and ML tools via an LLM.
+Interactive session: inventory (NL-to-SQL, demand ML) and logistics (GraphRAG, ML) via an LLM.
 When a tool needs inputs, it asks for one field at a time.
 """
 
@@ -34,11 +34,16 @@ def _print_result(payload: dict | None, raw: str) -> None:
 
 def _run_query_turn(initial_query: str) -> None:
     """One user question, including tool parameter follow-ups."""
-    session = None
+    logistics_session = None
+    inventory_session = None
     user_message = initial_query
 
     while True:
-        result = run_orchestrator(user_message, logistics_session=session)
+        result = run_orchestrator(
+            user_message,
+            logistics_session=logistics_session,
+            inventory_session=inventory_session,
+        )
 
         print(f"\nDetected intent: {result['intent']}")
         print(f"Selected agent: {result['selected_agent']}")
@@ -55,6 +60,12 @@ def _run_query_turn(initial_query: str) -> None:
                 print("Cancelled this request.")
                 return
             session = payload.get("session")
+            if payload.get("agent") == "inventory":
+                inventory_session = session
+                logistics_session = None
+            else:
+                logistics_session = session
+                inventory_session = None
             continue
 
         _print_result(payload, result["final_response"])
@@ -62,7 +73,10 @@ def _run_query_turn(initial_query: str) -> None:
 
 
 def main() -> None:
-    print("IntelliSupply logistics agent. Ask about shipments, routes, or the network.")
+    print(
+        "IntelliSupply agent. Ask about inventory, demand forecasts, "
+        "shipments, routes, or the network."
+    )
     print("Type 'quit' to exit.\n")
     while True:
         user_query = input("You: ").strip()
