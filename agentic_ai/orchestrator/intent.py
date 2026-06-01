@@ -2,13 +2,15 @@
 Keyword-based intent detection.
 
 Classifies the user query as inventory or logistics before routing.
-Future: replace with an LLM-based classifier for richer intent understanding.
+Demand forecasting is not active in the orchestrator yet; inventory intent is
+kept for routing structure and will call a stub agent until re-enabled.
 """
 
 from orchestrator.state import AgentState
 
-INVENTORY_KEYWORDS = ("stock", "inventory", "warehouse", "demand", "forecast")
-LOGISTICS_KEYWORDS = ("shipment", "route", "delivery", "eta", "transport")
+# Exclude "demand" / "forecast" from inventory routing until demand ML is re-enabled.
+INVENTORY_KEYWORDS = ("stock", "inventory", "warehouse")
+LOGISTICS_KEYWORDS = ("shipment", "route", "delivery", "eta", "transport", "demand", "forecast")
 
 
 def detect_intent(state: AgentState) -> AgentState:

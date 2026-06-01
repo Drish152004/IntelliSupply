@@ -32,14 +32,26 @@ def build_graph():
     return graph.compile()
 
 
-def run_orchestrator(user_query: str) -> AgentState:
+# Compiled once at import; reused for every query via run_orchestrator.
+ORCHESTRATOR_APP = build_graph()
+
+
+def run_orchestrator(
+    user_query: str,
+    ml_payload_partial: dict | None = None,
+    logistics_session: dict | None = None,
+) -> AgentState:
     """Run the full orchestration pipeline for a single user query."""
-    app = build_graph()
     initial_state: AgentState = {
         "user_query": user_query,
         "intent": "",
         "selected_agent": "",
+        "ml_task": "",
         "agent_response": "",
         "final_response": "",
     }
-    return app.invoke(initial_state)
+    if ml_payload_partial:
+        initial_state["ml_payload_partial"] = ml_payload_partial
+    if logistics_session:
+        initial_state["logistics_session"] = logistics_session
+    return ORCHESTRATOR_APP.invoke(initial_state)

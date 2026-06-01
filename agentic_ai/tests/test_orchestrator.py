@@ -1,24 +1,24 @@
 """
-Validation script for Phase 2A–2E orchestration flow.
+Validation script for orchestration flow.
 
 Runs sample queries through the compiled LangGraph workflow and asserts that
 intent detection, routing, agent execution, and response formatting work
 correctly end-to-end.
 """
 
+import json
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
-# Allow imports from the agentic_ai project root when run as a script.
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from orchestrator.graph import build_graph
+from orchestrator.graph import ORCHESTRATOR_APP
 from orchestrator.state import AgentState
 
-# Compile the LangGraph workflow once and reuse it for all test cases.
-app = build_graph()
+app = ORCHESTRATOR_APP
 
 TEST_CASES = [
     {
@@ -31,10 +31,10 @@ TEST_CASES = [
     },
     {
         "query": "Forecast demand for next month",
-        "expected_intent": "inventory",
+        "expected_intent": "logistics",
         "description": (
-            "Validates inventory keyword detection (forecast, demand) "
-            "and routing to the inventory agent."
+            "Demand/forecast keywords route to logistics while demand ML "
+            "is disabled in the orchestrator."
         ),
     },
     {
@@ -65,18 +65,36 @@ TEST_CASES = [
 
 
 def _initial_state(user_query: str) -> AgentState:
-    """Build the starting state passed into the graph."""
     return {
         "user_query": user_query,
         "intent": "",
         "selected_agent": "",
+        "ml_task": "",
         "agent_response": "",
         "final_response": "",
     }
 
 
-def run_test_case(index: int, test_case: dict) -> None:
-    """Execute one query through the graph and assert expected behavior."""
+def _mock_logistics_complete(*_args, **_kwargs) -> dict:
+    return {
+        "agent": "logistics",
+        "status": "complete",
+        "answer": "Mock logistics answer.",
+        "session": None,
+    }
+
+
+def _mock_logistics_awaiting(*_args, **_kwargs) -> dict:
+    return {
+        "agent": "logistics",
+        "status": "awaiting_input",
+        "question": "Which courier is handling this delivery?",
+        "session": {"messages": [], "collecting": {"tool": "predict_eta"}},
+    }
+
+
+@patch("agents.logistics_agent.run_logistics_turn", side_effect=_mock_logistics_awaiting)
+def run_test_case(index: int, test_case: dict, _mock_turn) -> None:
     query = test_case["query"]
     expected_intent = test_case["expected_intent"]
 
@@ -91,26 +109,34 @@ def run_test_case(index: int, test_case: dict) -> None:
     print(f"Final Response: {result['final_response']}")
     print()
 
-    # Assert intent detection matches the expected domain.
-    assert result["intent"] == expected_intent, (
-        f"Expected intent '{expected_intent}', got '{result['intent']}'"
-    )
+    assert result["intent"] == expected_intent
+    assert result["selected_agent"] == expected_intent
+    assert result["final_response"]
 
-    # Assert routing maps intent to the correct registered agent.
-    assert result["selected_agent"] == expected_intent, (
-        f"Expected agent '{expected_intent}', got '{result['selected_agent']}'"
-    )
+    if expected_intent == "logistics":
+        payload = json.loads(result["final_response"])
+        assert payload.get("status") in {"awaiting_input", "complete"}
 
-    # Assert the agent executed and the formatter produced a non-empty response.
-    assert result["final_response"], "Expected a non-empty final_response"
+
+@patch("agents.logistics_agent.run_logistics_turn", side_effect=_mock_logistics_complete)
+def test_logistics_complete_answer(_mock_turn) -> None:
+    result = app.invoke(_initial_state("What is the shipment ETA?"))
+    payload = json.loads(result["final_response"])
+    assert payload.get("status") == "complete"
+    assert payload.get("answer")
 
 
 def main() -> None:
-    """Run all orchestration test cases and report success."""
     print("Running orchestration validation tests...\n")
 
-    for index, test_case in enumerate(TEST_CASES, start=1):
-        run_test_case(index, test_case)
+    with patch(
+        "agents.logistics_agent.run_logistics_turn",
+        side_effect=_mock_logistics_awaiting,
+    ):
+        for index, test_case in enumerate(TEST_CASES, start=1):
+            run_test_case(index, test_case)
+
+    test_logistics_complete_answer()
 
     print("=====================================")
     print("ALL ORCHESTRATION TESTS PASSED")
