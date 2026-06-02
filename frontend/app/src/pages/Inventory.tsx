@@ -1,149 +1,243 @@
-import { useMemo, useState } from 'react';
+﻿import { useMemo, useState } from 'react';
 import Navbar from '@/components/Navbar';
-import InventoryCopilot from '@/components/InventoryCopilot';
-import DemandForecastCopilot from '@/components/DemandForecastCopilot';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import AICopilot from '@/components/AICopilot';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { Search, RefreshCcw, Box, ShieldCheck, AlertTriangle, Users } from 'lucide-react';
 
-const products = [
-  { id: '01', name: 'Paracetamol 500mg', category: 'Pharma', sold: '9,204', share: 90, pct: '19.0%', status: 'In Stock', tag: 'tag-g' },
-  { id: '02', name: 'Wireless Earbuds X3', category: 'Electronics', sold: '7,841', share: 76, pct: '16.2%', status: 'Low Stock', tag: 'tag-a' },
-  { id: '03', name: 'Basmati Rice 5kg', category: 'FMCG', sold: '6,390', share: 62, pct: '13.2%', status: 'In Stock', tag: 'tag-g' },
-  { id: '04', name: 'USB-C Hub 7-in-1', category: 'Electronics', sold: '4,120', share: 40, pct: '8.5%', status: 'Stockout', tag: 'tag-r' },
-  { id: '05', name: 'Cotton T-Shirt (M)', category: 'Apparel', sold: '3,765', share: 36, pct: '7.8%', status: 'In Stock', tag: 'tag-g' },
+const metrics = [
+  { label: 'On-hand units', value: '124,800', detail: 'Across 8 hubs' },
+  { label: 'Stockout risk', value: '14%', detail: 'Target < 10%' },
+  { label: 'Demand coverage', value: '92%', detail: 'Next 14 days' },
+  { label: 'Reorder alerts', value: '18', detail: 'Priority items' },
 ];
 
-const heatmap = [
-  ['Bengaluru', [3, 4, 5, 4, 3, 2, 1]],
-  ['Chennai', [2, 2, 3, 3, 4, 3, 2]],
-  ['Mumbai', [4, 3, 3, 2, 2, 3, 5]],
-  ['Delhi', [1, 1, 2, 3, 3, 4, 5]],
-] as const;
+const products = [
+  { id: '01', name: 'USB-C Hub 7-in-1', category: 'Electronics', stock: '0', change: '-100%', risk: 'Critical' },
+  { id: '02', name: 'Wireless Earbuds X3', category: 'Electronics', stock: '42', change: '-38%', risk: 'High' },
+  { id: '03', name: 'Vitamin C 1000mg', category: 'Pharma', stock: '68', change: '-21%', risk: 'Elevated' },
+  { id: '04', name: 'Laptop Stand Pro', category: 'Accessories', stock: '180', change: '+12%', risk: 'Stable' },
+  { id: '05', name: 'Cotton T-Shirt (M)', category: 'Apparel', stock: '320', change: '+5%', risk: 'Stable' },
+];
+
+const forecastTrend = [
+  { period: 'Mon', demand: 860, inventory: 430 },
+  { period: 'Tue', demand: 920, inventory: 410 },
+  { period: 'Wed', demand: 1040, inventory: 405 },
+  { period: 'Thu', demand: 980, inventory: 395 },
+  { period: 'Fri', demand: 1150, inventory: 380 },
+  { period: 'Sat', demand: 1280, inventory: 360 },
+  { period: 'Sun', demand: 1360, inventory: 350 },
+];
+
+const riskSignals = [
+  { title: 'Immediate reorder needed', description: 'USB-C Hub 7-in-1 is depleted across primary hubs.', severity: 'Critical' },
+  { title: 'Low buffer stock', description: 'Wireless Earbuds X3 below safety threshold.', severity: 'High' },
+  { title: 'Seasonal surge prep', description: 'Increase Apparel orders ahead of weekend demand.', severity: 'Medium' },
+];
 
 export default function Inventory() {
-  const [isInsightsOpen, setIsInsightsOpen] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const [isCopilotFocused, setIsCopilotFocused] = useState(false);
+  const [search, setSearch] = useState('');
+  const [activeStatus, setActiveStatus] = useState('All');
 
-  const metrics = useMemo(
-    () => [
-      { label: 'Units Sold', value: '48,320', sub: '↑ 12% vs last month', className: 'up' },
-      { label: 'Revenue', value: '₹2.4Cr', sub: '↑ 8.3%', className: 'up' },
-      { label: 'Active SKUs', value: '1,204', sub: 'across 6 hubs', className: '' },
-      { label: 'Stockout Risk', value: '37', sub: '↑ 5 items flagged', className: 'down' },
-    ],
-    []
+  const filteredProducts = useMemo(
+    () =>
+      products.filter((product) => {
+        const matchesSearch = product.name.toLowerCase().includes(search.toLowerCase());
+        const matchesStatus = activeStatus === 'All' || product.risk === activeStatus;
+        return matchesSearch && matchesStatus;
+      }),
+    [search, activeStatus],
   );
 
-  const refreshModel = () => {
-    setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 1200);
-  };
-
   return (
-    <div className="h-screen bg-white text-black overflow-hidden">
+    <div className="min-h-screen bg-background text-foreground">
       <Navbar />
-      <div className={`layout ${isCopilotFocused ? 'bot-focus' : ''}`}>
-        <main className="left custom-scrollbar">
-          <div className="panel-header">
-            <span className="panel-title">Inventory — Sales Overview</span>
-            <span className="link-action">Export CSV ↗</span>
-          </div>
-
-          <div className="filter-bar">
-            <div className="filter-group">
-              <label>Category</label>
-              <select className="filter-select"><option>All Categories</option></select>
+      <main className="max-w-[1700px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <section className="mb-8">
+          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+            <div>
+              <p className="text-sm uppercase tracking-[0.24em] text-muted-foreground mb-2">Inventory dashboard</p>
+              <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight">Operational stock management</h1>
+              <p className="max-w-2xl mt-3 text-sm leading-6 text-muted-foreground">
+                Monitor stock health, fulfilment risk and demand signal performance across your warehouse network.
+              </p>
             </div>
-            <div className="filter-group">
-              <label>Status</label>
-              <select className="filter-select"><option>All Status</option></select>
-            </div>
-            <div className="filter-group">
-              <label>Hub</label>
-              <select className="filter-select"><option>All Hubs</option></select>
-            </div>
-            <div className="filter-search">
-              <input className="filter-input" placeholder="Search products..." />
+            <div className="flex flex-wrap items-center gap-3">
+              <Button variant="outline" className="rounded-full px-4 py-2 text-sm font-medium">
+                <RefreshCcw className="mr-2 h-4 w-4" /> Refresh snapshot
+              </Button>
+              <Button className="rounded-full bg-black px-4 py-2 text-sm font-medium text-white">
+                <ShieldCheck className="mr-2 h-4 w-4" /> Review thresholds
+              </Button>
             </div>
           </div>
+        </section>
 
-          <div className="metrics">
-            {metrics.map((m) => (
-              <div key={m.label} className="metric">
-                <div className="metric-label">{m.label}</div>
-                <div className="metric-value">{m.value}</div>
-                <div className={`metric-sub ${m.className}`}>{m.sub}</div>
+        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-8">
+          {metrics.map((stat) => (
+            <div key={stat.label} className="rounded-[2rem] border border-border bg-white p-6 shadow-sm">
+              <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">{stat.label}</p>
+              <div className="mt-4 flex items-center justify-between gap-4">
+                <h2 className="text-3xl font-semibold text-foreground">{stat.value}</h2>
+                <div className="rounded-3xl bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700">{stat.detail}</div>
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
+        </section>
 
-          <div className="panel-header">
-            <span className="panel-title">Top Selling Products — This Month</span>
-            <span className="link-action">View All</span>
-          </div>
-          <div className="tbl-wrap">
-            <table className="inv-table">
-              <thead>
-                <tr><th>#</th><th>Product</th><th>Category</th><th>Units Sold</th><th>Share</th><th>Status</th></tr>
-              </thead>
-              <tbody>
-                {products.map((p) => (
-                  <tr key={p.id}>
-                    <td className="row-num">{p.id}</td>
-                    <td className="prod-name">{p.name}</td>
-                    <td><span className="tag">{p.category}</span></td>
-                    <td>{p.sold}</td>
-                    <td>
-                      <div style={{ fontSize: 11, marginBottom: 6 }}>{p.pct}</div>
-                      <div className="bar-track"><div className="bar-fill" style={{ width: `${p.share}%` }} /></div>
-                    </td>
-                    <td><span className={`tag ${p.tag}`}>{p.status}</span></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="forecast-box">
-            <div className="forecast-top">
+        <section className="grid gap-6 xl:grid-cols-[1.4fr_0.8fr] mb-8 items-stretch">
+          <div className="rounded-[2rem] border border-border bg-white p-6 shadow-sm flex flex-col h-full">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6">
               <div>
-                <div className="forecast-label">Demand Forecast — STG Heatmap</div>
-                <div className="forecast-sub">Next 7-day demand pressure by zone · Darker = higher pressure</div>
+                <p className="text-sm font-semibold text-foreground">Stockout risk matrix</p>
+                <p className="text-xs text-muted-foreground">Live demand vs available inventory for high-risk SKUs.</p>
               </div>
-              <div className="flex gap-2">
-                <button className="btn" onClick={() => setIsInsightsOpen((p) => !p)}>
-                  {isInsightsOpen ? '↑ Close Insights' : '↳ Insights & Query'}
-                </button>
-                <button className="btn btn-dark" onClick={refreshModel}>
-                  {refreshing ? '↻ Refreshing...' : '↻ Refresh Model'}
-                </button>
+              <div className="flex flex-wrap items-center gap-3">
+                {['All', 'Critical', 'High', 'Elevated', 'Stable'].map((status) => (
+                  <button
+                    key={status}
+                    onClick={() => setActiveStatus(status)}
+                    className={`rounded-full px-3 py-2 text-xs font-semibold transition ${
+                      activeStatus === status ? 'bg-black text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                    }`}
+                  >
+                    {status}
+                  </button>
+                ))}
               </div>
             </div>
-            <div className="heatmap-wrap">
-              <div className="hm-grid-header">
-                <div />
-                {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => <div key={day} className="hm-col-label">{day}</div>)}
-              </div>
-              {heatmap.map(([city, scores]) => (
-                <div key={city} className="hm-row">
-                  <div className="hm-row-label">{city}</div>
-                  {scores.map((score, idx) => <div key={`${city}-${idx}`} className={`hm-cell hm-${score}`}>{score === 1 ? 28 : score === 2 ? 50 : score === 3 ? 68 : score === 4 ? 83 : 96}</div>)}
-                </div>
-              ))}
+            <div className="overflow-x-auto max-h-[360px] overflow-y-auto">
+              <table className="min-w-full divide-y divide-border text-left text-sm">
+                <thead className="border-b border-border bg-background/70">
+                  <tr>
+                    <th className="px-4 py-3 font-medium text-muted-foreground">SKU</th>
+                    <th className="px-4 py-3 font-medium text-muted-foreground">Category</th>
+                    <th className="px-4 py-3 font-medium text-muted-foreground">Stock level</th>
+                    <th className="px-4 py-3 font-medium text-muted-foreground">Trend</th>
+                    <th className="px-4 py-3 font-medium text-muted-foreground">Risk</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {filteredProducts.map((product) => (
+                    <tr key={product.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-4 py-4 font-semibold text-foreground">{product.name}</td>
+                      <td className="px-4 py-4 text-muted-foreground">{product.category}</td>
+                      <td className="px-4 py-4 text-foreground">{product.stock}</td>
+                      <td className="px-4 py-4 text-muted-foreground">{product.change}</td>
+                      <td className="px-4 py-4">
+                        <span className={`inline-flex rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${
+                          product.risk === 'Critical' ? 'bg-red-50 text-red-700' : product.risk === 'High' ? 'bg-amber-50 text-amber-700' : product.risk === 'Elevated' ? 'bg-sky-50 text-sky-700' : 'bg-emerald-50 text-emerald-700'
+                        }`}>
+                          {product.risk}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-            <div className={`insights-drawer ${isInsightsOpen ? 'open' : ''}`}>
-              <div className="insights-inner">
-                <div className="insight-cards">
-                  <div className="insight-card"><div className="metric-label">Peak Pressure Zone</div><div className="metric-value">Bengaluru</div><div className="metric-sub">Wed · Score 94</div></div>
-                  <div className="insight-card"><div className="metric-label">Demand Spike Risk</div><div className="metric-value">Delhi — Sun</div><div className="metric-sub">Score 96</div></div>
-                  <div className="insight-card"><div className="metric-label">Lowest Pressure</div><div className="metric-value">Delhi — Tue</div><div className="metric-sub">Score 29</div></div>
+
+            {/* Demand forecast moved here so left column and right column end at same level */}
+            <div className="mt-6 rounded-lg bg-slate-50 p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <p className="text-sm font-semibold text-foreground">Demand forecast</p>
+                  <p className="text-xs text-muted-foreground">Projected demand and inventory coverage for the next week.</p>
                 </div>
-                <DemandForecastCopilot />
+                <span className="rounded-full bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700">Forecast horizon: 7 days</span>
+              </div>
+              <div className="h-[240px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={forecastTrend} margin={{ top: 8, right: 16, left: -10, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="demandGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#0f172a" stopOpacity={0.16} />
+                        <stop offset="95%" stopColor="#0f172a" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="4 4" stroke="var(--border)" vertical={false} />
+                    <XAxis dataKey="period" tick={{ fill: 'rgb(100 116 139)', fontSize: 12 }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fill: 'rgb(100 116 139)', fontSize: 12 }} axisLine={false} tickLine={false} />
+                    <Tooltip contentStyle={{ borderRadius: 16, borderColor: 'var(--border)', boxShadow: '0 12px 30px rgba(15,23,42,0.08)' }} />
+                    <Area type="monotone" dataKey="demand" stroke="#0f172a" strokeWidth={3} fill="url(#demandGradient)" />
+                    <Area type="monotone" dataKey="inventory" stroke="#16a34a" strokeWidth={3} fill="none" />
+                  </AreaChart>
+                </ResponsiveContainer>
               </div>
             </div>
           </div>
-        </main>
-        <InventoryCopilot isFocused={isCopilotFocused} onToggleFocus={() => setIsCopilotFocused(!isCopilotFocused)} />
-      </div>
+
+          <aside className="space-y-6 h-full">
+            <div className="rounded-[2rem] border border-border bg-white p-6 shadow-sm">
+              <div className="flex items-center gap-3 mb-4">
+                <Search className="h-5 w-5 text-slate-700" />
+                <div>
+                  <p className="text-sm font-semibold text-foreground">Quick search</p>
+                  <p className="text-xs text-muted-foreground">Find SKUs and inventory signals quickly.</p>
+                </div>
+              </div>
+              <Input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search SKUs, categories or hubs"
+                className="rounded-3xl border border-border bg-background px-4 py-3 text-sm"
+              />
+            </div>
+
+            <div className="rounded-[2rem] border border-border bg-white p-6 shadow-sm">
+              <div className="flex items-center gap-3 mb-4">
+                <Box className="h-5 w-5 text-emerald-600" />
+                <div>
+                  <p className="text-sm font-semibold text-foreground">Reorder recommendations</p>
+                  <p className="text-xs text-muted-foreground">Priority items ready to replenish.</p>
+                </div>
+              </div>
+              <ul className="space-y-3">
+                {riskSignals.map((signal) => (
+                  <li key={signal.title} className="rounded-3xl bg-slate-50 p-4">
+                    <p className="font-semibold text-foreground">{signal.title}</p>
+                    <p className="mt-2 text-sm text-muted-foreground">{signal.description}</p>
+                    <p className="mt-3 inline-flex rounded-full bg-amber-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">
+                      {signal.severity}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="rounded-[2rem] border border-border bg-white p-6 shadow-sm">
+              <div className="flex items-center gap-3 mb-4">
+                <ShieldCheck className="h-5 w-5 text-sky-600" />
+                <div>
+                  <p className="text-sm font-semibold text-foreground">Inventory Copilot</p>
+                  <p className="text-xs text-muted-foreground">Launch the AI assistant without taking over the page.</p>
+                </div>
+              </div>
+              <Dialog>
+                <DialogTrigger asChild>
+                  <Button className="w-full rounded-3xl bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-900 border border-sky-100 hover:bg-sky-100">
+                    Open Inventory Copilot
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-[90vw] sm:max-w-[980px] p-0">
+                  <DialogHeader className="bg-slate-950/5 px-6 py-5">
+                    <DialogTitle>Inventory Copilot</DialogTitle>
+                    <DialogDescription>Ask about reorder planning, shortage risk, and inbound stock using AI.</DialogDescription>
+                  </DialogHeader>
+                  <div className="h-[640px]">
+                    <AICopilot />
+                  </div>
+                </DialogContent>
+              </Dialog>
+            </div>
+          </aside>
+        </section>
+
+        
+      </main>
     </div>
   );
 }

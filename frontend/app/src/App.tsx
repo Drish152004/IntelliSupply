@@ -1,22 +1,27 @@
-import { Navigate, Route, Routes, useLocation } from 'react-router';
-import Home from './pages/Home';
-import Inventory from './pages/Inventory';
+import { Navigate, Route, Routes } from 'react-router';
 import Overview from './pages/Overview';
-import FloatingCopilot from './components/FloatingCopilot';
+import Inventory from './pages/Inventory';
+import InventoryAnalytics from './pages/InventoryAnalytics';
+import LogisticsDashboard from './pages/Home';
+import RouteIntelligence from './pages/RouteIntelligence';
+import AdminUsers from './pages/AdminUsers';
+import AdminAnalytics from './pages/AdminAnalytics';
+import Notifications from './pages/Notifications';
 
 export default function App() {
-  const location = useLocation();
-  const showFloatingCopilot = location.pathname === '/overview';
-
   return (
-    <>
-      <Routes>
-        <Route path="/" element={<Navigate to="/routes" replace />} />
-        <Route path="/routes" element={<Home />} />
-        <Route path="/inventory" element={<Inventory />} />
-        <Route path="/overview" element={<Overview />} />
-      </Routes>
-      {showFloatingCopilot && <FloatingCopilot />}
-    </>
+    <Routes>
+      <Route path="/" element={<Navigate to="/admin/dashboard" replace />} />
+      <Route path="/logistics" element={<LogisticsDashboard />} />
+      <Route path="/logistics/intelligence" element={<RouteIntelligence />} />
+      <Route path="/inventory" element={<Inventory />} />
+      <Route path="/inventory/analytics" element={<InventoryAnalytics />} />
+      <Route path="/admin/dashboard" element={<Overview />} />
+      <Route path="/admin/users" element={<AdminUsers />} />
+      <Route path="/admin/analytics" element={<AdminAnalytics />} />
+      <Route path="/notifications" element={<Notifications />} />
+      <Route path="/routes" element={<Navigate to="/logistics" replace />} />
+      <Route path="*" element={<Navigate to="/admin/dashboard" replace />} />
+    </Routes>
   );
 }

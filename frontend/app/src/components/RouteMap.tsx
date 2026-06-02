@@ -70,6 +70,7 @@ const createCustomIcon = (type: string, isSelected: boolean) => {
 function MapFitter() {
   const map = useMap();
   useEffect(() => {
+    if (!locations.length) return;
     const bounds = L.latLngBounds(locations.map((l) => [l.lat, l.lng]));
     map.fitBounds(bounds, { padding: [60, 60] });
   }, [map]);
@@ -77,14 +78,16 @@ function MapFitter() {
 }
 
 interface RouteMapProps {
-  selectedRouteId: string | null;
-  onRouteSelect: (routeId: string) => void;
+  selectedRouteId?: string | null;
+  onRouteSelect?: (routeId: string) => void;
 }
 
 export default function RouteMap({ selectedRouteId, onRouteSelect }: RouteMapProps) {
   const [showDelays, setShowDelays] = useState(true);
   const [showAISuggestions, setShowAISuggestions] = useState(true);
   const [showLegend, setShowLegend] = useState(true);
+  const [mapReady, setMapReady] = useState(false);
+
   const visibleStats = useMemo(
     () => statsCards.filter((stat) => stat.label !== 'Avg ETA' && stat.label !== 'Fuel Efficiency'),
     []
@@ -116,21 +119,35 @@ export default function RouteMap({ selectedRouteId, onRouteSelect }: RouteMapPro
   }, [showDelays]);
 
   const handleRouteClick = (routeId: string) => {
-    onRouteSelect(routeId);
+    onRouteSelect?.(routeId);
   };
 
+  const [mapObject, setMapObject] = useState<L.Map | null>(null);
+
+  useEffect(() => {
+    if (!mapObject) return;
+    mapObject.invalidateSize();
+  }, [mapObject]);
+
   return (
-    <div className="flex-1 relative bg-muted overflow-hidden">
+    <div className="relative bg-muted overflow-hidden h-full min-h-[520px]">
       {/* Grid Background Overlay */}
-      <div className="absolute inset-0 grid-bg opacity-50 pointer-events-none z-[400]" />
+      <div className="absolute inset-0 grid-bg opacity-40 pointer-events-none z-[400]" />
 
       {/* Map */}
       <MapContainer
         center={[15.5, 78.5]}
         zoom={6}
         scrollWheelZoom={true}
-        className="w-full h-full"
+        className="w-full h-full min-h-[420px]"
+        style={{ width: '100%', height: '100%' }}
         zoomControl={false}
+        whenReady={(event) => {
+          const map = event.target;
+          setMapObject(map);
+          map.invalidateSize();
+          setMapReady(true);
+        }}
       >
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
@@ -196,6 +213,15 @@ export default function RouteMap({ selectedRouteId, onRouteSelect }: RouteMapPro
           </Polyline>
         ))}
       </MapContainer>
+
+      {!mapReady && (
+        <div className="absolute inset-0 z-[450] flex items-center justify-center bg-white/80">
+          <div className="inline-flex items-center gap-2 rounded-3xl border border-border bg-white px-4 py-3 shadow-lg">
+            <div className="h-3 w-3 animate-pulse rounded-full bg-primary" />
+            <span className="text-sm font-medium text-foreground">Loading map...</span>
+          </div>
+        </div>
+      )}
 
       {/* Top Floating Controls */}
       <motion.div

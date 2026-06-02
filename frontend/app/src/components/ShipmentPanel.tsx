@@ -72,7 +72,7 @@ export default function ShipmentPanel({ selectedRouteId, onRouteSelect }: Shipme
   };
 
   return (
-    <div className="w-80 border-r border-border bg-white flex flex-col h-full shrink-0">
+    <div className="w-full lg:w-80 border-r border-border bg-white flex flex-col h-full shrink-0">
       {/* Header */}
       <div className="h-12 border-b border-border flex items-center justify-between px-4 shrink-0 bg-[#f8f9fa]">
         <div className="flex items-center gap-2">
