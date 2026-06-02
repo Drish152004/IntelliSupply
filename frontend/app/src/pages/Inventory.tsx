@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import AICopilot from '@/components/AICopilot';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { Search, RefreshCcw, Box, ShieldCheck, AlertTriangle, Users } from 'lucide-react';
+import { Search, RefreshCcw, Box, ShieldCheck } from 'lucide-react';
 
 const metrics = [
   { label: 'On-hand units', value: '124,800', detail: 'Across 8 hubs' },
@@ -173,18 +173,28 @@ export default function Inventory() {
           <aside className="space-y-6 h-full">
             <div className="rounded-[2rem] border border-border bg-white p-6 shadow-sm">
               <div className="flex items-center gap-3 mb-4">
-                <Search className="h-5 w-5 text-slate-700" />
+                <ShieldCheck className="h-5 w-5 text-sky-600" />
                 <div>
-                  <p className="text-sm font-semibold text-foreground">Quick search</p>
-                  <p className="text-xs text-muted-foreground">Find SKUs and inventory signals quickly.</p>
+                  <p className="text-sm font-semibold text-foreground">Inventory Copilot</p>
+                  <p className="text-xs text-muted-foreground">Launch the AI assistant without taking over the page.</p>
                 </div>
               </div>
-              <Input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search SKUs, categories or hubs"
-                className="rounded-3xl border border-border bg-background px-4 py-3 text-sm"
-              />
+              <Dialog>
+                <DialogTrigger asChild>
+                  <Button className="w-full rounded-3xl bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-900 border border-sky-100 hover:bg-sky-100">
+                    Open Inventory Copilot
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-[90vw] sm:max-w-[980px] p-0">
+                  <DialogHeader className="bg-slate-950/5 px-6 py-5">
+                    <DialogTitle>Inventory Copilot</DialogTitle>
+                    <DialogDescription>Ask about reorder planning, shortage risk, and inbound stock using AI.</DialogDescription>
+                  </DialogHeader>
+                  <div className="h-[640px]">
+                    <AICopilot />
+                  </div>
+                </DialogContent>
+              </Dialog>
             </div>
 
             <div className="rounded-[2rem] border border-border bg-white p-6 shadow-sm">
@@ -210,28 +220,18 @@ export default function Inventory() {
 
             <div className="rounded-[2rem] border border-border bg-white p-6 shadow-sm">
               <div className="flex items-center gap-3 mb-4">
-                <ShieldCheck className="h-5 w-5 text-sky-600" />
+                <Search className="h-5 w-5 text-slate-700" />
                 <div>
-                  <p className="text-sm font-semibold text-foreground">Inventory Copilot</p>
-                  <p className="text-xs text-muted-foreground">Launch the AI assistant without taking over the page.</p>
+                  <p className="text-sm font-semibold text-foreground">Quick search</p>
+                  <p className="text-xs text-muted-foreground">Find SKUs and inventory signals quickly.</p>
                 </div>
               </div>
-              <Dialog>
-                <DialogTrigger asChild>
-                  <Button className="w-full rounded-3xl bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-900 border border-sky-100 hover:bg-sky-100">
-                    Open Inventory Copilot
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="max-w-[90vw] sm:max-w-[980px] p-0">
-                  <DialogHeader className="bg-slate-950/5 px-6 py-5">
-                    <DialogTitle>Inventory Copilot</DialogTitle>
-                    <DialogDescription>Ask about reorder planning, shortage risk, and inbound stock using AI.</DialogDescription>
-                  </DialogHeader>
-                  <div className="h-[640px]">
-                    <AICopilot />
-                  </div>
-                </DialogContent>
-              </Dialog>
+              <Input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search SKUs, categories or hubs"
+                className="rounded-3xl border border-border bg-background px-4 py-3 text-sm"
+              />
             </div>
           </aside>
         </section>

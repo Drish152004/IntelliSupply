@@ -1,12 +1,19 @@
 ﻿import { useState, useRef, useEffect } from 'react';
 import { MessageSquare, Trash2, Send, Mic, Sparkles, Bot, User } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { motion, AnimatePresence } from 'framer-motion';
 import { initialChatMessages, suggestedPrompts } from '@/data/mockData';
 import type { ChatMessage } from '@/data/mockData';
 
-export default function AICopilot() {
+interface AICopilotProps {
+  compact?: boolean;
+  expanded?: boolean;
+}
+
+export default function AICopilot({ compact = false, expanded = false }: AICopilotProps) {
+  const isCompact = compact && !expanded;
   const [messages, setMessages] = useState<ChatMessage[]>(initialChatMessages);
   const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -61,11 +68,17 @@ export default function AICopilot() {
   };
 
   return (
-    <div className="w-full border-r border-border bg-card flex flex-col h-full shrink-0">
-      <div className="h-12 border-b border-border flex items-center justify-between px-3 shrink-0">
+    <div
+      className={cn(
+        'w-full bg-card flex flex-col shrink-0 h-full',
+        isCompact && 'overflow-hidden',
+        !compact && 'border-r border-border',
+      )}
+    >
+      <div className={cn('border-b border-border flex items-center justify-between px-3 shrink-0', isCompact ? 'h-9' : 'h-12')}>
         <div className="flex items-center gap-2">
-          <MessageSquare className="w-4 h-4 text-primary" />
-          <span className="text-sm font-medium">AI Logistics Copilot</span>
+          <MessageSquare className={cn('text-primary', isCompact ? 'w-3.5 h-3.5' : 'w-4 h-4')} />
+          <span className={cn('font-medium', isCompact ? 'text-xs' : 'text-sm')}>AI Logistics Copilot</span>
         </div>
         <Button
           variant="ghost"
@@ -78,7 +91,13 @@ export default function AICopilot() {
         </Button>
       </div>
 
-      <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-3">
+      <div
+        className={cn(
+          'flex-1 overflow-y-auto custom-scrollbar space-y-3 min-h-0',
+          isCompact ? 'p-2' : 'p-3',
+          expanded && 'p-3',
+        )}
+      >
         <AnimatePresence initial={false}>
           {messages.map((msg) => (
             <motion.div
@@ -132,6 +151,7 @@ export default function AICopilot() {
         <div ref={chatEndRef} />
       </div>
 
+      {!isCompact && (
       <div className="px-3 pb-2">
         <div className="flex flex-wrap gap-1.5">
           {suggestedPrompts.slice(0, 1).map((prompt) => (
@@ -145,8 +165,9 @@ export default function AICopilot() {
           ))}
         </div>
       </div>
+      )}
 
-      <div className="p-3 border-t border-border">
+      <div className={cn('border-t border-border shrink-0', isCompact ? 'p-2' : 'p-3')}>
         <div className="flex items-center gap-2 bg-muted rounded-xl px-3 py-2 border border-border focus-within:border-primary/30 focus-within:ring-1 focus-within:ring-primary/10 transition-all">
           <Input
             value={inputValue}

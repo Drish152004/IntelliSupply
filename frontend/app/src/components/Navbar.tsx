@@ -1,10 +1,10 @@
 import { NavLink } from 'react-router';
-import { Bell, ShieldCheck, Package, Users, PieChart } from 'lucide-react';
+import { Bell, ShieldCheck, Package, LayoutDashboard } from 'lucide-react';
 
 const navItems = [
+  { label: 'Dashboard', to: '/admin/dashboard', icon: LayoutDashboard },
   { label: 'Logistics', to: '/logistics', icon: Package },
   { label: 'Inventory', to: '/inventory', icon: ShieldCheck },
-  { label: 'Admin', to: '/admin/dashboard', icon: Users },
   { label: 'Notifications', to: '/notifications', icon: Bell },
 ];
 
