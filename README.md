@@ -1,6 +1,11 @@
 # IntelliSupply
 
-## To run the frontend:-
+## Run the frontend
 
-cd app
+```bash
+cd frontend/app
+npm install
 npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000).

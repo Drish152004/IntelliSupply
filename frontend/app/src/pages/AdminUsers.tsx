@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router';
 import Navbar from '@/components/Navbar';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -49,8 +50,13 @@ export default function AdminUsers() {
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
-            <Button className="inline-flex items-center gap-2 rounded-full bg-black px-4 py-2 text-sm font-medium text-white hover:bg-slate-900" type="button">
-              <UserPlus className="h-4 w-4" /> Invite user
+            <Button
+              asChild
+              className="inline-flex items-center gap-2 rounded-full bg-black px-4 py-2 text-sm font-medium text-white hover:bg-slate-900"
+            >
+              <Link to="/register-user">
+                <UserPlus className="h-4 w-4" /> Register user
+              </Link>
             </Button>
             <Button variant="outline" className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium">
               <BadgeCheck className="h-4 w-4" /> Sync directory
