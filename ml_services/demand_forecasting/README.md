@@ -1,85 +1,43 @@
-# Demand forecasting (inference only)
+# Demand forecasting
 
-Self-contained ML inference package for your team. No training code or LaDe dataset included.
+LaDe regional package demand forecasting — training modules, full pipeline, and inference API.
 
-## Contents
+## Layout
 
 ```
 ml_services/demand_forecasting/
-  models/lade_demand_forecaster.pkl   # trained sklearn pipeline + metadata
-  api/app.py                          # FastAPI service
-  inference.py                          # load pkl + predict()
-  run_api.py                            # start server
-  requirements.txt
+  models/                    # joblib, pkl, metadata, strategy config
+  full_pipeline/
+    pipeline.py              # DemandForecastPipeline (LaDe → forecast → outputs)
+    run_demo.py              # CLI demo
+  lade_demand.py             # data load, features, train, multistep forecast
+  lade_weekly.py             # weekly aggregation helpers
+  weekly_strategies.py       # daily_sum, hierarchical, backtests
+  inference.py               # load_bundle, predict, forecast_demand
+  api/app.py                 # standalone FastAPI (port 8000)
+  run_api.py
 ```
 
-## Install & run
+## Inference only (team integration)
 
 ```bash
 pip install -r ml_services/demand_forecasting/requirements.txt
 python ml_services/demand_forecasting/run_api.py
 ```
 
-Open http://127.0.0.1:8000/docs
+**POST** `/predict` with pre-built feature rows (lags, rolling stats, calendar fields).
 
-## Integrate from backend
+## Full pipeline (LaDe CSVs required)
 
-**POST** `/predict`
+Place data under `LaDe/delivery/` at repo root, or set `LADE_DATA_DIR`.
 
-```json
-{
-  "records": [
-    {
-      "city": "Hangzhou",
-      "region_id": "56",
-      "day_of_week": 2,
-      "month": 11,
-      "day_of_month": 5,
-      "day_of_year": 309,
-      "is_weekend": 0,
-      "lag_1": 120,
-      "lag_2": 115,
-      "lag_7": 98,
-      "lag_14": 105,
-      "rolling_mean_7": 110,
-      "rolling_std_7": 25,
-      "rolling_mean_28": 108
-    }
-  ]
-}
+```bash
+python ml_services/demand_forecasting/full_pipeline/run_demo.py
+python ml_services/demand_forecasting/full_pipeline/run_demo.py --granularity weekly --horizon 4
 ```
 
-**Response:** `{ "predictions": [{ "predicted_demand": 118.4, ... }] }`
+Outputs: `full_pipeline/outputs/` (detail CSV, by-city, summary JSON).
 
-**GET** `/meta` — feature column names and holdout metrics (MAE, RMSE, MAPE, R²).
+## Unified orchestration API
 
-## Python (no HTTP)
-
-```python
-import pickle
-from pathlib import Path
-
-pkl = Path("ml_services/demand_forecasting/models/lade_demand_forecaster.pkl")
-with pkl.open("rb") as f:
-    bundle = pickle.load(f)
-
-model = bundle["model"]
-feature_cols = bundle["feature_cols"]
-# model.predict(df[feature_cols])
-```
-
-## Required input features
-
-| Column | Type | Description |
-|--------|------|-------------|
-| city | string | e.g. Hangzhou |
-| region_id | string | Region id |
-| day_of_week | int 0-6 | Monday=0 |
-| month | int 1-12 | |
-| day_of_month | int | |
-| day_of_year | int | |
-| is_weekend | int 0/1 | |
-| lag_1, lag_2, lag_7, lag_14 | float | Past demand |
-| rolling_mean_7, rolling_std_7, rolling_mean_28 | float | Rolling stats |
-
-Your app must compute lags/rolling features from historical demand before calling the API.
+The root `FastAPI/` service loads `models/lade_demand_forecaster.pkl` via `services/registry.py`.
