@@ -1,57 +1,53 @@
-import Navbar from '@/components/Navbar';
+﻿import Navbar from '@/components/Navbar';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router';
-import { Package, Truck, TrendingUp, Clock, Users } from 'lucide-react';
+import { Package, Truck, TrendingUp, ShieldCheck, Users } from 'lucide-react';
+import RouteMap from '@/components/RouteMap';
+import AICopilot from '@/components/AICopilot';
 
-const kpiCards = [
+const summaryCards = [
   {
-    label: 'Total Deliveries',
-    value: '2,847',
-    subtitle: 'This month',
-    icon: Package,
-    color: 'bg-black',
-    trend: '↑ 12.4%',
-  },
-  {
-    label: 'Avg Delivery Delay',
-    value: '2.3 hrs',
-    subtitle: 'Network average',
-    icon: Clock,
-    color: 'bg-gray-800',
-    trend: '↓ 4.1%',
-  },
-  {
-    label: 'Active Couriers',
-    value: '142',
-    subtitle: 'On active routes',
-    icon: Users,
-    color: 'bg-gray-700',
-    trend: '↑ 8 new',
-  },
-  {
-    label: 'Inventory Turnover',
-    value: '4.2x',
-    subtitle: 'Annual rate',
+    label: 'Sales volume',
+    value: '₹2.8Cr',
+    detail: 'This week',
+    color: 'border-pink-100 bg-pink-50 text-pink-900',
     icon: TrendingUp,
-    color: 'bg-gray-900',
-    trend: '↑ 2.1%',
+  },
+  {
+    label: 'Logistics reliability',
+    value: '92.4%',
+    detail: 'On-time routes',
+    color: 'border-sky-100 bg-sky-50 text-sky-900',
+    icon: Truck,
+  },
+  {
+    label: 'Hardware uptime',
+    value: '98.7%',
+    detail: 'Warehouse devices',
+    color: 'border-emerald-100 bg-emerald-50 text-emerald-900',
+    icon: ShieldCheck,
+  },
+  {
+    label: 'User sessions',
+    value: '6.2k',
+    detail: 'Active in last hour',
+    color: 'border-amber-100 bg-amber-50 text-amber-900',
+    icon: Users,
   },
 ];
 
-const navigationBoxes = [
+const salesCards = [
   {
-    title: 'Inventory',
-    description: 'Manage stock levels, track products, and optimize warehouse operations',
+    title: 'Orders funnel',
+    subtitle: 'Sales and logistics aligned in one view',
+    value: '1,240 new',
     icon: Package,
-    color: 'from-gray-800 to-gray-700',
-    path: '/inventory',
   },
   {
-    title: 'Logistics',
-    description: 'Optimize routes, track deliveries, and manage courier performance',
+    title: 'Route pulse',
+    subtitle: 'Live dispatch and transit health',
+    value: '87% on time',
     icon: Truck,
-    color: 'from-gray-900 to-gray-800',
-    path: '/routes',
   },
 ];
 
@@ -59,152 +55,120 @@ export default function Overview() {
   const navigate = useNavigate();
 
   return (
-    <div className="min-h-screen bg-white text-black">
+    <div className="min-h-screen bg-background text-foreground">
       <Navbar />
-      
-      <div className="max-w-7xl mx-auto px-8 py-12">
-        {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mb-12"
-        >
-          <h1 className="text-4xl font-bold text-black mb-2">Supply Chain Dashboard</h1>
-          <p className="text-gray-600">Real-time overview of your logistics operations</p>
+
+      <main className="max-w-[1700px] mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
+          <p className="text-sm uppercase tracking-[0.32em] text-muted-foreground mb-2"></p>
+          <h1 className="text-4xl sm:text-5xl font-semibold tracking-tight text-foreground">Admin Overview</h1>
+          <p className="max-w-3xl mt-4 text-sm leading-7 text-muted-foreground">
+            One centralized view for commerce performance, delivery operations, and user engagement metrics.
+          </p>
         </motion.div>
 
-        {/* KPI Cards */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12"
-        >
-          {kpiCards.map((card, idx) => {
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="grid gap-6 md:grid-cols-2 xl:grid-cols-4 mb-10">
+          {summaryCards.map((card) => {
             const Icon = card.icon;
             return (
-              <motion.div
-                key={card.label}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.1 + idx * 0.05 }}
-                className="border border-gray-200 rounded-xl p-6 bg-white hover:shadow-lg transition-shadow"
-              >
-                <div className="flex items-start justify-between mb-4">
+              <div key={card.label} className={`rounded-[1.75rem] border p-6 shadow-sm ${card.color}`}>
+                <div className="flex items-start justify-between gap-4">
                   <div>
-                    <p className="text-sm font-medium text-gray-600 uppercase tracking-wide mb-1">
-                      {card.label}
-                    </p>
-                    <h3 className="text-3xl font-bold text-black">{card.value}</h3>
+                    <p className="text-xs uppercase tracking-[0.24em] font-semibold">{card.label}</p>
+                    <h2 className="mt-4 text-3xl font-semibold">{card.value}</h2>
                   </div>
-                  <div className={`${card.color} p-3 rounded-lg`}>
-                    <Icon className="w-6 h-6 text-white" />
+                  <div className="rounded-3xl bg-white/80 p-3 shadow-sm">
+                    <Icon className="w-5 h-5" />
                   </div>
                 </div>
-                <div className="flex items-end justify-between">
-                  <p className="text-xs text-gray-500">{card.subtitle}</p>
-                  <span className="text-xs font-semibold text-neutral-700">{card.trend}</span>
-                </div>
-              </motion.div>
+                <p className="mt-5 text-sm text-current/80">{card.detail}</p>
+              </div>
             );
           })}
         </motion.div>
 
-        {/* Navigation Boxes */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-          className="mb-8"
-        >
-          <h2 className="text-2xl font-bold text-black mb-6">Quick Access</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {navigationBoxes.map((box, idx) => {
-              const Icon = box.icon;
-              return (
-                <motion.button
-                  key={box.title}
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ delay: 0.3 + idx * 0.1 }}
-                  whileHover={{ scale: 1.02, y: -4 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={() => navigate(box.path)}
-                  className={`relative group overflow-hidden rounded-xl h-48 text-white transition-all`}
+        <div className="grid gap-6 xl:grid-cols-[1.6fr_0.95fr]">
+          <section className="space-y-6">
+            {/* <div className="page-card">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm uppercase tracking-[0.24em] text-muted-foreground">Admin Copilot</p>
+                  <h2 className="text-2xl font-semibold text-foreground">AI guidance for approvals and operations</h2>
+                </div>
+                <button className="rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white shadow-sm">
+                  Launch Copilot
+                </button>
+              </div>
+              <p className="mt-4 text-sm leading-6 text-muted-foreground">
+                Ask the admin copilot for system health, user metrics, and logistics guidance right from the dashboard.
+              </p>
+            </div> */}
+
+            <div className="page-card">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm uppercase tracking-[0.24em] text-muted-foreground">Sales & logistics</p>
+                  <h2 className="text-2xl font-semibold text-foreground">Revenue and delivery flow</h2>
+                </div>
+                <button
+                  onClick={() => navigate('/inventory')}
+                  className="rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white shadow-sm"
                 >
-                  {/* Background gradient */}
-                  <div className={`absolute inset-0 bg-gradient-to-br ${box.color}`} />
-                  
-                  {/* Overlay on hover */}
-                  <div className="absolute inset-0 bg-black/10 group-hover:bg-black/20 transition-colors" />
-                  
-                  {/* Content */}
-                  <div className="relative z-10 p-6 h-full flex flex-col justify-between">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <h3 className="text-2xl font-bold mb-2 text-white">{box.title}</h3>
-                        <p className="text-sm text-gray-100 text-left leading-relaxed">
-                          {box.description}
-                        </p>
+                  Open inventory
+                </button>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2 mt-6">
+                {salesCards.map((card) => {
+                  const Icon = card.icon;
+                  return (
+                    <div key={card.title} className="rounded-[1.75rem] border border-border bg-white p-5 shadow-sm">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.22em] font-semibold text-muted-foreground">{card.title}</p>
+                          <p className="mt-3 text-base text-muted-foreground">{card.subtitle}</p>
+                        </div>
+                        <Icon className="w-5 h-5 text-slate-700" />
                       </div>
+                      <p className="mt-6 text-3xl font-semibold text-foreground">{card.value}</p>
                     </div>
-                    <div className="flex items-center gap-2 text-white opacity-0 group-hover:opacity-100 transition-opacity">
-                      <span className="text-sm font-medium">Explore</span>
-                      <span className="text-lg">→</span>
-                    </div>
-                  </div>
-                  
-                  {/* Icon background */}
-                  <Icon className="absolute bottom--10 right--10 w-40 h-40 text-white opacity-10 group-hover:opacity-20 transition-opacity" />
-                </motion.button>
-              );
-            })}
-          </div>
-        </motion.div>
+                  );
+                })}
+              </div>
+            </div>
 
-        {/* Stats Grid */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.5 }}
-          className="grid grid-cols-1 md:grid-cols-3 gap-6"
-        >
-          <div className="border border-gray-200 rounded-xl p-6 bg-gray-50">
-            <p className="text-sm font-medium text-gray-600 uppercase tracking-wide mb-3">
-              On-Time Delivery Rate
-            </p>
-            <div className="flex items-center gap-3">
-              <span className="text-3xl font-bold text-black">92.4%</span>
-              <span className="text-sm text-neutral-700 font-semibold">↑ 3.2%</span>
+            <div className="page-card">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm uppercase tracking-[0.24em] text-muted-foreground">Live route preview</p>
+                  <h2 className="text-2xl font-semibold text-foreground">Active delivery coverage</h2>
+                </div>
+                <button
+                  onClick={() => navigate('/routes')}
+                  className="rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white shadow-sm"
+                >
+                  View logistics
+                </button>
+              </div>
+              <div className="mt-6 h-[520px] overflow-hidden rounded-[1.75rem] border border-slate-200">
+                <RouteMap />
+              </div>
             </div>
-            <div className="mt-4 w-full bg-gray-300 rounded-full h-2">
-              <div className="bg-black h-2 rounded-full" style={{ width: '92.4%' }}></div>
-            </div>
-          </div>
+          </section>
 
-          <div className="border border-gray-200 rounded-xl p-6 bg-gray-50">
-            <p className="text-sm font-medium text-gray-600 uppercase tracking-wide mb-3">
-              Network Throughput
-            </p>
-            <div className="flex items-center gap-3">
-              <span className="text-3xl font-bold text-black">12,840</span>
-              <span className="text-sm text-gray-600 font-semibold">shipments/week</span>
+          <aside className="page-card flex min-h-[680px] flex-col overflow-hidden">
+            <div className="border-b border-border p-5">
+              <p className="text-xs uppercase tracking-[0.3em] text-muted-foreground">AI copilot</p>
+              <h2 className="mt-3 text-3xl font-semibold text-foreground">Admin assistant</h2>
+              <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                Ask the admin copilot to summarize health, plan approvals, or check logistics performance.
+              </p>
             </div>
-            <p className="mt-3 text-xs text-gray-600">Operating at 94% capacity</p>
-          </div>
-
-          <div className="border border-gray-200 rounded-xl p-6 bg-gray-50">
-            <p className="text-sm font-medium text-gray-600 uppercase tracking-wide mb-3">
-              Cost Efficiency
-            </p>
-            <div className="flex items-center gap-3">
-              <span className="text-3xl font-bold text-black">₹1.28Cr</span>
-              <span className="text-sm text-neutral-700 font-semibold">↓ 4.1%</span>
+            <div className="mt-5 flex-1 overflow-hidden">
+              <AICopilot />
             </div>
-            <p className="mt-3 text-xs text-gray-600">vs last month</p>
-          </div>
-        </motion.div>
-      </div>
+          </aside>
+        </div>
+      </main>
     </div>
   );
 }

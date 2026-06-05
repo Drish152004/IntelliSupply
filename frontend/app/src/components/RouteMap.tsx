@@ -70,6 +70,7 @@ const createCustomIcon = (type: string, isSelected: boolean) => {
 function MapFitter() {
   const map = useMap();
   useEffect(() => {
+    if (!locations.length) return;
     const bounds = L.latLngBounds(locations.map((l) => [l.lat, l.lng]));
     map.fitBounds(bounds, { padding: [60, 60] });
   }, [map]);
@@ -77,14 +78,16 @@ function MapFitter() {
 }
 
 interface RouteMapProps {
-  selectedRouteId: string | null;
-  onRouteSelect: (routeId: string) => void;
+  selectedRouteId?: string | null;
+  onRouteSelect?: (routeId: string) => void;
 }
 
 export default function RouteMap({ selectedRouteId, onRouteSelect }: RouteMapProps) {
   const [showDelays, setShowDelays] = useState(true);
   const [showAISuggestions, setShowAISuggestions] = useState(true);
   const [showLegend, setShowLegend] = useState(true);
+  const [mapReady, setMapReady] = useState(false);
+
   const visibleStats = useMemo(
     () => statsCards.filter((stat) => stat.label !== 'Avg ETA' && stat.label !== 'Fuel Efficiency'),
     []
@@ -116,21 +119,35 @@ export default function RouteMap({ selectedRouteId, onRouteSelect }: RouteMapPro
   }, [showDelays]);
 
   const handleRouteClick = (routeId: string) => {
-    onRouteSelect(routeId);
+    onRouteSelect?.(routeId);
   };
 
+  const [mapObject, setMapObject] = useState<L.Map | null>(null);
+
+  useEffect(() => {
+    if (!mapObject) return;
+    mapObject.invalidateSize();
+  }, [mapObject]);
+
   return (
-    <div className="flex-1 relative bg-muted overflow-hidden">
+    <div className="relative h-full min-h-0 overflow-hidden bg-slate-100">
       {/* Grid Background Overlay */}
-      <div className="absolute inset-0 grid-bg opacity-50 pointer-events-none z-[400]" />
+      <div className="absolute inset-0 grid-bg opacity-40 pointer-events-none z-[1]" />
 
       {/* Map */}
       <MapContainer
         center={[15.5, 78.5]}
         zoom={6}
         scrollWheelZoom={true}
-        className="w-full h-full"
+        className="h-full w-full min-h-0"
+        style={{ width: '100%', height: '100%' }}
         zoomControl={false}
+        whenReady={(event) => {
+          const map = event.target;
+          setMapObject(map);
+          map.invalidateSize();
+          setMapReady(true);
+        }}
       >
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
@@ -197,12 +214,21 @@ export default function RouteMap({ selectedRouteId, onRouteSelect }: RouteMapPro
         ))}
       </MapContainer>
 
+      {!mapReady && (
+        <div className="absolute inset-0 z-[10] flex items-center justify-center bg-white/80">
+          <div className="inline-flex items-center gap-2 rounded-3xl border border-border bg-white px-4 py-3 shadow-lg">
+            <div className="h-3 w-3 animate-pulse rounded-full bg-primary" />
+            <span className="text-sm font-medium text-foreground">Loading map...</span>
+          </div>
+        </div>
+      )}
+
       {/* Top Floating Controls */}
       <motion.div
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.3, duration: 0.4 }}
-        className="absolute top-3 left-1/2 -translate-x-1/2 z-[500] flex items-center gap-1.5 bg-card/95 backdrop-blur-sm rounded-xl px-2 py-1.5 shadow-lg border border-border"
+        className="absolute top-3 left-1/2 z-[20] flex -translate-x-1/2 items-center gap-1.5 rounded-xl border border-border bg-card/95 px-2 py-1.5 shadow-lg backdrop-blur-sm"
       >
         <Button
           size="sm"
@@ -248,7 +274,7 @@ export default function RouteMap({ selectedRouteId, onRouteSelect }: RouteMapPro
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ delay: 0.5, duration: 0.4 }}
-          className="absolute top-14 left-3 z-[500] space-y-2"
+          className="absolute top-14 left-3 z-[20] space-y-2"
         >
           {visibleStats.map((stat, i) => (
             <motion.div
@@ -278,7 +304,7 @@ export default function RouteMap({ selectedRouteId, onRouteSelect }: RouteMapPro
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 20 }}
             transition={{ delay: 0.7, duration: 0.4 }}
-            className="absolute bottom-3 left-3 z-[500] max-w-[280px]"
+            className="absolute bottom-3 left-3 z-[20] max-w-[280px]"
           >
             <div className="bg-card/95 backdrop-blur-sm rounded-xl shadow-lg border border-border p-3">
               <div className="flex items-center gap-1.5 mb-2">
@@ -312,7 +338,7 @@ export default function RouteMap({ selectedRouteId, onRouteSelect }: RouteMapPro
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 20 }}
             transition={{ delay: 0.5, duration: 0.4 }}
-            className="absolute bottom-3 right-3 z-[500]"
+            className="absolute bottom-3 right-3 z-[20]"
           >
             <div className="bg-card/95 backdrop-blur-sm rounded-xl shadow-lg border border-border p-3 min-w-[160px]">
               <p className="text-[10px] font-semibold mb-2">Route Legend</p>

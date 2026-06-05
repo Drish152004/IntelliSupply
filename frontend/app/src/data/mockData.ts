@@ -348,18 +348,7 @@ export const initialChatMessages: ChatMessage[] = [
     content: 'I found 3 alternate routes that reduce total travel time by 18%. Route RT-2849 (Pune to Mumbai) has been auto-optimized with fuel savings of 12%. Would you like me to apply these changes?',
     timestamp: new Date(Date.now() - 3500000),
   },
-  {
-    id: 'msg-3',
-    role: 'user',
-    content: 'Prioritize high-value medical shipments',
-    timestamp: new Date(Date.now() - 1800000),
-  },
-  {
-    id: 'msg-4',
-    role: 'ai',
-    content: 'Priority routing enabled for pharmaceutical cargo. SHP-78432 (Bangalore to Chennai) has been escalated to HIGH priority. ETAs recalculated with temperature-controlled path. Driver Rajesh Kumar notified.',
-    timestamp: new Date(Date.now() - 1700000),
-  },
+
 ];
 
 export const statsCards = [
