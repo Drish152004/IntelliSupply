@@ -158,40 +158,75 @@ def execute_tool(tool_name: str, args: dict[str, Any] | None = None) -> str:
     """Run a tool and return a JSON string for the LLM tool message."""
     args = args or {}
 
-    if tool_name == "graphrag_query":
-        question = args.get("question", "").strip()
-        if not question:
-            return json.dumps({"error": "question is required"})
-        used, response, error = graph_bridge.try_graph_answer(question)
-        if used and response:
-            return json.dumps(
+    import sys
+    from pathlib import Path
+    repo_root = Path(__file__).resolve().parents[2]
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
+
+    from security.validators.tool_validator import validate_tool_call
+    from security.audit.logger import log_executed_tool
+
+    try:
+        validate_tool_call(tool_name, args)
+    except Exception as exc:
+        log_executed_tool(tool_name, args, success=False, error=str(exc))
+        return json.dumps({"error": "security_validation_failed", "details": str(exc)})
+
+    try:
+        if tool_name == "graphrag_query":
+            question = args.get("question", "").strip()
+            if not question:
+                res = json.dumps({"error": "question is required"})
+                log_executed_tool(tool_name, args, success=True)
+                return res
+            used, response, error = graph_bridge.try_graph_answer(question)
+            if used and response:
+                res = json.dumps(
+                    {
+                        "answer": response.get("answer"),
+                        "cypher": response.get("cypher"),
+                        "result": response.get("result"),
+                    },
+                    default=str,
+                )
+                log_executed_tool(tool_name, args, success=True)
+                return res
+            if error:
+                res = json.dumps({"error": error, "graph_used": False})
+                log_executed_tool(tool_name, args, success=False, error=error)
+                return res
+            res = json.dumps(
                 {
-                    "answer": response.get("answer"),
-                    "cypher": response.get("cypher"),
-                    "result": response.get("result"),
+                    "answer": (response or {}).get("answer"),
+                    "note": "Graph returned no usable data",
+                    "result": (response or {}).get("result"),
                 },
                 default=str,
             )
-        if error:
-            return json.dumps({"error": error, "graph_used": False})
-        return json.dumps(
-            {
-                "answer": (response or {}).get("answer"),
-                "note": "Graph returned no usable data",
-                "result": (response or {}).get("result"),
-            },
-            default=str,
-        )
+            log_executed_tool(tool_name, args, success=True)
+            return res
 
-    if tool_name in _ML_RUNNERS:
-        try:
-            payload = parameter_collector.finalize_partial(tool_name, args)
-            _validate_ml_payload(tool_name, payload)
-            result = _ML_RUNNERS[tool_name](payload)
-            return json.dumps({"result": result, "request": payload}, default=str)
-        except ValidationError as exc:
-            return json.dumps({"error": "validation_failed", "details": exc.errors()})
-        except Exception as exc:
-            return json.dumps({"error": str(exc)})
+        if tool_name in _ML_RUNNERS:
+            try:
+                payload = parameter_collector.finalize_partial(tool_name, args)
+                _validate_ml_payload(tool_name, payload)
+                result = _ML_RUNNERS[tool_name](payload)
+                res = json.dumps({"result": result, "request": payload}, default=str)
+                log_executed_tool(tool_name, args, success=True)
+                return res
+            except ValidationError as exc:
+                res = json.dumps({"error": "validation_failed", "details": exc.errors()})
+                log_executed_tool(tool_name, args, success=False, error=str(exc))
+                return res
+            except Exception as exc:
+                res = json.dumps({"error": str(exc)})
+                log_executed_tool(tool_name, args, success=False, error=str(exc))
+                return res
 
-    return json.dumps({"error": f"Unknown tool: {tool_name}"})
+        res = json.dumps({"error": f"Unknown tool: {tool_name}"})
+        log_executed_tool(tool_name, args, success=False, error=f"Unknown tool: {tool_name}")
+        return res
+    except Exception as exc:
+        log_executed_tool(tool_name, args, success=False, error=str(exc))
+        raise exc

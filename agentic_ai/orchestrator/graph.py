@@ -13,6 +13,19 @@ from orchestrator.response_formatter import format_response
 from orchestrator.router import route_to_agent
 from orchestrator.state import AgentState
 
+import sys
+import json
+from pathlib import Path
+
+# Add repo root to sys.path to allow importing security package
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from security.pii.masker import default_masker
+from security.guardrails.prompt_guard import check_prompt_injection
+from security.audit.logger import log_query, log_blocked_prompt
+
 
 def build_graph():
     """Construct and compile the orchestration graph."""
@@ -43,8 +56,31 @@ def run_orchestrator(
     inventory_session: dict | None = None,
 ) -> AgentState:
     """Run the full orchestration pipeline for a single user query."""
+    # 1. Prompt Injection Protection
+    is_safe, error_msg = check_prompt_injection(user_query)
+    if not is_safe:
+        log_blocked_prompt(user_query, "Prompt injection pattern matched.")
+        blocked_response = json.dumps({
+            "agent": "security_guard",
+            "status": "complete",
+            "answer": error_msg or "Security Alert: Input query rejected due to safety policy violation.",
+            "session": None
+        })
+        return {
+            "user_query": user_query,
+            "intent": "blocked",
+            "selected_agent": "blocked",
+            "ml_task": "",
+            "agent_response": blocked_response,
+            "final_response": blocked_response,
+        }
+
+    # 2. PII Masking
+    masked_query = default_masker.mask_text(user_query)
+    log_query(user_query, masked_query)
+
     initial_state: AgentState = {
-        "user_query": user_query,
+        "user_query": masked_query,
         "intent": "",
         "selected_agent": "",
         "ml_task": "",

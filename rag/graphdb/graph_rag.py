@@ -206,27 +206,15 @@ Rules:
 # =========================================================
 
 def validate_cypher(cypher: str):
-    blocked = [
-        "CREATE ",
-        "MERGE ",
-        "DELETE ",
-        "DETACH ",
-        "SET ",
-        "REMOVE ",
-        "DROP ",
-        "CALL dbms",
-        "CALL apoc",
-        "LOAD CSV"
-    ]
+    import sys
+    from pathlib import Path
+    # Add repo root to sys.path to allow importing security package
+    repo_root = Path(__file__).resolve().parents[2]
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
 
-    upper_cypher = cypher.upper()
-
-    for keyword in blocked:
-        if keyword.upper() in upper_cypher:
-            raise ValueError(f"Unsafe Cypher blocked: {keyword}")
-
-    if not upper_cypher.startswith(("MATCH", "OPTIONAL MATCH", "WITH")):
-        raise ValueError("Only read-only Cypher queries are allowed.")
+    from security.validators.cypher_validator import validate_cypher_query
+    validate_cypher_query(cypher)
 
 
 # =========================================================
@@ -293,23 +281,43 @@ Rules:
 # =========================================================
 
 def ask_graph(user_question: str):
-    cypher = generate_cypher(user_question)
-    validate_cypher(cypher)
+    import sys
+    from pathlib import Path
+    repo_root = Path(__file__).resolve().parents[2]
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
 
-    graph_result = run_cypher(cypher)
+    from security.pii.masker import default_masker
+    from security.audit.logger import log_graphrag_query
 
-    answer = generate_answer(
-        user_question=user_question,
-        cypher=cypher,
-        graph_result=graph_result
-    )
+    # Mask user question
+    masked_question = default_masker.mask_text(user_question)
 
-    return {
-        "question": user_question,
-        "cypher": cypher,
-        "result": graph_result,
-        "answer": answer
-    }
+    cypher = None
+    try:
+        cypher = generate_cypher(masked_question)
+        validate_cypher(cypher)
+        graph_result = run_cypher(cypher)
+
+        answer = generate_answer(
+            user_question=masked_question,
+            cypher=cypher,
+            graph_result=graph_result
+        )
+
+        # Log successful query
+        log_graphrag_query(user_question=user_question, cypher=cypher, success=True)
+
+        return {
+            "question": masked_question,
+            "cypher": cypher,
+            "result": graph_result,
+            "answer": answer
+        }
+    except Exception as e:
+        # Log failed query/validation error
+        log_graphrag_query(user_question=user_question, cypher=cypher or "Failed to generate/validate", success=False, error=str(e))
+        raise e
 
 
 # =========================================================

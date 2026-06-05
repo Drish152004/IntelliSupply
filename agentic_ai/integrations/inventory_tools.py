@@ -117,22 +117,53 @@ def _validate_demand_payload(payload: dict[str, Any]) -> None:
 def execute_tool(tool_name: str, args: dict[str, Any] | None = None) -> str:
     args = args or {}
 
-    if tool_name == "nl_to_sql":
-        question = args.get("question", "").strip()
-        if not question:
-            return json.dumps({"error": "question is required"})
-        response = sql_bridge.ask_inventory_sql(question)
-        return json.dumps(response, default=str)
+    import sys
+    from pathlib import Path
+    repo_root = Path(__file__).resolve().parents[2]
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
 
-    if tool_name == "predict_demand":
-        try:
-            payload = parameter_collector.finalize_partial(tool_name, args)
-            _validate_demand_payload(payload)
-            result = ml_bridge.run_demand_prediction(payload["records"])
-            return json.dumps({"result": result, "request": payload}, default=str)
-        except ValidationError as exc:
-            return json.dumps({"error": "validation_failed", "details": exc.errors()})
-        except Exception as exc:
-            return json.dumps({"error": str(exc)})
+    from security.validators.tool_validator import validate_tool_call
+    from security.audit.logger import log_executed_tool
 
-    return json.dumps({"error": f"Unknown tool: {tool_name}"})
+    try:
+        validate_tool_call(tool_name, args)
+    except Exception as exc:
+        log_executed_tool(tool_name, args, success=False, error=str(exc))
+        return json.dumps({"error": "security_validation_failed", "details": str(exc)})
+
+    try:
+        if tool_name == "nl_to_sql":
+            question = args.get("question", "").strip()
+            if not question:
+                res = json.dumps({"error": "question is required"})
+                log_executed_tool(tool_name, args, success=True)
+                return res
+            response = sql_bridge.ask_inventory_sql(question)
+            res = json.dumps(response, default=str)
+            log_executed_tool(tool_name, args, success=True)
+            return res
+
+        if tool_name == "predict_demand":
+            try:
+                payload = parameter_collector.finalize_partial(tool_name, args)
+                _validate_demand_payload(payload)
+                result = ml_bridge.run_demand_prediction(payload["records"])
+                res = json.dumps({"result": result, "request": payload}, default=str)
+                log_executed_tool(tool_name, args, success=True)
+                return res
+            except ValidationError as exc:
+                res = json.dumps({"error": "validation_failed", "details": exc.errors()})
+                log_executed_tool(tool_name, args, success=False, error=str(exc))
+                return res
+            except Exception as exc:
+                res = json.dumps({"error": str(exc)})
+                log_executed_tool(tool_name, args, success=False, error=str(exc))
+                return res
+
+        res = json.dumps({"error": f"Unknown tool: {tool_name}"})
+        log_executed_tool(tool_name, args, success=False, error=f"Unknown tool: {tool_name}")
+        return res
+    except Exception as exc:
+        log_executed_tool(tool_name, args, success=False, error=str(exc))
+        raise exc
