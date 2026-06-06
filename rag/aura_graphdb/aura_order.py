@@ -1,0 +1,163 @@
+import uuid
+from datetime import datetime
+from typing import Optional
+
+from aura_graphdb.aura_connection import AuraConnection
+
+
+def create_order_and_assign_nearest_courier(
+    from_hub_name: str,
+    to_hub_name: str,
+    delivery_day: str,
+    receipt_time: str,
+    ds: int = 318,
+    typecode: Optional[str] = None,
+    aoi_id: Optional[str] = None,
+    extra_notes: Optional[str] = None
+):
+    """
+    Logistics manager creates a new order.
+
+    from_hub_name:
+        Starting hub / pickup hub.
+        Used for receipt_lat_wgs84 and receipt_lon_wgs84.
+
+    to_hub_name:
+        Destination hub / delivery hub.
+        Used for lat_wgs84 and lon_wgs84.
+
+    Nearest courier is selected based on distance from courier current/start location
+    to from_hub coordinates.
+    """
+
+    order_id = f"ord-{uuid.uuid4().hex[:12]}"
+    notes_id = f"note-{uuid.uuid4().hex[:12]}"
+
+    conn = AuraConnection()
+
+    query = """
+    MATCH (from_hub:Hub {name: $from_hub_name})-[:LOCATED_IN]->(city:City)
+    MATCH (to_hub:Hub {name: $to_hub_name})-[:LOCATED_IN]->(city)
+
+    MATCH (courier:Courier)-[:OPERATES_IN]->(city)
+    WHERE courier.is_active = true
+      AND courier.start_lat_wgs84 IS NOT NULL
+      AND courier.start_lon_wgs84 IS NOT NULL
+
+    WITH
+        from_hub,
+        to_hub,
+        city,
+        courier,
+        point.distance(
+            point({
+                latitude: toFloat(courier.start_lat_wgs84),
+                longitude: toFloat(courier.start_lon_wgs84)
+            }),
+            point({
+                latitude: toFloat(from_hub.latitude),
+                longitude: toFloat(from_hub.longitude)
+            })
+        ) AS distance_m
+
+    ORDER BY distance_m ASC
+    LIMIT 1
+
+    CREATE (order:Order {
+        order_id: $order_id,
+        lat_wgs84: toFloat(to_hub.latitude),
+        lon_wgs84: toFloat(to_hub.longitude),
+        city_name: city.city_name,
+        ds: toInteger($ds),
+        delivery_day: $delivery_day,
+        receipt_time: $receipt_time,
+        typecode: coalesce($typecode, to_hub.typecode),
+        aoi_id: coalesce($aoi_id, to_hub.aoi_id),
+        receipt_lat_wgs84: toFloat(from_hub.latitude),
+        receipt_lon_wgs84: toFloat(from_hub.longitude),
+        from_hub_name: from_hub.name,
+        to_hub_name: to_hub.name,
+        assigned_courier_id: courier.courier_id,
+        nearest_courier_distance_m: distance_m,
+        created_at: datetime(),
+        updated_at: datetime()
+    })
+
+    CREATE (notes:Notes {
+        notes_id: $notes_id,
+        text: $notes_text,
+        cluster: toString(to_hub.hub_id),
+        courier_id: courier.courier_id,
+        created_at: datetime()
+    })
+
+    MERGE (order)-[:FROM_HUB]->(from_hub)
+    MERGE (order)-[:TO_HUB]->(to_hub)
+    MERGE (order)-[:ASSIGNED_TO]->(courier)
+    MERGE (order)-[:HAS_NOTES]->(notes)
+
+    RETURN
+        order.order_id AS order_id,
+        order.lat_wgs84 AS lat_wgs84,
+        order.lon_wgs84 AS lon_wgs84,
+        order.city_name AS city_name,
+        order.ds AS ds,
+        order.delivery_day AS delivery_day,
+        order.receipt_time AS receipt_time,
+        order.typecode AS typecode,
+        order.aoi_id AS aoi_id,
+        order.receipt_lat_wgs84 AS receipt_lat_wgs84,
+        order.receipt_lon_wgs84 AS receipt_lon_wgs84,
+        notes.text AS notes,
+        courier.courier_id AS assigned_courier_id,
+        courier.name AS assigned_courier_name,
+        distance_m AS nearest_courier_distance_m,
+        from_hub.name AS from_hub_name,
+        to_hub.name AS to_hub_name
+    """
+
+    notes_text = extra_notes
+    if not notes_text:
+        notes_text = f"cluster={to_hub_name}; courier=auto_assigned"
+
+    try:
+        result = conn.execute_write(query, {
+            "order_id": order_id,
+            "notes_id": notes_id,
+            "from_hub_name": from_hub_name.strip(),
+            "to_hub_name": to_hub_name.strip(),
+            "delivery_day": delivery_day,
+            "receipt_time": receipt_time,
+            "ds": ds,
+            "typecode": typecode,
+            "aoi_id": aoi_id,
+            "notes_text": notes_text
+        })
+
+        if not result:
+            return {
+                "success": False,
+                "message": "Could not create order. Check that both hubs exist in the same city and at least one active courier exists."
+            }
+
+        return {
+            "success": True,
+            "message": "Order created and assigned to nearest courier successfully.",
+            "order": result[0]
+        }
+
+    finally:
+        conn.close()
+
+
+if __name__ == "__main__":
+    response = create_order_and_assign_nearest_courier(
+        from_hub_name="Hub_1",
+        to_hub_name="Hub_5",
+        delivery_day="2026-06-03",
+        receipt_time="2026-06-03 08:00:00",
+        ds=318,
+        extra_notes="created from test script"
+    )
+
+    print(response)

@@ -64,4 +64,13 @@ secrets/
 credentials/
 *.pem
 *.key
+*.json
+!ml_services/demand_forecasting/models/*.json
+*.csv
+!ml_services/demand_forecasting/models/*.csv
+*.pth
+*.lgb
+*.html
+*.ipynb
+*.ipynb_checkpoints
 ```
