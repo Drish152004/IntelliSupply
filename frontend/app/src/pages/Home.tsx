@@ -5,6 +5,7 @@ import AICopilot from '@/components/AICopilot';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Dialog,
   DialogContent,
@@ -13,18 +14,19 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
+import { createShipment } from '@/lib/api';
 import {
   Plus,
   MapPin,
-  Truck,
   Sparkles,
   ArrowRight,
   Calendar,
-  Boxes,
   Maximize2,
   Minimize2,
   ExternalLink,
   CheckCircle2,
+  Loader2,
+  AlertCircle,
 } from 'lucide-react';
 
 const dispatchChecklist = [
@@ -38,8 +40,62 @@ export default function LogisticsDashboard() {
   const [copilotExpanded, setCopilotExpanded] = useState(false);
   const [copilotFullscreen, setCopilotFullscreen] = useState(false);
 
+  const [fromHubName, setFromHubName] = useState('');
+  const [toHubName, setToHubName] = useState('');
+  const [deliveryDate, setDeliveryDate] = useState('');
+  const [ds, setDs] = useState('318');
+  const [receiptTime, setReceiptTime] = useState('');
+  const [notes, setNotes] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<{
+    orderId: string;
+    courierId?: string;
+    sequence?: string[];
+    routeError?: string | null;
+  } | null>(null);
+
   const handleRouteSelect = (routeId: string) => {
     setSelectedRouteId((prev) => (prev === routeId ? null : routeId));
+  };
+
+  const handleCreateShipment = async () => {
+    setSubmitting(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const dsValue = parseInt(ds, 10);
+      if (Number.isNaN(dsValue)) {
+        throw new Error('Day index must be a number.');
+      }
+
+      let receiptTimeFormatted: string | undefined;
+      if (receiptTime) {
+        receiptTimeFormatted =
+          receiptTime.length === 5 ? `${receiptTime}:00` : receiptTime;
+      }
+
+      const result = await createShipment({
+        from_hub_name: fromHubName.trim(),
+        to_hub_name: toHubName.trim(),
+        delivery_date: deliveryDate,
+        ds: dsValue,
+        receipt_time: receiptTimeFormatted,
+        notes: notes.trim() || undefined,
+      });
+
+      setSuccess({
+        orderId: result.order?.order_id ?? '',
+        courierId: result.order?.assigned_courier_id,
+        sequence: result.route_prediction?.predicted_sequence,
+        routeError: result.route_error,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create shipment.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -75,7 +131,7 @@ export default function LogisticsDashboard() {
               </div>
               <h2 className="mt-3 text-xl font-semibold tracking-tight">Add shipment</h2>
               <p className="mt-1.5 text-sm text-muted-foreground">
-                Origin, cargo, and priority in one flow.
+                Hub-to-hub dispatch with auto courier assignment.
               </p>
             </div>
 
@@ -83,75 +139,130 @@ export default function LogisticsDashboard() {
               <div className="space-y-3">
                 <div className="rounded-xl border border-border bg-slate-50/80 p-3.5">
                   <Label className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
-                    Origin hub
+                    From hub
                   </Label>
                   <div className="relative mt-2">
                     <MapPin className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input placeholder="e.g. Bengaluru WH" className="rounded-lg border-border bg-white pl-10 text-sm" />
+                    <Input
+                      placeholder="e.g. Hub_1"
+                      value={fromHubName}
+                      onChange={(e) => setFromHubName(e.target.value)}
+                      className="rounded-lg border-border bg-white pl-10 text-sm"
+                    />
                   </div>
                 </div>
 
                 <div className="rounded-xl border border-border bg-slate-50/80 p-3.5">
                   <Label className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
-                    Destination
+                    To hub
                   </Label>
                   <div className="relative mt-2">
                     <MapPin className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input placeholder="e.g. Chennai DC" className="rounded-lg border-border bg-white pl-10 text-sm" />
+                    <Input
+                      placeholder="e.g. Hub_5"
+                      value={toHubName}
+                      onChange={(e) => setToHubName(e.target.value)}
+                      className="rounded-lg border-border bg-white pl-10 text-sm"
+                    />
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-border bg-slate-50/80 p-3.5">
+                  <Label className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
+                    Delivery date
+                  </Label>
+                  <div className="relative mt-2">
+                    <Calendar className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      type="date"
+                      value={deliveryDate}
+                      onChange={(e) => setDeliveryDate(e.target.value)}
+                      className="rounded-lg border-border bg-white pl-10 text-sm"
+                    />
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-xl border border-border bg-slate-50/80 p-3">
-                    <Label className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Cargo</Label>
-                    <div className="mt-2 flex items-center gap-2 text-sm font-medium">
-                      <Boxes className="h-4 w-4 text-slate-600" />
-                      Pharma
-                    </div>
+                  <div className="rounded-xl border border-border bg-slate-50/80 p-3.5">
+                    <Label className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                      Day index
+                    </Label>
+                    <Input
+                      type="number"
+                      value={ds}
+                      onChange={(e) => setDs(e.target.value)}
+                      className="mt-2 rounded-lg border-border bg-white text-sm"
+                    />
                   </div>
-                  <div className="rounded-xl border border-border bg-slate-50/80 p-3">
-                    <Label className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Vehicle</Label>
-                    <div className="mt-2 flex items-center gap-2 text-sm font-medium">
-                      <Truck className="h-4 w-4 text-slate-600" />
-                      Reefer
-                    </div>
+                  <div className="rounded-xl border border-border bg-slate-50/80 p-3.5">
+                    <Label className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                      Receipt time
+                    </Label>
+                    <Input
+                      type="time"
+                      step={1}
+                      value={receiptTime}
+                      onChange={(e) => setReceiptTime(e.target.value)}
+                      className="mt-2 rounded-lg border-border bg-white text-sm"
+                    />
                   </div>
                 </div>
 
                 <div className="rounded-xl border border-border bg-slate-50/80 p-3.5">
                   <Label className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
-                    Departure window
+                    Notes
                   </Label>
-                  <div className="relative mt-2">
-                    <Calendar className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input type="date" className="rounded-lg border-border bg-white pl-10 text-sm" />
+                  <Textarea
+                    placeholder="Optional notes"
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    className="mt-2 min-h-[72px] rounded-lg border-border bg-white text-sm"
+                  />
+                </div>
+
+                {error && (
+                  <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                    {error}
                   </div>
-                </div>
+                )}
 
-                <div className="flex flex-wrap gap-2">
-                  {['Standard', 'Priority', 'Critical'].map((tier) => (
-                    <button
-                      key={tier}
-                      type="button"
-                      className={cn(
-                        'rounded-full px-3 py-1.5 text-xs font-semibold transition',
-                        tier === 'Priority'
-                          ? 'bg-slate-950 text-white'
-                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200',
-                      )}
-                    >
-                      {tier}
-                    </button>
-                  ))}
-                </div>
+                {success && (
+                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+                    <p className="font-semibold">Shipment created</p>
+                    <p className="mt-1 text-xs">Order: {success.orderId}</p>
+                    {success.courierId && (
+                      <p className="text-xs">Courier: {success.courierId}</p>
+                    )}
+                    {success.sequence && success.sequence.length > 0 && (
+                      <p className="mt-1 text-xs">
+                        Route: {success.sequence.join(' → ')}
+                      </p>
+                    )}
+                    {success.routeError && (
+                      <p className="mt-1 text-xs text-amber-800">
+                        Route note: {success.routeError}
+                      </p>
+                    )}
+                  </div>
+                )}
 
-                <Button className="flex w-full items-center rounded-xl bg-slate-950 px-4 py-3.5 text-sm font-semibold text-white hover:bg-slate-800">
-                  <Plus className="mr-2 h-4 w-4 shrink-0" />
+                <Button
+                  type="button"
+                  disabled={submitting}
+                  onClick={handleCreateShipment}
+                  className="flex w-full items-center rounded-xl bg-slate-950 px-4 py-3.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+                >
+                  {submitting ? (
+                    <Loader2 className="mr-2 h-4 w-4 shrink-0 animate-spin" />
+                  ) : (
+                    <Plus className="mr-2 h-4 w-4 shrink-0" />
+                  )}
                   Create shipment
                   <ArrowRight className="ml-auto h-4 w-4 shrink-0" />
                 </Button>
                 <p className="text-center text-xs text-muted-foreground">
-                  Auto-assigns route ID and syncs to the live map.
+                  Auto-assigns nearest courier and predicts delivery sequence.
                 </p>
               </div>
             </div>

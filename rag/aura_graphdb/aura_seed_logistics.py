@@ -1,8 +1,25 @@
 import json
 import pandas as pd
+from pathlib import Path
 
 from aura_graphdb.aura_connection import AuraConnection
 from aura_graphdb.supabase_connection import get_supabase_engine
+from aura_graphdb.aura_route_cypher import PERSIST_ASSIGNED_ROUTE_QUERY
+
+PIPELINE_DATA_DIR = (
+    Path(__file__).resolve().parents[2]
+    / "ml_services"
+    / "route_prediction"
+    / "full_pipeline"
+    / "data"
+)
+PIPELINE_OUTPUT_DIR = (
+    Path(__file__).resolve().parents[2]
+    / "ml_services"
+    / "route_prediction"
+    / "full_pipeline"
+    / "outputs"
+)
 
 
 # =========================================================
@@ -204,58 +221,18 @@ def load_synthetic_orders_to_aura(json_path="synthetic_orders.json"):
 # 5. LOAD ASSIGNED ROUTES FROM assigned_routes.json
 # =========================================================
 
-def load_assigned_routes_to_aura(json_path="assigned_routes.json"):
+def load_assigned_routes_to_aura(json_path=None):
     conn = AuraConnection()
+
+    if json_path is None:
+        json_path = PIPELINE_OUTPUT_DIR / "assigned_routes.json"
+    json_path = Path(json_path)
 
     with open(json_path, "r", encoding="utf-8") as file:
         routes = json.load(file)
 
-    query = """
-    UNWIND $routes AS route
-
-    MATCH (courier:Courier {courier_id: route.courier_id})
-    MERGE (city:City {city_name: route.city_name})
-
-    MERGE (rp:RoutePrediction {
-        route_prediction_id: route.courier_id + "_" + toString(route.ds) + "_" + route.delivery_day
-    })
-    SET
-        rp.courier_id = route.courier_id,
-        rp.cluster_id = toInteger(route.cluster_id),
-        rp.city_name = route.city_name,
-        rp.ds = toInteger(route.ds),
-        rp.delivery_day = route.delivery_day,
-        rp.order_ids = route.order_ids,
-        rp.predicted_sequence = route.predicted_sequence,
-        rp.stop_count = size(route.stops),
-        rp.updated_at = datetime()
-    ON CREATE SET
-        rp.created_at = datetime()
-
-    MERGE (rp)-[:FOR_COURIER]->(courier)
-    MERGE (rp)-[:BELONGS_TO_CITY]->(city)
-
-    WITH route, courier, rp
-    UNWIND route.stops AS stop
-
-    MATCH (order:Order {order_id: stop.order_id})
-
-    SET
-        order.assigned_courier_id = courier.courier_id,
-        order.route_sequence = toInteger(stop.sequence),
-        order.updated_at = datetime()
-
-    MERGE (order)-[:ASSIGNED_TO]->(courier)
-
-    MERGE (rp)-[rel:HAS_STOP]->(order)
-    SET
-        rel.sequence = toInteger(stop.sequence),
-        rel.lat_wgs84 = toFloat(stop.lat_wgs84),
-        rel.lon_wgs84 = toFloat(stop.lon_wgs84)
-    """
-
     try:
-        conn.execute_write(query, {"routes": routes})
+        conn.execute_write(PERSIST_ASSIGNED_ROUTE_QUERY, {"routes": routes})
         print(f"Loaded {len(routes)} assigned routes into Aura.")
     finally:
         conn.close()
@@ -269,9 +246,14 @@ def seed_aura_logistics():
     load_cities_to_aura()
     load_hubs_to_aura()
 
-    load_synthetic_couriers_to_aura("synthetic_data\synthetic_couriers.json")
-    load_synthetic_orders_to_aura("synthetic_data\synthetic_orders.json")
-    load_assigned_routes_to_aura("synthetic_data\assigned_routes.json")
+    load_synthetic_couriers_to_aura(PIPELINE_DATA_DIR / "synthetic_couriers.json")
+    load_synthetic_orders_to_aura(PIPELINE_DATA_DIR / "synthetic_orders.json")
+
+    assigned_routes = PIPELINE_OUTPUT_DIR / "assigned_routes.json"
+    if assigned_routes.is_file():
+        load_assigned_routes_to_aura(assigned_routes)
+    else:
+        print(f"Skipping assigned routes — not found at {assigned_routes}")
 
     print("Aura logistics seed completed.")
 

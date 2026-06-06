@@ -1,8 +1,9 @@
-import uuid
 import json
-from typing import Optional, Dict, Any
+import uuid
+from typing import Any, Dict, Optional
 
 from aura_graphdb.aura_connection import AuraConnection
+from aura_graphdb.aura_route_cypher import PERSIST_ASSIGNED_ROUTE_QUERY
 
 
 def store_route_prediction(
@@ -74,5 +75,60 @@ def store_route_prediction(
             "route_prediction": result[0]
         }
 
+    finally:
+        conn.close()
+
+
+def persist_ml_courier_route(
+    courier_id: str,
+    cluster_id: int,
+    city_name: str,
+    ds: int,
+    delivery_day: str,
+    order_ids: list[str],
+    predicted_sequence: list[str],
+    stops: list[dict[str, Any]],
+) -> dict:
+    """Upsert RoutePrediction + HAS_STOP edges for a courier's predicted route."""
+    conn = AuraConnection()
+
+    route = {
+        "courier_id": courier_id,
+        "cluster_id": int(cluster_id),
+        "city_name": city_name,
+        "ds": int(ds),
+        "delivery_day": delivery_day,
+        "order_ids": order_ids,
+        "predicted_sequence": predicted_sequence,
+        "stops": stops,
+    }
+
+    route_prediction_id = f"{courier_id}_{ds}_{delivery_day}"
+
+    try:
+        conn.execute_write(PERSIST_ASSIGNED_ROUTE_QUERY, {"routes": [route]})
+
+        return {
+            "success": True,
+            "message": "Route prediction persisted successfully.",
+            "route_prediction": {
+                "route_prediction_id": route_prediction_id,
+                "courier_id": courier_id,
+                "cluster_id": int(cluster_id),
+                "city_name": city_name,
+                "ds": int(ds),
+                "delivery_day": delivery_day,
+                "order_ids": order_ids,
+                "predicted_sequence": predicted_sequence,
+                "stops": stops,
+                "stop_count": len(stops),
+            },
+        }
+    except Exception as exc:
+        return {
+            "success": False,
+            "message": str(exc),
+            "route_prediction": None,
+        }
     finally:
         conn.close()

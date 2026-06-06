@@ -65,7 +65,7 @@ def get_demand_bundle() -> dict[str, Any]:
 def init_eta_service() -> None:
     global _eta_ready
     _ensure_eta_path()
-    from eta_inference import _load_artifacts
+    from full_pipeline.inference import _load_artifacts
 
     _load_artifacts()
     _eta_ready = True

@@ -2,18 +2,10 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
 from fastapi import APIRouter, HTTPException
 
-ETA_SRC = Path(__file__).resolve().parents[2] / "ml_services" / "eta-prediction" / "src"
-if str(ETA_SRC) not in sys.path:
-    sys.path.insert(0, str(ETA_SRC))
-
-from eta_inference import ETARequest  # noqa: E402
-
-from services import eta_prediction as eta_svc  # noqa: E402
+from schemas.eta import ETARequest
+from services import eta_prediction as eta_svc
 
 router = APIRouter(prefix="/eta", tags=["eta_prediction"])
 

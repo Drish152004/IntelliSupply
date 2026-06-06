@@ -9,7 +9,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 ROUTE_PREDICTION_ROOT = REPO_ROOT / "ml_services" / "route_prediction"
 DEMAND_FORECASTING_ROOT = REPO_ROOT / "ml_services" / "demand_forecasting"
 ETA_PREDICTION_ROOT = REPO_ROOT / "ml_services" / "eta-prediction"
-ETA_SRC_ROOT = ETA_PREDICTION_ROOT / "src"
+ETA_SRC_ROOT = ETA_PREDICTION_ROOT
 
 SAMPLES_DIR = Path(__file__).resolve().parent / "samples"
 

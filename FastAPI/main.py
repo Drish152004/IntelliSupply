@@ -1,28 +1,28 @@
 """
-Unified FastAPI gateway for IntelliSupply ML services.
+Unified FastAPI gateway for IntelliSupply.
 
 Run from repo root:
-  pip install -r fastapi/requirements.txt
-  python fastapi/run.py
+  pip install -r FastAPI/requirements.txt
+  python FastAPI/run.py
 
 Docs: http://127.0.0.1:8000/docs
 """
 
 from __future__ import annotations
 
-import sys
 from contextlib import asynccontextmanager
-from pathlib import Path
 
+import bootstrap  # noqa: F401 — sets up sys.path before other imports
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-FASTAPI_ROOT = Path(__file__).resolve().parent
-if str(FASTAPI_ROOT) not in sys.path:
-    sys.path.insert(0, str(FASTAPI_ROOT))
+from bootstrap import REPO_ROOT
+from routers import auth, demand_forecasting, orders, route_prediction, eta_prediction
+from routers.auth import configure_auth
+from services.registry import init_all_services
 
-from routers import demand_forecasting, eta_prediction, route_prediction  # noqa: E402
-from services.registry import init_all_services  # noqa: E402
+load_dotenv(REPO_ROOT / ".env")
 
 
 @asynccontextmanager
@@ -32,8 +32,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="IntelliSupply ML API",
-    description="Centralized inference for route prediction, demand forecasting, and ETA.",
+    title="IntelliSupply API",
+    description="Unified gateway for logistics, ML inference, and auth.",
     version="1.0.0",
     lifespan=lifespan,
 )
@@ -44,22 +44,32 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+configure_auth(app)
+
 app.include_router(route_prediction.router)
 app.include_router(demand_forecasting.router)
 app.include_router(eta_prediction.router)
+app.include_router(orders.router)
+app.include_router(orders.couriers_router)
 
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "services": app.state.service_status}
+    return {
+        "status": "ok",
+        "services": getattr(app.state, "service_status", {}),
+    }
 
 
 @app.get("/")
 def root():
     return {
-        "message": "IntelliSupply unified ML API",
+        "message": "IntelliSupply unified API",
         "docs": "/docs",
         "services": {
+            "auth": "/login",
+            "orders": "/orders",
+            "couriers": "/couriers",
             "route": "/route",
             "demand": "/demand",
             "eta": "/eta",

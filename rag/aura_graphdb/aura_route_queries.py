@@ -83,6 +83,49 @@ def get_recent_order_routes(limit: int = 20):
         conn.close()
 
 
+def get_orders_for_courier_day(
+    courier_id: str,
+    city_name: str,
+    ds: int,
+    delivery_day: str,
+):
+    """Fetch all orders for a courier on a given day (for ML route prediction)."""
+    conn = AuraConnection()
+
+    query = """
+    MATCH (courier:Courier {courier_id: $courier_id})<-[:ASSIGNED_TO]-(o:Order)
+    WHERE o.city_name = $city_name
+      AND o.ds = $ds
+      AND o.delivery_day = $delivery_day
+    RETURN
+        o.order_id AS order_id,
+        o.lat_wgs84 AS lat_wgs84,
+        o.lon_wgs84 AS lon_wgs84,
+        o.city_name AS city_name,
+        o.ds AS ds,
+        o.delivery_day AS delivery_day,
+        o.receipt_time AS receipt_time,
+        o.typecode AS typecode,
+        o.aoi_id AS aoi_id,
+        o.receipt_lat_wgs84 AS receipt_lat_wgs84,
+        o.receipt_lon_wgs84 AS receipt_lon_wgs84
+    ORDER BY o.created_at
+    """
+
+    try:
+        return conn.execute_query(
+            query,
+            {
+                "courier_id": courier_id,
+                "city_name": city_name,
+                "ds": int(ds),
+                "delivery_day": delivery_day,
+            },
+        )
+    finally:
+        conn.close()
+
+
 def get_orders_for_courier(courier_id: str, limit: int = 20):
     conn = AuraConnection()
 

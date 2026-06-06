@@ -1,5 +1,4 @@
 import uuid
-from datetime import datetime
 from typing import Optional
 
 from aura_graphdb.aura_connection import AuraConnection
@@ -41,6 +40,7 @@ def create_order_and_assign_nearest_courier(
 
     MATCH (courier:Courier)-[:OPERATES_IN]->(city)
     WHERE courier.is_active = true
+      AND courier.ds = toInteger($ds)
       AND courier.start_lat_wgs84 IS NOT NULL
       AND courier.start_lon_wgs84 IS NOT NULL
 
@@ -85,7 +85,11 @@ def create_order_and_assign_nearest_courier(
 
     CREATE (notes:Notes {
         notes_id: $notes_id,
-        text: $notes_text,
+        text: CASE
+            WHEN $notes_text IS NOT NULL AND trim($notes_text) <> ""
+            THEN $notes_text
+            ELSE "cluster=" + to_hub.name + "; courier=" + substring(courier.courier_id, 0, 8)
+        END,
         cluster: toString(to_hub.hub_id),
         courier_id: courier.courier_id,
         created_at: datetime()
@@ -93,6 +97,7 @@ def create_order_and_assign_nearest_courier(
 
     MERGE (order)-[:FROM_HUB]->(from_hub)
     MERGE (order)-[:TO_HUB]->(to_hub)
+    MERGE (order)-[:BELONGS_TO_CITY]->(city)
     MERGE (order)-[:ASSIGNED_TO]->(courier)
     MERGE (order)-[:HAS_NOTES]->(notes)
 
@@ -113,12 +118,9 @@ def create_order_and_assign_nearest_courier(
         courier.name AS assigned_courier_name,
         distance_m AS nearest_courier_distance_m,
         from_hub.name AS from_hub_name,
-        to_hub.name AS to_hub_name
+        to_hub.name AS to_hub_name,
+        to_hub.rep_dipan_id AS cluster_id
     """
-
-    notes_text = extra_notes
-    if not notes_text:
-        notes_text = f"cluster={to_hub_name}; courier=auto_assigned"
 
     try:
         result = conn.execute_write(query, {
@@ -131,7 +133,7 @@ def create_order_and_assign_nearest_courier(
             "ds": ds,
             "typecode": typecode,
             "aoi_id": aoi_id,
-            "notes_text": notes_text
+            "notes_text": extra_notes or ""
         })
 
         if not result:
