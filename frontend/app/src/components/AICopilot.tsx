@@ -1,32 +1,22 @@
-import { useState, useRef, useEffect } from 'react';
-import {
-  MessageSquare,
-  Trash2,
-  Send,
-  Mic,
-  ChevronDown,
-  Sparkles,
-  Zap,
-  Bot,
-  User,
-} from 'lucide-react';
+﻿import { useState, useRef, useEffect } from 'react';
+import { MessageSquare, Trash2, Send, Mic, Sparkles, Bot, User } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  initialChatMessages,
-  quickActions,
-  quickActionResponses,
-  suggestedPrompts,
-} from '@/data/mockData';
+import { initialChatMessages, suggestedPrompts } from '@/data/mockData';
 import type { ChatMessage } from '@/data/mockData';
 
-export default function AICopilot() {
+interface AICopilotProps {
+  compact?: boolean;
+  expanded?: boolean;
+}
+
+export default function AICopilot({ compact = false, expanded = false }: AICopilotProps) {
+  const isCompact = compact && !expanded;
   const [messages, setMessages] = useState<ChatMessage[]>(initialChatMessages);
   const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState(false);
-  const [showQuickActions, setShowQuickActions] = useState(false);
-  const [selectedAction, setSelectedAction] = useState<string | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -69,32 +59,6 @@ export default function AICopilot() {
     }, 1500);
   };
 
-  const handleQuickAction = (action: string) => {
-    setSelectedAction(action);
-    setShowQuickActions(false);
-
-    const userMsg: ChatMessage = {
-      id: `msg-${Date.now()}`,
-      role: 'user',
-      content: `[Quick Action: ${action}]`,
-      timestamp: new Date(),
-    };
-
-    setMessages((prev) => [...prev, userMsg]);
-    setIsTyping(true);
-
-    setTimeout(() => {
-      setIsTyping(false);
-      const aiMsg: ChatMessage = {
-        id: `msg-${Date.now() + 1}`,
-        role: 'ai',
-        content: quickActionResponses[action] || 'Processing your request...',
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, aiMsg]);
-    }, 1200);
-  };
-
   const handleClearChat = () => {
     setMessages([]);
   };
@@ -104,12 +68,17 @@ export default function AICopilot() {
   };
 
   return (
-    <div className="w-80 border-r border-border bg-card flex flex-col h-full shrink-0">
-      {/* Header */}
-      <div className="h-12 border-b border-border flex items-center justify-between px-3 shrink-0">
+    <div
+      className={cn(
+        'w-full bg-card flex flex-col shrink-0 h-full',
+        isCompact && 'overflow-hidden',
+        !compact && 'border-r border-border',
+      )}
+    >
+      <div className={cn('border-b border-border flex items-center justify-between px-3 shrink-0', isCompact ? 'h-9' : 'h-12')}>
         <div className="flex items-center gap-2">
-          <MessageSquare className="w-4 h-4 text-primary" />
-          <span className="text-sm font-medium">AI Logistics Copilot</span>
+          <MessageSquare className={cn('text-primary', isCompact ? 'w-3.5 h-3.5' : 'w-4 h-4')} />
+          <span className={cn('font-medium', isCompact ? 'text-xs' : 'text-sm')}>AI Logistics Copilot</span>
         </div>
         <Button
           variant="ghost"
@@ -122,8 +91,13 @@ export default function AICopilot() {
         </Button>
       </div>
 
-      {/* Chat Messages */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-3">
+      <div
+        className={cn(
+          'flex-1 overflow-y-auto custom-scrollbar space-y-3 min-h-0',
+          isCompact ? 'p-2' : 'p-3',
+          expanded && 'p-3',
+        )}
+      >
         <AnimatePresence initial={false}>
           {messages.map((msg) => (
             <motion.div
@@ -135,9 +109,7 @@ export default function AICopilot() {
             >
               <div
                 className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${
-                  msg.role === 'ai'
-                    ? 'bg-black/10'
-                    : 'bg-muted'
+                  msg.role === 'ai' ? 'bg-black/10' : 'bg-muted'
                 }`}
               >
                 {msg.role === 'ai' ? (
@@ -148,9 +120,7 @@ export default function AICopilot() {
               </div>
               <div
                 className={`max-w-[85%] rounded-xl px-3 py-2 text-xs leading-relaxed ${
-                  msg.role === 'user'
-                    ? 'bg-black text-white rounded-br-sm'
-                    : 'bg-muted rounded-bl-sm'
+                  msg.role === 'user' ? 'bg-black text-white rounded-br-sm' : 'bg-muted rounded-bl-sm'
                 }`}
               >
                 {msg.content}
@@ -159,7 +129,6 @@ export default function AICopilot() {
           ))}
         </AnimatePresence>
 
-        {/* Typing Indicator */}
         <AnimatePresence>
           {isTyping && (
             <motion.div
@@ -182,10 +151,10 @@ export default function AICopilot() {
         <div ref={chatEndRef} />
       </div>
 
-      {/* Suggested Prompts */}
+      {!isCompact && (
       <div className="px-3 pb-2">
         <div className="flex flex-wrap gap-1.5">
-          {suggestedPrompts.slice(0, 3).map((prompt) => (
+          {suggestedPrompts.slice(0, 1).map((prompt) => (
             <button
               key={prompt}
               onClick={() => handleSuggestedPrompt(prompt)}
@@ -196,47 +165,9 @@ export default function AICopilot() {
           ))}
         </div>
       </div>
+      )}
 
-      {/* Quick Actions Dropdown */}
-      <div className="px-3 pb-2 relative">
-        <button
-          onClick={() => setShowQuickActions(!showQuickActions)}
-          className="w-full flex items-center justify-between px-3 py-2 text-xs rounded-lg bg-muted hover:bg-muted/80 transition-colors border border-border"
-        >
-          <span className="flex items-center gap-1.5">
-            <Zap className="w-3 h-3 text-primary" />
-            {selectedAction || 'Quick Actions'}
-          </span>
-          <ChevronDown
-            className={`w-3 h-3 text-muted-foreground transition-transform ${showQuickActions ? 'rotate-180' : ''}`}
-          />
-        </button>
-
-        <AnimatePresence>
-          {showQuickActions && (
-            <motion.div
-              initial={{ opacity: 0, y: -4, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -4, scale: 0.98 }}
-              transition={{ duration: 0.15 }}
-              className="absolute bottom-full left-3 right-3 mb-1 bg-card border border-border rounded-lg shadow-lg overflow-hidden z-10"
-            >
-              {quickActions.map((action) => (
-                <button
-                  key={action}
-                  onClick={() => handleQuickAction(action)}
-                  className="w-full text-left px-3 py-2 text-xs hover:bg-muted transition-colors first:pt-2.5 last:pb-2.5"
-                >
-                  {action}
-                </button>
-              ))}
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-
-      {/* Input Area */}
-      <div className="p-3 border-t border-border">
+      <div className={cn('border-t border-border shrink-0', isCompact ? 'p-2' : 'p-3')}>
         <div className="flex items-center gap-2 bg-muted rounded-xl px-3 py-2 border border-border focus-within:border-primary/30 focus-within:ring-1 focus-within:ring-primary/10 transition-all">
           <Input
             value={inputValue}

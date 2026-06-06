@@ -1,5 +1,9 @@
 # IntelliSupply
 
+## Run the frontend
+
+```bash
+cd frontend/app
 **AI-native supply chain intelligence** — unified inventory, demand forecasting, last-mile dispatch, and conversational operations across databases, knowledge graphs, and ML models.
 
 IntelliSupply connects warehouse and hub data with logistics ML (clustering, courier assignment, route sequencing, ETA) and agentic copilots that answer operational questions in plain English. It is built for real dispatch workflows: learned delivery sequences (not only shortest-path routing), leakage-safe models, and optional Neo4j GraphRAG over your network.
@@ -187,6 +191,7 @@ npm install
 npm run dev
 ```
 
+Open [http://localhost:3000](http://localhost:3000).
 | Route | Page |
 |-------|------|
 | `/routes` | Logistics map, shipments, AI copilot sidebar |
