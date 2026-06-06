@@ -1,4 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router';
+import { AuthProvider } from '@/lib/auth';
+import ProtectedRoute from '@/components/ProtectedRoute';
 import Landing from './pages/Landing';
 import Login from './pages/Login';
 import Profile from './pages/Profile';
@@ -15,28 +17,113 @@ import ProductManagement from './pages/ProductManagement';
 
 export default function App() {
   return (
-    <Routes>
-      <Route path="/" element={<Landing />} />
-      <Route path="/login" element={<Login />} />
-      <Route path="/login/:role" element={<Login />} />
+    <AuthProvider>
+      <Routes>
+        {/* Public */}
+        <Route path="/" element={<Landing />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/login/:role" element={<Login />} />
 
-      <Route path="/logistics" element={<LogisticsDashboard />} />
-      <Route path="/logistics/intelligence" element={<RouteIntelligence />} />
+        {/* Admin only */}
+        <Route
+          path="/admin/dashboard"
+          element={
+            <ProtectedRoute allowedRoles={['admin']}>
+              <Overview />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/users"
+          element={
+            <ProtectedRoute allowedRoles={['admin']}>
+              <AdminUsers />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/analytics"
+          element={
+            <ProtectedRoute allowedRoles={['admin']}>
+              <AdminAnalytics />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/register-user"
+          element={
+            <ProtectedRoute allowedRoles={['admin']}>
+              <RegisterUser />
+            </ProtectedRoute>
+          }
+        />
 
-      <Route path="/product-management" element={<ProductManagement />} />
-      <Route path="/inventory" element={<Inventory />} />
-      <Route path="/inventory/analytics" element={<InventoryAnalytics />} />
+        {/* Logistics (admin + logistics_manager) */}
+        <Route
+          path="/logistics"
+          element={
+            <ProtectedRoute allowedRoles={['admin', 'logistics_manager']}>
+              <LogisticsDashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/logistics/intelligence"
+          element={
+            <ProtectedRoute allowedRoles={['admin', 'logistics_manager']}>
+              <RouteIntelligence />
+            </ProtectedRoute>
+          }
+        />
 
-      <Route path="/register-user" element={<RegisterUser />} />
-      <Route path="/admin/dashboard" element={<Overview />} />
-      <Route path="/admin/users" element={<AdminUsers />} />
-      <Route path="/admin/analytics" element={<AdminAnalytics />} />
+        {/* Inventory (admin + inventory_manager) */}
+        <Route
+          path="/inventory"
+          element={
+            <ProtectedRoute allowedRoles={['admin', 'inventory_manager']}>
+              <Inventory />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/inventory/analytics"
+          element={
+            <ProtectedRoute allowedRoles={['admin', 'inventory_manager']}>
+              <InventoryAnalytics />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/product-management"
+          element={
+            <ProtectedRoute allowedRoles={['admin', 'inventory_manager']}>
+              <ProductManagement />
+            </ProtectedRoute>
+          }
+        />
 
-      <Route path="/profile" element={<Profile />} />
-      <Route path="/notifications" element={<Notifications />} />
+        {/* All authenticated roles */}
+        <Route
+          path="/profile"
+          element={
+            <ProtectedRoute allowedRoles={['admin', 'logistics_manager', 'inventory_manager']}>
+              <Profile />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/notifications"
+          element={
+            <ProtectedRoute allowedRoles={['admin', 'logistics_manager', 'inventory_manager']}>
+              <Notifications />
+            </ProtectedRoute>
+          }
+        />
 
-      <Route path="/routes" element={<Navigate to="/logistics" replace />} />
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+        {/* Redirects */}
+        <Route path="/routes" element={<Navigate to="/logistics" replace />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </AuthProvider>
   );
 }

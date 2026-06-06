@@ -1,5 +1,5 @@
 import Navbar from '@/components/Navbar';
-import { AreaChart, Area, LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { TrendingUp, ShieldCheck, BarChart as BarIcon, Activity, Users } from 'lucide-react';
 
 const kpis = [
@@ -126,14 +126,14 @@ export default function AdminAnalytics() {
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie data={roleDistribution} dataKey="value" nameKey="name" innerRadius={46} outerRadius={76} paddingAngle={4}>
-                      {roleDistribution.map((entry, index) => (
+                      {roleDistribution.map((_entry, index) => (
                         <Cell key={`cell-${index}`} fill={pieColors[index]} />
                       ))}
                     </Pie>
                   </PieChart>
                 </ResponsiveContainer>
                 <div className="grid grid-cols-2 gap-3 mt-4 text-xs text-muted-foreground">
-                  {roleDistribution.map((entry, index) => (
+                  {roleDistribution.map((entry) => (
                     <div key={entry.name} className="rounded-2xl bg-slate-50 p-3">
                       <p className="font-semibold text-foreground">{entry.name}</p>
                       <p>{entry.value}%</p>

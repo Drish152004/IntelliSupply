@@ -142,11 +142,12 @@ export default function RouteMap({ selectedRouteId, onRouteSelect }: RouteMapPro
         className="h-full w-full min-h-0"
         style={{ width: '100%', height: '100%' }}
         zoomControl={false}
-        whenReady={(event) => {
-          const map = event.target;
-          setMapObject(map);
-          map.invalidateSize();
-          setMapReady(true);
+        ref={(mapInstance) => {
+          if (mapInstance && !mapObject) {
+            setMapObject(mapInstance);
+            mapInstance.invalidateSize();
+            setMapReady(true);
+          }
         }}
       >
         <TileLayer
