@@ -6,9 +6,6 @@ import {
   Bell,
   User,
   Lock,
-  Mail,
-  Phone,
-  MapPin,
 } from 'lucide-react';
 
 export default function Profile() {

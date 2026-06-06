@@ -195,3 +195,60 @@ async def dashboard(request: Request):
 async def logout(request: Request):
     request.session.clear()
     return redirect_to("/login")
+
+
+# ─── JSON API endpoints for the React frontend ────────────────────────────────
+
+from fastapi.responses import JSONResponse
+
+
+@router.post("/api/login")
+async def api_login(request: Request):
+    """JSON login endpoint for the React frontend. Reuses existing aura_auth logic."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"success": False, "message": "Invalid request body."}, status_code=400)
+
+    email = (body.get("email") or "").strip()
+    password = (body.get("password") or "").strip()
+
+    if not email or not password:
+        return JSONResponse({"success": False, "message": "Email and password are required."}, status_code=400)
+
+    try:
+        result = login_user_with_password(email=email, password=password)
+    except Exception as exc:
+        return JSONResponse({"success": False, "message": str(exc)}, status_code=503)
+
+    if not result["success"]:
+        return JSONResponse({"success": False, "message": result["message"]}, status_code=401)
+
+    return JSONResponse({"success": True, "user": result["user"]})
+
+
+@router.post("/api/register")
+async def api_register(request: Request):
+    """JSON register endpoint for the React frontend. Reuses existing aura_auth logic."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"success": False, "message": "Invalid request body."}, status_code=400)
+
+    name = (body.get("name") or "").strip()
+    email = (body.get("email") or "").strip()
+    password = (body.get("password") or "").strip()
+    role = (body.get("role") or "courier").strip()
+
+    if not name or not email or not password:
+        return JSONResponse({"success": False, "message": "Name, email, and password are required."}, status_code=400)
+
+    try:
+        result = register_user_with_password(name=name, email=email, password=password, selected_role=role)
+    except Exception as exc:
+        return JSONResponse({"success": False, "message": str(exc)}, status_code=503)
+
+    if not result["success"]:
+        return JSONResponse({"success": False, "message": result["message"]}, status_code=422)
+
+    return JSONResponse({"success": True, "user": result["user"]}, status_code=201)

@@ -1,5 +1,5 @@
 import Navbar from '@/components/Navbar';
-import { AreaChart, Area, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 const inventoryTrend = [
   { week: 'W1', turnover: 3.4, stockout: 5 },
@@ -107,7 +107,7 @@ export default function InventoryAnalytics() {
               </ResponsiveContainer>
             </div>
             <div className="grid grid-cols-2 gap-3 mt-4 text-sm">
-              {categoryDistribution.map((category, index) => (
+              {categoryDistribution.map((category) => (
                 <div key={category.name} className="rounded-3xl border border-border bg-slate-50 p-4">
                   <p className="font-semibold text-foreground">{category.name}</p>
                   <p className="mt-2 text-sm text-muted-foreground">{category.value}% of inventory</p>

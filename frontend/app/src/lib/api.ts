@@ -70,3 +70,50 @@ export async function createShipment(
 
   return data as CreateShipmentResult;
 }
+
+// ─── User registration ────────────────────────────────────────────────────────
+
+export interface RegisterUserPayload {
+  name: string;
+  email: string;
+  password: string;
+  role: 'logistics_manager' | 'inventory_manager';
+}
+
+export async function registerUser(payload: RegisterUserPayload): Promise<{ success: boolean; message?: string; user?: object }> {
+  const res = await fetch(`${API_BASE}/api/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.message ?? 'Registration failed.');
+  }
+  return data;
+}
+
+// ─── Courier creation (uses existing /couriers POST endpoint) ─────────────────
+
+export interface CreateCourierPayload {
+  name: string;
+  email: string;
+  password: string;
+  city_name: string;
+  hub_name: string;
+  ds?: number;
+}
+
+export async function createCourierFrontend(payload: CreateCourierPayload): Promise<{ success: boolean; message?: string; courier?: object }> {
+  const res = await fetch(`${API_BASE}/couriers`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...payload, ds: payload.ds ?? 318 }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.detail ?? data.message ?? 'Courier creation failed.');
+  }
+  return data;
+}
+

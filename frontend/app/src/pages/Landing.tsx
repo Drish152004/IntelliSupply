@@ -31,68 +31,66 @@ export default function Landing() {
 
   return (
     <div className="min-h-screen bg-[#f5f7fb] overflow-hidden">
-      <main className="max-w-[1600px] mx-auto px-6 lg:px-12 py-16">
+      <main className="max-w-[1400px] mx-auto px-6 lg:px-10 py-10">
         {/* HERO */}
         <section className="flex flex-col items-center text-center">
           <motion.div
-            initial={{ opacity: 0, y: -24 }}
+            initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
           >
-            <div className="inline-flex items-center rounded-full border border-slate-200 bg-white px-6 py-3 shadow-sm">
-              <span className="text-lg font-semibold tracking-tight text-slate-900">
+            <div className="inline-flex items-center rounded-full border border-slate-200 bg-white px-5 py-2.5 shadow-sm">
+              <span className="text-base font-semibold tracking-tight text-slate-900">
                 Intelli<span className="text-sky-600">Supply</span>
               </span>
             </div>
 
-            <h1 className="mt-10 text-6xl sm:text-7xl font-semibold tracking-tight text-slate-950 leading-[1.02] max-w-5xl">
+            <h1 className="mt-7 text-4xl sm:text-5xl font-semibold tracking-tight text-slate-950 leading-[1.05] max-w-3xl">
               IntelliSupply
             </h1>
 
-            <p className="mt-6 text-2xl text-slate-600 font-medium">
+            <p className="mt-4 text-lg text-slate-600 font-medium">
               Operational intelligence for modern supply systems
             </p>
           </motion.div>
         </section>
 
         {/* ROLE CARDS */}
-        <section className="mt-24 grid gap-8 lg:grid-cols-3">
+        <section className="mt-12 grid gap-6 lg:grid-cols-3">
           {roles.map((role, index) => {
             const Icon = role.icon;
 
             return (
               <motion.div
                 key={role.title}
-                initial={{ opacity: 0, y: 40 }}
+                initial={{ opacity: 0, y: 32 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{
                   delay: index * 0.12,
-                  duration: 0.55,
+                  duration: 0.5,
                 }}
-                whileHover={{
-                  y: -10,
-                }}
-                className={`group relative overflow-hidden rounded-[2.5rem] border bg-gradient-to-b ${role.color} p-10 shadow-sm transition-all duration-300`}
+                whileHover={{ y: -8 }}
+                className={`group relative overflow-hidden rounded-[2rem] border bg-gradient-to-b ${role.color} p-7 shadow-sm transition-all duration-300`}
               >
                 <div className="flex flex-col items-center text-center h-full">
-                  <div className="flex h-28 w-28 items-center justify-center rounded-[2rem] bg-white shadow-sm">
-                    <Icon className="h-12 w-12 text-slate-900" />
+                  <div className="flex h-20 w-20 items-center justify-center rounded-[1.5rem] bg-white shadow-sm">
+                    <Icon className="h-9 w-9 text-slate-900" />
                   </div>
 
-                  <h2 className="mt-10 text-3xl font-semibold tracking-tight text-slate-950">
+                  <h2 className="mt-7 text-2xl font-semibold tracking-tight text-slate-950">
                     {role.title}
                   </h2>
 
-                  <p className="mt-5 text-lg leading-8 text-slate-600 max-w-sm">
+                  <p className="mt-3 text-base leading-7 text-slate-600 max-w-sm">
                     {role.description}
                   </p>
 
                   <button
                     onClick={() => navigate(role.route)}
-                    className="mt-12 inline-flex items-center justify-center gap-3 rounded-full bg-slate-950 px-8 py-5 text-base font-semibold text-white transition-all hover:scale-[1.02]"
+                    className="mt-8 inline-flex items-center justify-center gap-2.5 rounded-full bg-slate-950 px-6 py-3 text-sm font-semibold text-white transition-all hover:scale-[1.02]"
                   >
                     Continue
-                    <ArrowRight className="h-5 w-5" />
+                    <ArrowRight className="h-4 w-4" />
                   </button>
                 </div>
               </motion.div>

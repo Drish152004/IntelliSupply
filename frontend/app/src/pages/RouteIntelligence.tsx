@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import Navbar from '@/components/Navbar';
 import RouteMap from '@/components/RouteMap';
 import { routes } from '@/data/mockData';
-import { MapPin, Truck, Clock, AlertTriangle, Sparkles, ShieldCheck } from 'lucide-react';
+import { Truck, Clock, AlertTriangle, Sparkles, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export default function RouteIntelligence() {
