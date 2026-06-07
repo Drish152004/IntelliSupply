@@ -208,14 +208,24 @@ def test_orchestrator_inventory_role_inventory_task(
 
 
 @patch("orchestrator.intent.classify_domain_task")
-def test_orchestrator_skips_rbac_on_low_confidence(mock_classify: MagicMock) -> None:
+def test_orchestrator_continues_past_intent_for_bypass_task_low_confidence(
+    mock_classify: MagicMock,
+) -> None:
     mock_classify.return_value = {
         "domain": "logistics",
         "task": "shipment_lookup",
         "confidence": 0.45,
     }
     with patch("agents.logistics_agent.run_logistics_turn") as mock_logistics_turn:
-        result = run_orchestrator("shipment 123", user_role="COURIER")
-        payload = json.loads(result["final_response"])
-        assert payload["status"] == "clarification_required"
-        mock_logistics_turn.assert_not_called()
+        mock_logistics_turn.return_value = {
+            "agent": "logistics",
+            "status": "complete",
+            "answer": "ok",
+            "session": None,
+        }
+        with patch("graph_retrieval.graph_node._retriever") as mock_retriever:
+            mock_retriever.retrieve.return_value = {"found": False}
+            result = run_orchestrator("shipment 123", user_role="LOGISTICS")
+    assert result["confidence"] == 0.45
+    assert not result.get("agent_response", "").startswith('{\n  "status": "awaiting_input"')
+    mock_logistics_turn.assert_called_once()

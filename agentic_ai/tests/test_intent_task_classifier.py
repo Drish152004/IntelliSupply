@@ -13,11 +13,14 @@ from orchestrator.graph import ORCHESTRATOR_APP, run_orchestrator
 from orchestrator.intent import detect_intent
 from orchestrator.intent_task_classifier import (
     CONFIDENCE_THRESHOLD,
+    EXTREME_LOW_CONFIDENCE_THRESHOLD,
+    TASKS_BYPASS_INTENT_CLARIFICATION,
     _keyword_fallback,
     _normalize_result,
     _parse_classifier_response,
     build_clarification_question,
     classify_domain_task,
+    needs_intent_clarification,
 )
 from orchestrator.state import AgentState
 
@@ -154,13 +157,41 @@ def test_classify_next_stop_prediction(mock_get_client: MagicMock) -> None:
 @patch("orchestrator.intent_task_classifier.get_client")
 def test_low_confidence_clarification(mock_get_client: MagicMock) -> None:
     mock_get_client.return_value.chat.completions.create.return_value = _mock_llm_response(
-        {"domain": "logistics", "task": "shipment_lookup", "confidence": 0.45}
+        {"domain": "logistics", "task": "shipment_lookup", "confidence": 0.25}
     )
     result = detect_intent(_base_state("shipment 123"))
-    assert result["confidence"] < CONFIDENCE_THRESHOLD
+    assert result["confidence"] < EXTREME_LOW_CONFIDENCE_THRESHOLD
     payload = json.loads(result["agent_response"])
     assert payload["status"] == "awaiting_input"
     assert "shipment status" in payload["question"].lower()
+
+
+def test_needs_intent_clarification_bypasses_known_tasks() -> None:
+    assert not needs_intent_clarification("demand_forecast", 0.68)
+    assert not needs_intent_clarification("eta_prediction", 0.45)
+    assert not needs_intent_clarification("route_prediction", 0.55)
+    assert not needs_intent_clarification("shipment_lookup", 0.45)
+    assert not needs_intent_clarification("courier_lookup", 0.50)
+
+
+def test_needs_intent_clarification_extreme_low() -> None:
+    assert needs_intent_clarification("demand_forecast", 0.25)
+    assert needs_intent_clarification("shipment_lookup", 0.20)
+
+
+def test_needs_intent_clarification_unknown_task() -> None:
+    assert needs_intent_clarification("", 0.95)
+    assert needs_intent_clarification("route_lookup", 0.45)
+
+
+def test_needs_intent_clarification_covers_bypass_tasks() -> None:
+    assert TASKS_BYPASS_INTENT_CLARIFICATION == frozenset({
+        "demand_forecast",
+        "eta_prediction",
+        "route_prediction",
+        "shipment_lookup",
+        "courier_lookup",
+    })
 
 
 def test_keyword_fallback_low_confidence_shipment() -> None:
@@ -208,19 +239,69 @@ def test_detect_intent_logistics_session_continuation() -> None:
 @patch("orchestrator.intent_task_classifier.get_client")
 @patch("agents.logistics_agent.run_logistics_turn")
 @patch("agents.inventory_agent.run_inventory_turn")
-def test_orchestrator_skips_agent_on_low_confidence(
+def test_orchestrator_skips_agent_on_extreme_low_confidence(
     mock_inventory_turn: MagicMock,
     mock_logistics_turn: MagicMock,
     mock_get_client: MagicMock,
 ) -> None:
     mock_get_client.return_value.chat.completions.create.return_value = _mock_llm_response(
-        {"domain": "logistics", "task": "shipment_lookup", "confidence": 0.45}
+        {"domain": "logistics", "task": "shipment_lookup", "confidence": 0.25}
     )
     result = ORCHESTRATOR_APP.invoke(_base_state("shipment 123"))
     payload = json.loads(result["final_response"])
     assert payload["status"] == "clarification_required"
     mock_inventory_turn.assert_not_called()
     mock_logistics_turn.assert_not_called()
+
+
+@patch("orchestrator.intent.classify_domain_task")
+@patch("orchestrator.ml_node.get_ml_executor")
+@patch("graph_retrieval.graph_node._retriever")
+@patch("context.context_node.get_context_resolver")
+def test_orchestrator_low_confidence_demand_forecast_reaches_context(
+    mock_get_resolver: MagicMock,
+    mock_retriever: MagicMock,
+    mock_get_executor: MagicMock,
+    mock_classify: MagicMock,
+) -> None:
+    mock_classify.return_value = {
+        "domain": "logistics",
+        "task": "demand_forecast",
+        "confidence": 0.68,
+    }
+    mock_retriever.retrieve.return_value = {"found": False}
+    from ml.ml_executor import MLExecutionOutcome
+
+    mock_get_executor.return_value.execute.return_value = MLExecutionOutcome(
+        success=True,
+        prediction_type="demand_forecast",
+        model_name="test",
+        result={"horizon": 7},
+        duration_ms=1.0,
+    )
+    mock_resolution = MagicMock()
+    mock_resolution.ready_for_ml = True
+    mock_resolution.payload = {
+        "city": "Shanghai",
+        "horizon": "7",
+        "granularity": "daily",
+        "dataset_kind": "delivery",
+    }
+    mock_resolution.resolved_context = {}
+    mock_resolution.graph_enriched_fields = []
+    mock_resolution.user_supplied_fields = ["city", "horizon"]
+    mock_resolution.missing_fields = []
+    mock_resolution.clarification_needed = False
+    mock_get_resolver.return_value.resolve.return_value = mock_resolution
+
+    result = run_orchestrator(
+        "Forecast demand for Shanghai for 7 days",
+        user_role="LOGISTICS",
+    )
+    assert result["task"] == "demand_forecast"
+    assert result["confidence"] == 0.68
+    assert result["ready_for_ml"] is True
+    mock_get_resolver.return_value.resolve.assert_called_once()
 
 
 @patch("orchestrator.intent.classify_domain_task")

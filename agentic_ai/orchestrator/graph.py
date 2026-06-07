@@ -14,7 +14,7 @@ from graph_retrieval.graph_node import retrieve_from_graph
 from orchestrator.cache_node import lookup_cache, store_cache
 from orchestrator.executor import execute_agent
 from orchestrator.intent import detect_intent
-from orchestrator.intent_task_classifier import CONFIDENCE_THRESHOLD
+from orchestrator.intent_task_classifier import needs_intent_clarification
 from orchestrator.rbac.session_context import (
     merge_logistics_session,
     restore_user_role,
@@ -29,8 +29,11 @@ from orchestrator.state import AgentState
 
 
 def _route_after_intent(state: AgentState) -> str:
-    """Skip RBAC and agent execution when classification confidence is too low."""
-    if state.get("confidence", 1.0) < CONFIDENCE_THRESHOLD:
+    """Skip RBAC only when intent clarification is required."""
+    if needs_intent_clarification(
+        state.get("task", ""),
+        state.get("confidence", 1.0),
+    ):
         return "response_formatter"
     return "rbac"
 

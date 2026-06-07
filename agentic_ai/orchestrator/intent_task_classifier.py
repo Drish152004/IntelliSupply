@@ -17,6 +17,16 @@ from integrations.llm_client import get_client, get_model
 logger = logging.getLogger(__name__)
 
 CONFIDENCE_THRESHOLD = 0.70
+EXTREME_LOW_CONFIDENCE_THRESHOLD = 0.30
+
+# Known tasks that defer clarification to query completeness / context resolution.
+TASKS_BYPASS_INTENT_CLARIFICATION: frozenset[str] = frozenset({
+    "demand_forecast",
+    "eta_prediction",
+    "route_prediction",
+    "shipment_lookup",
+    "courier_lookup",
+})
 
 VALID_DOMAINS = frozenset({"inventory", "logistics"})
 
@@ -235,6 +245,25 @@ def _keyword_fallback(user_query: str) -> dict[str, Any]:
         return {"domain": "logistics", "task": "shipment_lookup", "confidence": 0.60}
 
     return {"domain": "logistics", "task": "shipment_lookup", "confidence": 0.50}
+
+
+def needs_intent_clarification(task: str, confidence: float) -> bool:
+    """
+    Return True when the orchestrator should stop for intent-level clarification.
+
+    Known logistics/ML tasks bypass the normal confidence threshold so HITL layers
+    can ask task-specific questions. Clarification still triggers for unknown tasks
+    or extremely low confidence.
+    """
+    if confidence < EXTREME_LOW_CONFIDENCE_THRESHOLD:
+        return True
+    if task in TASKS_BYPASS_INTENT_CLARIFICATION:
+        return False
+    if not task or task not in VALID_TASKS:
+        return True
+    if confidence < CONFIDENCE_THRESHOLD:
+        return True
+    return False
 
 
 def build_clarification_question(user_query: str, classification: dict[str, Any] | None = None) -> str:

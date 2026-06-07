@@ -45,6 +45,29 @@ def test_entity_extractor_horizon() -> None:
     assert entities["granularity"] == "daily"
 
 
+@pytest.mark.parametrize(
+    ("query", "expected_city", "expected_horizon"),
+    [
+        ("Forecast demand for Shanghai for 7 days", "Shanghai", "7"),
+        ("Forecast demand for Shenzhen", "Shenzhen", None),
+        ("Shanghai for 7 days", "Shanghai", "7"),
+        ("Forecast demand for Bangalore for 14 days", "Bangalore", "14"),
+    ],
+)
+def test_entity_extractor_demand_city_and_horizon(
+    query: str,
+    expected_city: str,
+    expected_horizon: str | None,
+) -> None:
+    entities = EntityExtractor.extract(query)
+    assert entities.get("city") == expected_city
+    assert entities.get("city_name") == expected_city
+    assert "shipment_id" not in entities
+    if expected_horizon is not None:
+        assert entities.get("horizon") == expected_horizon
+        assert entities.get("granularity") == "daily"
+
+
 def test_query_completeness_eta_missing_order() -> None:
     result = QueryCompletenessChecker.check("eta_prediction", {})
     assert result.complete is False

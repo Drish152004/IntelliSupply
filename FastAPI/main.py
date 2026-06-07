@@ -18,11 +18,35 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from bootstrap import REPO_ROOT
+from bootstrap import REPO_ROOT
 from routers import auth, demand_forecasting, orders, route_prediction, eta_prediction
 from routers.auth import configure_auth
 from services.registry import init_all_services
 
 load_dotenv(REPO_ROOT / ".env")
+
+
+def _load_copilot_router():
+    """Load copilot routes under a dedicated module name (avoids `api` package clash)."""
+    import importlib.util
+    import sys
+
+    if "intellisupply_copilot" in sys.modules:
+        return sys.modules["intellisupply_copilot"].router
+
+    pkg_path = REPO_ROOT / "api"
+    spec = importlib.util.spec_from_file_location(
+        "intellisupply_copilot",
+        pkg_path / "__init__.py",
+        submodule_search_locations=[str(pkg_path)],
+    )
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Unable to load copilot API from {pkg_path}")
+
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["intellisupply_copilot"] = module
+    spec.loader.exec_module(module)
+    return module.router
 
 
 @asynccontextmanager
@@ -46,6 +70,8 @@ app.add_middleware(
 
 configure_auth(app)
 
+copilot_router = _load_copilot_router()
+app.include_router(copilot_router)
 app.include_router(route_prediction.router)
 app.include_router(demand_forecasting.router)
 app.include_router(eta_prediction.router)
@@ -68,6 +94,7 @@ def root():
         "docs": "/docs",
         "services": {
             "auth": "/login",
+            "copilot": "/copilot",
             "orders": "/orders",
             "couriers": "/couriers",
             "route": "/route",

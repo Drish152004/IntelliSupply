@@ -11,9 +11,9 @@ import json
 import logging
 
 from orchestrator.intent_task_classifier import (
-    CONFIDENCE_THRESHOLD,
     build_clarification_question,
     classify_domain_task,
+    needs_intent_clarification,
 )
 from orchestrator.state import AgentState
 
@@ -41,7 +41,7 @@ def _apply_classification(state: AgentState, classification: dict) -> AgentState
         "intent": domain,
     }
 
-    if confidence < CONFIDENCE_THRESHOLD:
+    if needs_intent_clarification(task, confidence):
         question = build_clarification_question(state["user_query"], classification)
         updated["agent_response"] = json.dumps(
             {"status": "awaiting_input", "question": question},
