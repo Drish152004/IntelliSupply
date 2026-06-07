@@ -6,6 +6,7 @@ When a tool needs inputs, it asks for one field at a time.
 """
 
 import json
+import os
 
 from orchestrator.graph import run_orchestrator
 
@@ -24,12 +25,43 @@ def _is_quit(text: str) -> bool:
 
 
 def _print_result(payload: dict | None, raw: str) -> None:
-    if payload and payload.get("status") == "complete":
-        print(f"\nAssistant: {payload.get('answer', raw)}")
+    if not payload:
+        print(f"\n{raw}")
         return
-    if payload and payload.get("status") == "awaiting_input":
+
+    status = payload.get("status")
+    if status == "success":
+        source = payload.get("source", "")
+        data = payload.get("data", {})
+        if source == "cache":
+            print(f"\nAssistant (cached): {data}")
+        elif source == "graph":
+            print(f"\nAssistant (graph): {data}")
+        elif source == "ml":
+            print(f"\nAssistant (ml): {data}")
+        else:
+            print(f"\nAssistant: {data.get('answer', payload.get('message', raw))}")
+        return
+    if status == "clarification_required":
+        return
+    if status == "access_denied":
+        print(f"\nAccess denied: {payload.get('message', raw)}")
+        return
+    if status == "error":
+        print(f"\nError ({payload.get('stage', 'unknown')}): {payload.get('message', raw)}")
         return
     print(f"\n{raw}")
+
+
+def _authenticated_user_from_env() -> dict | None:
+    role = os.environ.get("INTELLISUPPLY_USER_ROLE")
+    if not role or not role.strip():
+        return None
+    user: dict = {"role": role.strip()}
+    courier_id = os.environ.get("INTELLISUPPLY_COURIER_ID")
+    if courier_id and courier_id.strip():
+        user["courier_id"] = courier_id.strip()
+    return user
 
 
 def _run_query_turn(initial_query: str) -> None:
@@ -37,20 +69,24 @@ def _run_query_turn(initial_query: str) -> None:
     logistics_session = None
     inventory_session = None
     user_message = initial_query
+    authenticated_user = _authenticated_user_from_env()
 
     while True:
         result = run_orchestrator(
             user_message,
             logistics_session=logistics_session,
             inventory_session=inventory_session,
+            authenticated_user=authenticated_user,
         )
 
-        print(f"\nDetected intent: {result['intent']}")
+        print(f"\nDetected domain: {result['domain']}")
+        print(f"Detected task: {result['task']}")
+        print(f"Confidence: {result['confidence']}")
         print(f"Selected agent: {result['selected_agent']}")
 
         payload = _parse_response(result["final_response"])
 
-        if payload and payload.get("status") == "awaiting_input":
+        if payload and payload.get("status") == "clarification_required":
             print(f"\nAssistant: {payload.get('question', 'I need a bit more information.')}")
             user_message = input("\nYou: ").strip()
             if _is_quit(user_message):
@@ -59,8 +95,8 @@ def _run_query_turn(initial_query: str) -> None:
             if not user_message:
                 print("Cancelled this request.")
                 return
-            session = payload.get("session")
-            if payload.get("agent") == "inventory":
+            session = (payload.get("data") or {}).get("session")
+            if result.get("domain") == "inventory":
                 inventory_session = session
                 logistics_session = None
             else:

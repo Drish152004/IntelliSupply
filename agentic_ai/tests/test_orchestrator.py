@@ -2,7 +2,7 @@
 Validation script for orchestration flow.
 
 Runs sample queries through the compiled LangGraph workflow and asserts that
-intent detection, routing, agent execution, and response formatting work
+classification, routing, agent execution, and response formatting work
 correctly end-to-end.
 """
 
@@ -24,47 +24,50 @@ app = ORCHESTRATOR_APP
 TEST_CASES = [
     {
         "query": "Show inventory levels for warehouse A",
-        "expected_intent": "inventory",
+        "expected_domain": "inventory",
+        "expected_task": "inventory_nlsql",
         "description": (
-            "Validates LLM intent routing to the inventory agent "
-            "(warehouse / stock questions)."
+            "Validates inventory routing for warehouse / stock questions."
         ),
     },
     {
-        "query": "Forecast demand for next month",
-        "expected_intent": "inventory",
+        "query": "Forecast delivery demand next week",
+        "expected_domain": "logistics",
+        "expected_task": "demand_forecast",
         "description": (
-            "Validates demand/forecast routing to the inventory agent."
+            "Validates demand forecasting routes to the logistics agent."
         ),
     },
     {
         "query": "How many iphones are there in shanghai",
-        "expected_intent": "inventory",
+        "expected_domain": "inventory",
+        "expected_task": "inventory_nlsql",
         "description": (
             "Product/city NL-to-SQL questions route to the inventory agent."
         ),
     },
     {
         "query": "Show shipment ETA",
-        "expected_intent": "logistics",
+        "expected_domain": "logistics",
+        "expected_task": "eta_lookup",
         "description": (
-            "Validates logistics keyword detection (shipment, eta) "
-            "and routing to the logistics agent."
+            "Validates logistics keyword detection and routing."
         ),
     },
     {
         "query": "Optimize delivery routes",
-        "expected_intent": "logistics",
+        "expected_domain": "logistics",
+        "expected_task": "route_prediction",
         "description": (
-            "Validates logistics keyword detection (delivery, route) "
-            "and routing to the logistics agent."
+            "Validates route prediction routing to the logistics agent."
         ),
     },
     {
         "query": "Hello world",
-        "expected_intent": "logistics",
+        "expected_domain": "logistics",
+        "expected_task": "shipment_lookup",
         "description": (
-            "Ambiguous queries default to logistics when LLM picks logistics."
+            "Ambiguous queries default to logistics when classifier picks logistics."
         ),
     },
 ]
@@ -73,11 +76,16 @@ TEST_CASES = [
 def _initial_state(user_query: str) -> AgentState:
     return {
         "user_query": user_query,
+        "domain": "",
+        "task": "",
+        "confidence": 0.0,
         "intent": "",
         "selected_agent": "",
         "ml_task": "",
         "agent_response": "",
         "final_response": "",
+        "user_role": "LOGISTICS",
+        "access_denied": False,
     }
 
 
@@ -117,11 +125,23 @@ def _mock_inventory_awaiting(*_args, **_kwargs) -> dict:
     }
 
 
+def _mock_classify_domain_task(query: str) -> dict:
+    q = query.lower().strip()
+    for case in TEST_CASES:
+        if case["query"].lower().strip() == q:
+            return {
+                "domain": case["expected_domain"],
+                "task": case["expected_task"],
+                "confidence": 0.95,
+            }
+    return {"domain": "logistics", "task": "shipment_lookup", "confidence": 0.95}
+
+
 @patch("agents.logistics_agent.run_logistics_turn", side_effect=_mock_logistics_awaiting)
 @patch("agents.inventory_agent.run_inventory_turn", side_effect=_mock_inventory_awaiting)
 def run_test_case(index: int, test_case: dict, _mock_inv, _mock_log) -> None:
     query = test_case["query"]
-    expected_intent = test_case["expected_intent"]
+    expected_domain = test_case["expected_domain"]
 
     print(f"--- Test Case {index} ---")
     print(f"Description: {test_case['description']}")
@@ -129,44 +149,46 @@ def run_test_case(index: int, test_case: dict, _mock_inv, _mock_log) -> None:
 
     result = app.invoke(_initial_state(query))
 
-    print(f"Detected Intent: {result['intent']}")
+    print(f"Detected Domain: {result['domain']}")
+    print(f"Detected Task: {result['task']}")
+    print(f"Confidence: {result['confidence']}")
     print(f"Selected Agent: {result['selected_agent']}")
     print(f"Final Response: {result['final_response']}")
     print()
 
-    assert result["intent"] == expected_intent
-    assert result["selected_agent"] == expected_intent
+    assert result["domain"] == expected_domain
+    assert result["intent"] == expected_domain
+    assert result["selected_agent"] == expected_domain
     assert result["final_response"]
 
     payload = json.loads(result["final_response"])
-    assert payload.get("status") in {"awaiting_input", "complete"}
-    if expected_intent == "inventory":
-        assert payload.get("agent") == "inventory"
+    assert payload.get("status") in {"clarification_required", "success"}
+    if expected_domain == "inventory":
+        assert payload.get("source") == "inventory"
     else:
-        assert payload.get("agent") == "logistics"
+        assert payload.get("source") in {"agent", "inventory"}
 
 
-@patch("orchestrator.intent.classify_intent", return_value="logistics")
+@patch("orchestrator.intent.classify_domain_task", return_value={
+    "domain": "logistics",
+    "task": "eta_lookup",
+    "confidence": 0.94,
+})
 @patch("agents.logistics_agent.run_logistics_turn", side_effect=_mock_logistics_complete)
-def test_logistics_complete_answer(_mock_turn, _mock_intent) -> None:
+def test_logistics_complete_answer(_mock_turn, _mock_classify) -> None:
     result = app.invoke(_initial_state("What is the shipment ETA?"))
     payload = json.loads(result["final_response"])
-    assert payload.get("status") == "complete"
-    assert payload.get("answer")
-
-
-def _mock_classify_intent(query: str) -> str:
-    q = query.lower().strip()
-    for case in TEST_CASES:
-        if case["query"].lower().strip() == q:
-            return case["expected_intent"]
-    return "logistics"
+    assert payload.get("status") == "success"
+    assert payload.get("data", {}).get("answer")
 
 
 def test_intent_honors_collecting_session() -> None:
     """Numeric follow-ups must not re-route to logistics."""
     state: AgentState = {
         "user_query": "3",
+        "domain": "",
+        "task": "",
+        "confidence": 0.0,
         "intent": "",
         "selected_agent": "",
         "ml_task": "",
@@ -178,6 +200,8 @@ def test_intent_honors_collecting_session() -> None:
         },
     }
     result = detect_intent(state)
+    assert result["domain"] == "inventory"
+    assert result["task"] == "inventory_nlsql"
     assert result["intent"] == "inventory"
 
 
@@ -188,8 +212,8 @@ def main() -> None:
 
     with (
         patch(
-            "orchestrator.intent.classify_intent",
-            side_effect=_mock_classify_intent,
+            "orchestrator.intent.classify_domain_task",
+            side_effect=_mock_classify_domain_task,
         ),
         patch(
             "agents.logistics_agent.run_logistics_turn",
