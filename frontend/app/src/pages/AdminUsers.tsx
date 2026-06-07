@@ -1,41 +1,52 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import Navbar from '@/components/Navbar';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { BadgeCheck, Search, ShieldCheck, UserPlus, Users } from 'lucide-react';
-
-const users = [
-  { id: 'USR-001', name: 'Priya Menon', role: 'Logistics Admin', team: 'Operations', status: 'Active', lastActive: '5 min ago', permissions: 'Full Access' },
-  { id: 'USR-002', name: 'Amit Desai', role: 'Inventory Analyst', team: 'Inventory', status: 'Active', lastActive: '18 min ago', permissions: 'Read / Update' },
-  { id: 'USR-003', name: 'Neha Kapoor', role: 'Compliance Lead', team: 'Risk', status: 'Review', lastActive: '34 min ago', permissions: 'Read Only' },
-  { id: 'USR-004', name: 'Karthik Iyer', role: 'Dispatch Manager', team: 'Logistics', status: 'Pending', lastActive: '1h ago', permissions: 'Limited' },
-  { id: 'USR-005', name: 'Rina Shah', role: 'Warehouse Supervisor', team: 'Warehouse', status: 'Active', lastActive: '2h ago', permissions: 'Read / Update' },
-];
+import { listUsers, type AdminUserRecord } from '@/lib/api';
 
 const statusClasses: Record<string, string> = {
   Active: 'bg-emerald-50 text-emerald-700',
-  Pending: 'bg-amber-50 text-amber-700',
-  Review: 'bg-sky-50 text-sky-700',
-  Suspended: 'bg-red-50 text-red-700',
+  Inactive: 'bg-red-50 text-red-700',
 };
-
-const roles = ['All roles', 'Logistics Admin', 'Inventory Analyst', 'Compliance Lead', 'Dispatch Manager', 'Warehouse Supervisor'];
-const teams = ['All teams', 'Operations', 'Inventory', 'Risk', 'Logistics', 'Warehouse'];
 
 export default function AdminUsers() {
   const [query, setQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState('All roles');
-  const [teamFilter, setTeamFilter] = useState('All teams');
+  const [users, setUsers] = useState<AdminUserRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void listUsers()
+      .then(setUsers)
+      .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load users.'))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const roles = useMemo(
+    () => [
+      'All roles',
+      ...Array.from(new Set(users.map((user) => user.role).filter((role): role is string => Boolean(role)))).sort(),
+    ],
+    [users],
+  );
 
   const filteredUsers = useMemo(() => {
+    const normalizedQuery = query.toLowerCase();
     return users.filter((user) => {
-      const matchesQuery = user.name.toLowerCase().includes(query.toLowerCase()) || user.role.toLowerCase().includes(query.toLowerCase());
+      const name = (user.name ?? '').toLowerCase();
+      const email = (user.email ?? '').toLowerCase();
+      const role = (user.role ?? '').toLowerCase();
+      const matchesQuery =
+        name.includes(normalizedQuery) ||
+        email.includes(normalizedQuery) ||
+        role.includes(normalizedQuery);
       const matchesRole = roleFilter === 'All roles' || user.role === roleFilter;
-      const matchesTeam = teamFilter === 'All teams' || user.team === teamFilter;
-      return matchesQuery && matchesRole && matchesTeam;
+      return matchesQuery && matchesRole;
     });
-  }, [query, roleFilter, teamFilter]);
+  }, [query, roleFilter, users]);
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -46,20 +57,17 @@ export default function AdminUsers() {
             <p className="text-sm uppercase tracking-[0.24em] text-muted-foreground mb-2">Admin center</p>
             <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight">User management</h1>
             <p className="max-w-2xl mt-3 text-sm leading-6 text-muted-foreground">
-              Manage roles, permissions and collaboration access across teams aligned with enterprise governance.
+              Live directory of Profile and Courier accounts from Neo4j.
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
-            <Button
-              asChild
-              className="inline-flex items-center gap-2 rounded-full bg-black px-4 py-2 text-sm font-medium text-white hover:bg-slate-900"
-            >
+            <Button asChild className="inline-flex items-center gap-2 rounded-full bg-black px-4 py-2 text-sm font-medium text-white hover:bg-slate-900">
               <Link to="/register-user">
                 <UserPlus className="h-4 w-4" /> Register user
               </Link>
             </Button>
-            <Button variant="outline" className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium">
-              <BadgeCheck className="h-4 w-4" /> Sync directory
+            <Button variant="outline" className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium" onClick={() => window.location.reload()}>
+              <BadgeCheck className="h-4 w-4" /> Refresh directory
             </Button>
           </div>
         </div>
@@ -69,68 +77,54 @@ export default function AdminUsers() {
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between mb-6">
               <div>
                 <p className="text-sm font-semibold text-foreground">Team access</p>
-                <p className="text-xs text-muted-foreground">Search users, filter by role, and review account status.</p>
+                <p className="text-xs text-muted-foreground">Search users and filter by role.</p>
               </div>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <label className="block text-xs text-muted-foreground">
                   Role
                   <select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)} className="mt-2 w-full rounded-2xl border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition focus:border-primary focus:ring-1 focus:ring-primary/20">
                     {roles.map((role) => (<option key={role}>{role}</option>))}
                   </select>
                 </label>
-                <label className="block text-xs text-muted-foreground">
-                  Team
-                  <select value={teamFilter} onChange={(event) => setTeamFilter(event.target.value)} className="mt-2 w-full rounded-2xl border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition focus:border-primary focus:ring-1 focus:ring-primary/20">
-                    {teams.map((team) => (<option key={team}>{team}</option>))}
-                  </select>
-                </label>
                 <div className="relative">
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    value={query}
-                    onChange={(event) => setQuery(event.target.value)}
-                    placeholder="Search users"
-                    className="pl-9"
-                  />
+                  <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search users" className="pl-9" />
                 </div>
               </div>
             </div>
+
+            {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
+            {loading && <p className="mb-4 text-sm text-muted-foreground">Loading users...</p>}
 
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-border text-left text-sm">
                 <thead className="border-b border-border bg-background/70">
                   <tr>
                     <th className="px-4 py-3 font-medium text-muted-foreground">Name</th>
+                    <th className="px-4 py-3 font-medium text-muted-foreground">Email</th>
                     <th className="px-4 py-3 font-medium text-muted-foreground">Role</th>
-                    <th className="px-4 py-3 font-medium text-muted-foreground">Team</th>
+                    <th className="px-4 py-3 font-medium text-muted-foreground">Type</th>
                     <th className="px-4 py-3 font-medium text-muted-foreground">Status</th>
-                    <th className="px-4 py-3 font-medium text-muted-foreground">Last Active</th>
-                    <th className="px-4 py-3 font-medium text-muted-foreground">Permissions</th>
-                    <th className="px-4 py-3 font-medium text-muted-foreground">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {filteredUsers.map((user) => (
-                    <tr key={user.id} className="hover:bg-muted/80 transition-colors">
-                      <td className="px-4 py-4">
-                        <p className="font-semibold text-foreground">{user.name}</p>
-                        <p className="text-xs text-muted-foreground">{user.id}</p>
-                      </td>
-                      <td className="px-4 py-4 text-foreground">{user.role}</td>
-                      <td className="px-4 py-4 text-muted-foreground">{user.team}</td>
-                      <td className="px-4 py-4">
-                        <span className={`inline-flex rounded-full px-3 py-1 text-[11px] font-semibold ${statusClasses[user.status]}`}>{user.status}</span>
-                      </td>
-                      <td className="px-4 py-4 text-muted-foreground">{user.lastActive}</td>
-                      <td className="px-4 py-4 text-muted-foreground">{user.permissions}</td>
-                      <td className="px-4 py-4">
-                        <div className="flex flex-wrap gap-2">
-                          <button className="rounded-full border border-border bg-muted px-3 py-1 text-xs text-muted-foreground transition hover:border-gray-300">Edit</button>
-                          <button className="rounded-full border border-border bg-muted px-3 py-1 text-xs text-muted-foreground transition hover:border-gray-300">Reset</button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {filteredUsers.map((user) => {
+                    const status = user.is_active === false ? 'Inactive' : 'Active';
+                    return (
+                      <tr key={`${user.account_type}-${user.id}`} className="hover:bg-muted/80 transition-colors">
+                        <td className="px-4 py-4">
+                          <p className="font-semibold text-foreground">{user.name ?? 'Unnamed user'}</p>
+                          <p className="text-xs text-muted-foreground">{user.id ?? '—'}</p>
+                        </td>
+                        <td className="px-4 py-4 text-muted-foreground">{user.email ?? '—'}</td>
+                        <td className="px-4 py-4 text-foreground">{user.role ?? '—'}</td>
+                        <td className="px-4 py-4 text-muted-foreground">{user.account_type ?? 'Profile'}</td>
+                        <td className="px-4 py-4">
+                          <span className={`inline-flex rounded-full px-3 py-1 text-[11px] font-semibold ${statusClasses[status]}`}>{status}</span>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -142,30 +136,23 @@ export default function AdminUsers() {
                 <ShieldCheck className="h-5 w-5 text-sky-600" />
                 <div>
                   <p className="text-sm font-semibold text-foreground">Org access snapshot</p>
-                  <p className="text-xs text-muted-foreground">Current breakdown by permission posture.</p>
+                  <p className="text-xs text-muted-foreground">Current directory totals.</p>
                 </div>
               </div>
               <div className="space-y-3">
                 <div className="flex items-center justify-between gap-3 rounded-3xl bg-slate-50 px-4 py-3">
                   <div>
-                    <p className="text-sm font-semibold text-foreground">Teams onboarded</p>
-                    <p className="text-xs text-muted-foreground">6 cross-functional groups</p>
+                    <p className="text-sm font-semibold text-foreground">Accounts loaded</p>
+                    <p className="text-xs text-muted-foreground">Profiles and couriers</p>
                   </div>
-                  <span className="text-2xl font-semibold text-black">6</span>
+                  <span className="text-2xl font-semibold text-black">{users.length}</span>
                 </div>
                 <div className="flex items-center justify-between gap-3 rounded-3xl bg-slate-50 px-4 py-3">
                   <div>
-                    <p className="text-sm font-semibold text-foreground">Access reviews due</p>
-                    <p className="text-xs text-muted-foreground">Next 7 days</p>
+                    <p className="text-sm font-semibold text-foreground">Active accounts</p>
+                    <p className="text-xs text-muted-foreground">Currently enabled</p>
                   </div>
-                  <span className="text-2xl font-semibold text-black">12</span>
-                </div>
-                <div className="flex items-center justify-between gap-3 rounded-3xl bg-slate-50 px-4 py-3">
-                  <div>
-                    <p className="text-sm font-semibold text-foreground">Safety score</p>
-                    <p className="text-xs text-muted-foreground">Role-based access maturity</p>
-                  </div>
-                  <span className="text-2xl font-semibold text-black">88%</span>
+                  <span className="text-2xl font-semibold text-black">{users.filter((user) => user.is_active !== false).length}</span>
                 </div>
               </div>
             </div>
@@ -179,9 +166,9 @@ export default function AdminUsers() {
                 </div>
               </div>
               <div className="space-y-3">
-                <button className="w-full rounded-2xl bg-black px-4 py-3 text-sm font-medium text-white transition hover:bg-slate-900">Review pending invites</button>
-                <button className="w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm font-medium text-foreground transition hover:border-gray-300">Audit role assignments</button>
-                <button className="w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm font-medium text-foreground transition hover:border-gray-300">Generate compliance report</button>
+                <Button asChild className="w-full rounded-2xl bg-black px-4 py-3 text-sm font-medium text-white transition hover:bg-slate-900">
+                  <Link to="/register-user">Register new user</Link>
+                </Button>
               </div>
             </div>
           </aside>

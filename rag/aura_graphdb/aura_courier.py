@@ -16,7 +16,6 @@ def get_courier_by_email(email: str):
     query = """
     MATCH (c:Courier {email: $email})
     OPTIONAL MATCH (c)-[:HAS_ROLE]->(r:Role)
-    OPTIONAL MATCH (c)-[:ASSIGNED_TO_HUB]->(h:Hub)
     OPTIONAL MATCH (c)-[:OPERATES_IN]->(city:City)
 
     RETURN
@@ -27,10 +26,10 @@ def get_courier_by_email(email: str):
         c.ds AS ds,
         c.start_lat_wgs84 AS start_lat_wgs84,
         c.start_lon_wgs84 AS start_lon_wgs84,
-        city.city_id AS city_id,
-        city.city_name AS city_name,
-        h.hub_id AS hub_id,
-        h.name AS hub_name,
+        coalesce(city.city_id, c.city_id) AS city_id,
+        coalesce(city.city_name, c.city_name) AS city_name,
+        c.hub_id AS hub_id,
+        c.hub_name AS hub_name,
         r.role_id AS role_id,
         r.role_name AS role
     LIMIT 1

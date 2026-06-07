@@ -212,6 +212,35 @@ Creates:
 
 This is required because courier creation and order creation both depend on existing Hub and City nodes.
 
+### Profile auth (Supabase → Aura sync)
+
+User accounts are stored in **Supabase** (`profiles`, `user_roles`, `roles`). After registration, profiles are mirrored into Aura:
+
+```python
+from aura_graphdb.supabase_auth import register_user_in_supabase
+from aura_graphdb.aura_profiles import sync_profile_to_aura
+
+supabase_result = register_user_in_supabase(...)
+if supabase_result["success"]:
+    user = supabase_result["user"]
+    sync_profile_to_aura(
+        profile_id=user["id"],
+        name=user["name"],
+        email=user["email"],
+        role_id=user["role_id"],
+        role_name=user["role"],
+    )
+```
+
+`register_user_with_password()` in `aura_auth.py` performs this automatically.
+
+**Reseed Aura (clear + logistics + profile sync):**
+
+```bash
+cd rag
+python -m aura_graphdb.aura_reseed
+```
+
 Final simple flow
 Supabase cities/hubs
         ↓

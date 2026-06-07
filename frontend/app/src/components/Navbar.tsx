@@ -15,7 +15,7 @@ import { useAuth, type AppRole } from '@/lib/auth';
 
 const ALL_NAV_ITEMS = [
   { label: 'Dashboard', to: '/admin/dashboard', icon: LayoutDashboard, roles: ['admin'] as AppRole[] },
-  { label: 'Logistics', to: '/logistics', icon: Package, roles: ['admin', 'logistics_manager'] as AppRole[] },
+  { label: 'Logistics', to: '/logistics', icon: Package, roles: ['admin', 'logistics_manager', 'courier'] as AppRole[] },
   { label: 'Products', to: '/product-management', icon: Package2, roles: ['admin', 'inventory_manager'] as AppRole[] },
   { label: 'Inventory', to: '/inventory', icon: ShieldCheck, roles: ['admin', 'inventory_manager'] as AppRole[] },
   { label: 'Add Users', to: '/admin/users', icon: UserPlus, roles: ['admin'] as AppRole[] },
@@ -26,6 +26,7 @@ const ROLE_LABELS: Record<AppRole, string> = {
   admin: 'Admin',
   logistics_manager: 'Logistics',
   inventory_manager: 'Inventory',
+  courier: 'Courier',
 };
 
 export default function Navbar() {

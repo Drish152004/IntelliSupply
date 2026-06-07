@@ -48,6 +48,16 @@ AURA_CONSTRAINTS = [
     REQUIRE c.email IS UNIQUE
     """,
     """
+    CREATE CONSTRAINT aura_profile_id_unique IF NOT EXISTS
+    FOR (p:Profile)
+    REQUIRE p.id IS UNIQUE
+    """,
+    """
+    CREATE CONSTRAINT aura_profile_email_unique IF NOT EXISTS
+    FOR (p:Profile)
+    REQUIRE p.email IS UNIQUE
+    """,
+    """
     CREATE CONSTRAINT aura_role_id_unique IF NOT EXISTS
     FOR (r:Role)
     REQUIRE r.role_id IS UNIQUE

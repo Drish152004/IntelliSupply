@@ -2,14 +2,21 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from dependencies.auth import TokenUser, get_current_user, require_roles
 from services import demand_forecasting as demand_svc
 
 router = APIRouter(prefix="/demand", tags=["demand_forecasting"])
+
+AuthenticatedUser = Annotated[TokenUser, Depends(get_current_user)]
+LogisticsUser = Annotated[
+    TokenUser,
+    Depends(require_roles("admin", "logistics_manager", "inventory_manager")),
+]
 
 
 class FeatureRecord(BaseModel):
@@ -43,7 +50,8 @@ def health() -> dict[str, Any]:
 
 
 @router.get("/meta")
-def meta() -> dict[str, Any]:
+def meta(current_user: AuthenticatedUser) -> dict[str, Any]:
+    del current_user
     try:
         return demand_svc.get_meta()
     except Exception as exc:
@@ -51,7 +59,8 @@ def meta() -> dict[str, Any]:
 
 
 @router.post("/predict")
-def predict_endpoint(body: PredictRequest) -> dict[str, Any]:
+def predict_endpoint(body: PredictRequest, current_user: LogisticsUser) -> dict[str, Any]:
+    del current_user
     try:
         records = [r.model_dump() for r in body.records]
         return demand_svc.predict_demand(records)

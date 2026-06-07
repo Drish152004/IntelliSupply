@@ -10,7 +10,7 @@ if str(_REPO_ROOT) not in sys.path:
 from config.env import load_env
 from openai import OpenAI
 
-from graphdb.neo4j_connection import Neo4jConnection
+from graphdb.neo4j_connection import Neo4jConnection  # noqa: F401 — legacy local dev
 
 load_env()
 
@@ -32,7 +32,7 @@ MODEL_NAME = os.getenv("GRAPH_LLM_MODEL", "meta/llama-3.1-8b-instruct")
 # =========================================================
 
 GRAPH_SCHEMA = """
-You are working with a Neo4j logistics graph.
+You are working with a Neo4j logistics graph (Aura).
 
 Node labels and properties:
 
@@ -40,114 +40,58 @@ City:
 - city_id
 - city_name
 
-Courier:
-- courier_id
-- status
-
 Hub:
 - hub_id
 - name
-- poi_lat
-- poi_lng
 - latitude
 - longitude
-- aoi_id
-- typecode
-- rep_dipan_id
-- is_warehouse
-- is_delivery_hub
-- is_mixed_hub
-- capacity
+- city_name
 
-HubMetrics:
+Courier:
+- courier_id
+- name
+- email
+- city_name
 - hub_id
-- pickup_count
-- delivery_count
-- total
-- pickup_ratio
-- delivery_ratio
-
-GridRoute:
-- grid_route_id
-- from_grid_x
-- from_grid_y
-- to_grid_x
-- to_grid_y
-- avg_time_sec
-- avg_distance_km
-- avg_speed_kmph
-- num_trips
-
-PickupOrder:
-- pickup_id
-- from_dipan_id
-- accept_time
-- book_start_time
-- expect_got_time
-- poi_lng
-- poi_lat
-- aoi_id
-- typecode
-- got_time
-- got_gps_time
-- got_gps_lng
-- got_gps_lat
+- hub_name
 - ds
+- is_active
 
-DeliveryOrder:
-- delivery_id
-- from_dipan_id
-- poi_lng
-- poi_lat
-- aoi_id
-- typecode
+Order:
+- order_id
+- from_hub_name
+- to_hub_name
+- city_name
+- delivery_day
 - receipt_time
-- receipt_lng
-- receipt_lat
-- sign_time
-- ds
+- assigned_courier_id
+- lat_wgs84
+- lon_wgs84
 
-CourierSegment:
-- segment_id
-- prev_lat
-- prev_lng
-- lat
-- lng
-- distance_m
-- distance_km
-- time_sec
-- time_hr
-- speed_kmph
+RoutePrediction:
+- route_prediction_id
+- courier_id
+- city_name
+- delivery_day
+- predicted_sequence
 
 Relationships:
 
-(:Courier)-[:OPERATES_IN]->(:City)
 (:Hub)-[:LOCATED_IN]->(:City)
-(:Hub)-[:HAS_METRICS]->(:HubMetrics)
-
-(:Hub)-[:ROUTE_TO {
-    route_id,
-    avg_time_min,
-    avg_distance_km,
-    num_trips
-}]->(:Hub)
-
-(:PickupOrder)-[:ASSIGNED_TO]->(:Courier)
-(:PickupOrder)-[:BELONGS_TO_CITY]->(:City)
-
-(:DeliveryOrder)-[:ASSIGNED_TO]->(:Courier)
-(:DeliveryOrder)-[:BELONGS_TO_CITY]->(:City)
-
-(:Courier)-[:TRAVELLED_SEGMENT]->(:CourierSegment)
-(:CourierSegment)-[:USED_GRID_ROUTE]->(:GridRoute)
+(:Courier)-[:OPERATES_IN]->(:City)
+(:Courier)-[:ASSIGNED_TO_HUB]->(:Hub)
+(:Order)-[:FROM_HUB]->(:Hub)
+(:Order)-[:TO_HUB]->(:Hub)
+(:Order)-[:ASSIGNED_TO]->(:Courier)
+(:Order)-[:BELONGS_TO_CITY]->(:City)
+(:RoutePrediction)-[:FOR_COURIER]->(:Courier)
 
 Important:
-- DeliveryOrder may not be loaded yet.
-- PickupOrder is currently partially loaded.
-- Use LIMIT for large result queries.
+- Hub names look like Hub_1, Hub_12 (match on h.name).
+- Orders do NOT have shipment_id; use order_id only.
+- For counts between hubs, match Order nodes with from_hub_name and to_hub_name.
+- Use LIMIT 20 unless the query is a count or aggregation.
 - Return only valid Cypher.
-- Do not explain the Cypher.
-- Do not use SQL.
 """
 
 
@@ -175,12 +119,12 @@ Rules:
 7. Every variable used in RETURN must be defined in MATCH or WITH.
 8. For hub-city questions, use:
    MATCH (h:Hub)-[:LOCATED_IN]->(c:City)
-9. For hub metrics questions, use:
-   MATCH (h:Hub)-[:HAS_METRICS]->(m:HubMetrics)
-10. For pickup-courier questions, use:
-   MATCH (p:PickupOrder)-[:ASSIGNED_TO]->(c:Courier)
-11. For pickup-city questions, use:
-   MATCH (p:PickupOrder)-[:BELONGS_TO_CITY]->(city:City)
+9. For shipment/order questions, use Order nodes and FROM_HUB / TO_HUB:
+   MATCH (o:Order)-[:FROM_HUB]->(fromHub:Hub)
+   MATCH (o:Order)-[:TO_HUB]->(toHub:Hub)
+10. For counts between two hubs, filter on from_hub_name / to_hub_name or hub names:
+   MATCH (o:Order) WHERE o.from_hub_name = 'Hub_1' AND o.to_hub_name = 'Hub_2' RETURN count(o) AS shipment_count
+11. Do not reference shipment_id (property does not exist).
 """
 
     response = client.chat.completions.create(
@@ -238,12 +182,16 @@ def validate_cypher(cypher: str):
 # RUN CYPHER
 # =========================================================
 
-def run_cypher(cypher: str):
-    conn = Neo4jConnection()
+def run_cypher(cypher: str, parameters=None):
+    rag_path = str(_REPO_ROOT / "rag")
+    if rag_path not in sys.path:
+        sys.path.insert(0, rag_path)
 
+    from aura_graphdb.aura_connection import AuraConnection
+
+    conn = AuraConnection()
     try:
-        result = conn.execute_query(cypher)
-        return result
+        return conn.execute_query(cypher, parameters or {})
     finally:
         conn.close()
 

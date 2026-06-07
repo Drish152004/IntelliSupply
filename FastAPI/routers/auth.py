@@ -8,11 +8,16 @@ from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
 from bootstrap import BACKEND_ROOT
+from dependencies.auth import create_access_token, get_current_user, get_current_user_optional, TokenUser
 from aura_graphdb.aura_auth import (
+    count_profiles,
+    get_user_by_id,
     login_or_register_google_user,
     login_user_with_password,
     register_user_with_password,
+    update_user_profile,
 )
+from aura_graphdb.aura_courier import get_courier_by_email, login_courier
 
 router = APIRouter(tags=["auth"])
 
@@ -38,7 +43,7 @@ def redirect_to(path: str):
     return RedirectResponse(url=path, status_code=303)
 
 
-def get_current_user(request: Request):
+def get_session_user(request: Request):
     return request.session.get("user")
 
 
@@ -177,7 +182,7 @@ async def google_callback(request: Request):
 
 @router.get("/dashboard")
 async def dashboard(request: Request):
-    user = get_current_user(request)
+    user = get_session_user(request)
     if not user:
         return redirect_to("/login")
 
@@ -196,12 +201,67 @@ async def logout(request: Request):
 
 # ─── JSON API endpoints for the React frontend ────────────────────────────────
 
+from fastapi import Depends
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
+
+
+class ProfileUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+
+
+def _serialize_user(user: dict, *, courier_id: str | None = None) -> dict:
+    payload = {
+        "id": user.get("id") or user.get("courier_id"),
+        "name": user.get("name"),
+        "email": user.get("email"),
+        "role_id": user.get("role_id"),
+        "role": user.get("role"),
+    }
+    if courier_id:
+        payload["courier_id"] = courier_id
+    return payload
+
+
+def _auth_response(user: dict, *, courier_id: str | None = None) -> dict:
+    serialized = _serialize_user(user, courier_id=courier_id)
+    token = create_access_token({**serialized, "courier_id": courier_id})
+    return {
+        "success": True,
+        "access_token": token,
+        "token_type": "bearer",
+        "user": serialized,
+    }
+
+
+def _try_login(email: str, password: str) -> dict | None:
+    from aura_graphdb.supabase_auth import get_user_by_email
+
+    profile = get_user_by_email(email)
+    if profile:
+        result = login_user_with_password(email=email, password=password)
+        if result["success"]:
+            return _auth_response(result["user"])
+        return None
+
+    courier_result = login_courier(email=email, password=password)
+    if courier_result["success"]:
+        courier = courier_result["courier"]
+        user = {
+            "id": courier["courier_id"],
+            "name": courier["name"],
+            "email": courier["email"],
+            "role_id": courier.get("role_id"),
+            "role": courier.get("role") or "courier",
+        }
+        return _auth_response(user, courier_id=courier["courier_id"])
+
+    return None
 
 
 @router.post("/api/login")
 async def api_login(request: Request):
-    """JSON login endpoint for the React frontend. Reuses existing aura_auth logic."""
+    """JSON login endpoint for the React frontend. Returns JWT access token."""
     try:
         body = await request.json()
     except Exception:
@@ -214,19 +274,22 @@ async def api_login(request: Request):
         return JSONResponse({"success": False, "message": "Email and password are required."}, status_code=400)
 
     try:
-        result = login_user_with_password(email=email, password=password)
+        auth_payload = _try_login(email, password)
     except Exception as exc:
         return JSONResponse({"success": False, "message": str(exc)}, status_code=503)
 
-    if not result["success"]:
-        return JSONResponse({"success": False, "message": result["message"]}, status_code=401)
+    if not auth_payload:
+        return JSONResponse({"success": False, "message": "Invalid email or password."}, status_code=401)
 
-    return JSONResponse({"success": True, "user": result["user"]})
+    return JSONResponse(auth_payload)
 
 
 @router.post("/api/register")
-async def api_register(request: Request):
-    """JSON register endpoint for the React frontend. Reuses existing aura_auth logic."""
+async def api_register(
+    request: Request,
+    current_user: TokenUser | None = Depends(get_current_user_optional),
+):
+    """JSON register endpoint for the React frontend. Returns JWT access token."""
     try:
         body = await request.json()
     except Exception:
@@ -240,6 +303,13 @@ async def api_register(request: Request):
     if not name or not email or not password:
         return JSONResponse({"success": False, "message": "Name, email, and password are required."}, status_code=400)
 
+    if count_profiles() > 0:
+        if current_user is None or current_user.role != "admin":
+            return JSONResponse(
+                {"success": False, "message": "Admin authentication required to register users."},
+                status_code=403,
+            )
+
     try:
         result = register_user_with_password(name=name, email=email, password=password, selected_role=role)
     except Exception as exc:
@@ -248,4 +318,50 @@ async def api_register(request: Request):
     if not result["success"]:
         return JSONResponse({"success": False, "message": result["message"]}, status_code=422)
 
-    return JSONResponse({"success": True, "user": result["user"]}, status_code=201)
+    return JSONResponse(_auth_response(result["user"]), status_code=201)
+
+
+@router.get("/api/me")
+async def api_me(current_user: TokenUser = Depends(get_current_user)):
+    if current_user.role == "courier":
+        courier = get_courier_by_email(current_user.email)
+        if courier:
+            return JSONResponse(
+                {
+                    "success": True,
+                    "user": _serialize_user(
+                        {
+                            "id": courier["courier_id"],
+                            "name": courier["name"],
+                            "email": courier["email"],
+                            "role_id": courier.get("role_id"),
+                            "role": courier.get("role") or "courier",
+                        },
+                        courier_id=courier["courier_id"],
+                    ),
+                }
+            )
+
+    profile = get_user_by_id(current_user.id)
+    if not profile:
+        return JSONResponse({"success": False, "message": "User not found."}, status_code=404)
+
+    return JSONResponse({"success": True, "user": _serialize_user(profile)})
+
+
+@router.patch("/api/me")
+async def api_update_me(
+    body: ProfileUpdateRequest,
+    current_user: TokenUser = Depends(get_current_user),
+):
+    if current_user.role == "courier":
+        return JSONResponse(
+            {"success": False, "message": "Courier profile updates are not supported yet."},
+            status_code=422,
+        )
+
+    updated = update_user_profile(current_user.id, name=body.name)
+    if not updated:
+        return JSONResponse({"success": False, "message": "User not found."}, status_code=404)
+
+    return JSONResponse({"success": True, "user": _serialize_user(updated)})

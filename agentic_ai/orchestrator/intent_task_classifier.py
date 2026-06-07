@@ -21,6 +21,7 @@ EXTREME_LOW_CONFIDENCE_THRESHOLD = 0.30
 
 # Known tasks that defer clarification to query completeness / context resolution.
 TASKS_BYPASS_INTENT_CLARIFICATION: frozenset[str] = frozenset({
+    "inventory_nlsql",
     "demand_forecast",
     "eta_prediction",
     "route_prediction",
@@ -79,8 +80,12 @@ Rules:
 
 FEW_SHOT_EXAMPLES: list[tuple[str, dict[str, Any]]] = [
     (
-        "How many laptops are available in Hub 5?",
-        {"domain": "inventory", "task": "inventory_nlsql", "confidence": 0.96},
+        "How many iPhones are in Shanghai?",
+        {"domain": "inventory", "task": "inventory_nlsql", "confidence": 0.95},
+    ),
+    (
+        "How many shipments are there between hub 1 and hub 2?",
+        {"domain": "logistics", "task": "shipment_lookup", "confidence": 0.88},
     ),
     (
         "Forecast delivery demand next week",
@@ -125,6 +130,9 @@ INVENTORY_KEYWORDS = (
     "available",
     "laptop",
     "laptops",
+    "iphone",
+    "iphones",
+    "how many",
 )
 
 LOGISTICS_KEYWORDS = (
@@ -207,7 +215,10 @@ def _keyword_fallback(user_query: str) -> dict[str, Any]:
     logistics_score = sum(1 for keyword in LOGISTICS_KEYWORDS if keyword in query)
 
     if inventory_score > logistics_score and inventory_score > 0:
-        return {"domain": "inventory", "task": "inventory_nlsql", "confidence": 0.65}
+        return {"domain": "inventory", "task": "inventory_nlsql", "confidence": 0.82}
+
+    if re.search(r"\bhow many\b", query) and "shipment" in query:
+        return {"domain": "logistics", "task": "shipment_lookup", "confidence": 0.85}
 
     if "next stop" in query or ("next" in query and "stop" in query):
         return {"domain": "logistics", "task": "next_stop_prediction", "confidence": 0.75}

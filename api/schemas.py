@@ -19,6 +19,10 @@ class CopilotRequest(BaseModel):
         default=None,
         description="Multi-turn logistics session state from a prior response.",
     )
+    inventory_session: dict[str, Any] | None = Field(
+        default=None,
+        description="Multi-turn inventory session state from a prior response.",
+    )
 
     model_config = {
         "json_schema_extra": {

@@ -73,6 +73,16 @@ class OrderResponse(BaseModel):
     to_hub_name: str | None = None
     cluster_id: int | None = None
 
+    @field_validator("cluster_id", mode="before")
+    @classmethod
+    def coerce_cluster_id(cls, value: Any) -> int | None:
+        if value is None or value == "":
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
 
 class RoutePredictionResponse(BaseModel):
     route_prediction_id: str

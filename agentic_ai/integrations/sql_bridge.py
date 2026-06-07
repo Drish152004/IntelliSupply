@@ -40,9 +40,10 @@ def _ensure_sql_generator():
     chatbot_path = str(CHATBOT_ROOT)
     if chatbot_path not in sys.path:
         sys.path.insert(0, chatbot_path)
-    from sql_generator import generate_sql
+    import env_setup  # noqa: F401
+    import sql_generator as sg
 
-    _generate_sql = generate_sql
+    _generate_sql = sg.generate_sql
     return _generate_sql
 
 

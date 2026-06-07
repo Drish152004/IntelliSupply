@@ -1,4 +1,4 @@
-from chatbot import env_setup  # noqa: F401
+import env_setup  # noqa: F401
 import os
 from openai import OpenAI
 

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 
 from graph_retrieval.cypher_generator import CypherGenerator
 from context.entity_extractor import EntityExtractor
@@ -52,6 +53,13 @@ def retrieve_from_graph(state: AgentState) -> AgentState:
     }
 
     if domain == "inventory" or not CypherGenerator.is_graph_answerable(task):
+        return updated
+
+    if task == "shipment_lookup" and re.search(
+        r"\b(how many|count|number of)\b",
+        user_query,
+        re.I,
+    ):
         return updated
 
     if not role:

@@ -1,42 +1,56 @@
+import { useEffect, useState } from 'react';
 import Navbar from '@/components/Navbar';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { TrendingUp, ShieldCheck, BarChart as BarIcon, Activity, Users } from 'lucide-react';
-
-const kpis = [
-  { label: 'Incident Reduction', value: '18%', detail: 'vs last quarter' },
-  { label: 'Audit Coverage', value: '96%', detail: 'Enterprise-wide' },
-  { label: 'Threat detections', value: '32', detail: 'Last 30 days' },
-  { label: 'Data access reviews', value: '14 due', detail: 'This week' },
-];
-
-const incidentSeries = [
-  { month: 'Jan', incidents: 46, mitigated: 33 },
-  { month: 'Feb', incidents: 41, mitigated: 35 },
-  { month: 'Mar', incidents: 38, mitigated: 36 },
-  { month: 'Apr', incidents: 34, mitigated: 33 },
-  { month: 'May', incidents: 30, mitigated: 29 },
-  { month: 'Jun', incidents: 28, mitigated: 27 },
-];
-
-const trafficSeries = [
-  { month: 'Jan', review: 520, escalation: 110 },
-  { month: 'Feb', review: 540, escalation: 103 },
-  { month: 'Mar', review: 560, escalation: 98 },
-  { month: 'Apr', review: 590, escalation: 86 },
-  { month: 'May', review: 610, escalation: 72 },
-  { month: 'Jun', review: 640, escalation: 61 },
-];
-
-const roleDistribution = [
-  { name: 'Admin', value: 22 },
-  { name: 'Ops', value: 34 },
-  { name: 'Analyst', value: 18 },
-  { name: 'Support', value: 26 },
-];
-
-const pieColors = ['#0f172a', '#0369a1', '#16a34a', '#f59e0b'];
+import { getDashboardSummary, listUsers } from '@/lib/api';
 
 export default function AdminAnalytics() {
+  const [summary, setSummary] = useState<{ recent_shipments: number; logistics_reliability_pct: number } | null>(null);
+  const [userCount, setUserCount] = useState(0);
+
+  useEffect(() => {
+    void getDashboardSummary()
+      .then((data) => setSummary({ recent_shipments: data.recent_shipments, logistics_reliability_pct: data.logistics_reliability_pct }))
+      .catch(() => undefined);
+    void listUsers()
+      .then((users) => setUserCount(users.length))
+      .catch(() => undefined);
+  }, []);
+
+  const kpis = [
+    { label: 'Recent shipments', value: String(summary?.recent_shipments ?? '—'), detail: 'Neo4j orders' },
+    { label: 'Logistics reliability', value: `${summary?.logistics_reliability_pct ?? '—'}%`, detail: 'Derived metric' },
+    { label: 'Directory accounts', value: String(userCount || '—'), detail: 'Profiles + couriers' },
+    { label: 'Data access reviews', value: '14 due', detail: 'This week' },
+  ];
+
+  const incidentSeries = [
+    { month: 'Jan', incidents: 46, mitigated: 33 },
+    { month: 'Feb', incidents: 41, mitigated: 35 },
+    { month: 'Mar', incidents: 38, mitigated: 36 },
+    { month: 'Apr', incidents: 34, mitigated: 33 },
+    { month: 'May', incidents: 30, mitigated: 29 },
+    { month: 'Jun', incidents: 28, mitigated: 27 },
+  ];
+
+  const trafficSeries = [
+    { month: 'Jan', review: 520, escalation: 110 },
+    { month: 'Feb', review: 540, escalation: 103 },
+    { month: 'Mar', review: 560, escalation: 98 },
+    { month: 'Apr', review: 590, escalation: 86 },
+    { month: 'May', review: 610, escalation: 72 },
+    { month: 'Jun', review: 640, escalation: 61 },
+  ];
+
+  const roleDistribution = [
+    { name: 'Admin', value: 22 },
+    { name: 'Ops', value: 34 },
+    { name: 'Analyst', value: 18 },
+    { name: 'Support', value: 26 },
+  ];
+
+  const pieColors = ['#0f172a', '#0369a1', '#16a34a', '#f59e0b'];
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <Navbar />

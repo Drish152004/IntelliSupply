@@ -23,6 +23,7 @@ if str(FASTAPI_ROOT) not in sys.path:
 
 import bootstrap  # noqa: F401 — path setup
 
+from dependencies.auth import create_access_token
 from orchestrator.response_formatter import ResponseFormatter
 from orchestrator.state import AgentState
 
@@ -49,6 +50,20 @@ def _orchestrator_result(**extra: Any) -> AgentState:
     formatter = ResponseFormatter()
     state["final_response"] = formatter.serialize(state)
     return state
+
+
+def _auth_header(role: str = "logistics_manager", *, courier_id: str | None = None) -> dict[str, str]:
+    user = {
+        "id": "test-user",
+        "name": "Test User",
+        "email": "test@example.com",
+        "role": role,
+        "role_id": 4,
+    }
+    if courier_id:
+        user["courier_id"] = courier_id
+    token = create_access_token(user)
+    return {"Authorization": f"Bearer {token}"}
 
 
 @pytest.fixture
@@ -82,10 +97,8 @@ def test_inventory_query(mock_run: patch, client: TestClient) -> None:
 
     response = client.post(
         "/copilot/query",
-        json={
-            "query": "Show inventory in Bangalore",
-            "authenticated_user": {"role": "inventory_manager"},
-        },
+        headers=_auth_header("inventory_manager"),
+        json={"query": "Show inventory in Bangalore"},
     )
 
     assert response.status_code == 200
@@ -95,6 +108,7 @@ def test_inventory_query(mock_run: patch, client: TestClient) -> None:
     mock_run.assert_called_once_with(
         "Show inventory in Bangalore",
         logistics_session=None,
+        inventory_session=None,
         authenticated_user={"role": "inventory_manager"},
     )
 
@@ -112,10 +126,8 @@ def test_eta_prediction(mock_run: patch, client: TestClient) -> None:
 
     response = client.post(
         "/copilot/query",
-        json={
-            "query": "Predict ETA for order ORD123",
-            "authenticated_user": {"role": "logistics_manager"},
-        },
+        headers=_auth_header("logistics_manager"),
+        json={"query": "Predict ETA for order ORD123"},
     )
 
     assert response.status_code == 200
@@ -139,6 +151,7 @@ def test_route_prediction(mock_run: patch, client: TestClient) -> None:
 
     response = client.post(
         "/copilot/query",
+        headers=_auth_header("logistics_manager"),
         json={"query": "Generate route for order ORD123"},
     )
 
@@ -161,10 +174,8 @@ def test_courier_rbac(mock_run: patch, client: TestClient) -> None:
 
     response = client.post(
         "/copilot/query",
-        json={
-            "query": "Show my route",
-            "authenticated_user": {"role": "courier", "courier_id": "C001"},
-        },
+        headers=_auth_header("courier", courier_id="C001"),
+        json={"query": "Show my route"},
     )
 
     assert response.status_code == 200
@@ -175,6 +186,7 @@ def test_courier_rbac(mock_run: patch, client: TestClient) -> None:
     mock_run.assert_called_once_with(
         "Show my route",
         logistics_session=None,
+        inventory_session=None,
         authenticated_user={"role": "courier", "courier_id": "C001"},
     )
 
@@ -195,10 +207,8 @@ def test_access_denied(mock_run: patch, client: TestClient) -> None:
 
     response = client.post(
         "/copilot/query",
-        json={
-            "query": "Predict ETA for order ORD123",
-            "authenticated_user": {"role": "inventory_manager"},
-        },
+        headers=_auth_header("inventory_manager"),
+        json={"query": "Predict ETA for order ORD123"},
     )
 
     assert response.status_code == 200
@@ -225,6 +235,7 @@ def test_debug_endpoint(mock_run: patch, client: TestClient) -> None:
 
     response = client.post(
         "/copilot/debug",
+        headers=_auth_header("logistics_manager"),
         json={"query": "Predict ETA for order ORD123"},
     )
 
@@ -240,11 +251,20 @@ def test_debug_endpoint(mock_run: patch, client: TestClient) -> None:
     assert payload["final_response"]["source"] == "ml"
 
 
+def test_query_requires_auth(client: TestClient) -> None:
+    response = client.post("/copilot/query", json={"query": "Predict ETA for order ORD123"})
+    assert response.status_code == 401
+
+
 @patch("intellisupply_copilot.copilot_router.run_orchestrator")
 def test_query_handles_unhandled_exception(mock_run: patch, client: TestClient) -> None:
     mock_run.side_effect = RuntimeError("Neo4j connection failed")
 
-    response = client.post("/copilot/query", json={"query": "Predict ETA for order ORD123"})
+    response = client.post(
+        "/copilot/query",
+        headers=_auth_header("logistics_manager"),
+        json={"query": "Predict ETA for order ORD123"},
+    )
 
     assert response.status_code == 200
     payload = response.json()

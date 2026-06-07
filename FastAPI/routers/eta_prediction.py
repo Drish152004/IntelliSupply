@@ -2,12 +2,20 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from typing import Annotated
 
+from fastapi import APIRouter, Depends, HTTPException
+
+from dependencies.auth import TokenUser, require_roles
 from schemas.eta import ETARequest
 from services import eta_prediction as eta_svc
 
 router = APIRouter(prefix="/eta", tags=["eta_prediction"])
+
+LogisticsUser = Annotated[
+    TokenUser,
+    Depends(require_roles("admin", "logistics_manager")),
+]
 
 
 @router.get("/health")
@@ -22,7 +30,8 @@ def health() -> dict[str, str]:
 
 
 @router.post("/predict")
-def predict_eta_endpoint(body: ETARequest) -> dict[str, float]:
+def predict_eta_endpoint(body: ETARequest, current_user: LogisticsUser) -> dict[str, float]:
+    del current_user
     try:
         return eta_svc.predict_eta(body.model_dump())
     except FileNotFoundError as exc:

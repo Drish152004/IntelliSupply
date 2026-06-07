@@ -1,16 +1,22 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Navbar from '@/components/Navbar';
 import RouteMap from '@/components/RouteMap';
 import { routes } from '@/data/mockData';
 import { Truck, Clock, AlertTriangle, Sparkles, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { listShipments, type ShipmentListItem } from '@/lib/api';
 
 export default function RouteIntelligence() {
   const [selectedRouteId, setSelectedRouteId] = useState<string>(routes[0]?.id ?? '');
+  const [shipments, setShipments] = useState<ShipmentListItem[]>([]);
   const selectedRoute = useMemo(
     () => routes.find((route) => route.id === selectedRouteId) || routes[0],
     [selectedRouteId],
   );
+
+  useEffect(() => {
+    void listShipments(10).then(setShipments).catch(() => setShipments([]));
+  }, []);
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -96,6 +102,26 @@ export default function RouteIntelligence() {
                   <p className="mt-2 text-muted-foreground">Split shipments into two batches to minimize critical delay exposure.</p>
                 </li>
               </ol>
+            </div>
+
+            <div className="rounded-[2rem] border border-border bg-white p-6 shadow-sm">
+              <div className="flex items-center gap-3 mb-5">
+                <Truck className="h-5 w-5 text-sky-600" />
+                <div>
+                  <p className="text-sm font-semibold text-foreground">Recent shipments</p>
+                  <p className="text-xs text-muted-foreground">Live orders from Neo4j.</p>
+                </div>
+              </div>
+              <div className="space-y-3 text-sm text-muted-foreground">
+                {shipments.length === 0 && <p>No shipments loaded yet.</p>}
+                {shipments.map((shipment) => (
+                  <div key={shipment.order_id} className="rounded-3xl bg-slate-50 p-4">
+                    <p className="font-semibold text-foreground">{shipment.order_id}</p>
+                    <p className="mt-1">{shipment.from_hub_name} → {shipment.to_hub_name}</p>
+                    <p className="mt-1 text-xs">{shipment.assigned_courier_name ?? shipment.assigned_courier_id ?? 'Unassigned'}</p>
+                  </div>
+                ))}
+              </div>
             </div>
 
             <div className="rounded-[2rem] border border-border bg-white p-6 shadow-sm">

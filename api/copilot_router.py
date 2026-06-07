@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from dependencies.auth import TokenUser, get_current_user, user_to_authenticated_payload
 from .schemas import CopilotRequest
 from orchestrator.graph import run_orchestrator
 
@@ -24,11 +25,13 @@ def _parse_final_response(final_response: str) -> Any:
         return final_response
 
 
-def _invoke_orchestrator(body: CopilotRequest) -> dict[str, Any]:
+def _invoke_orchestrator(body: CopilotRequest, current_user: TokenUser) -> dict[str, Any]:
+    authenticated_user = user_to_authenticated_payload(current_user)
     return run_orchestrator(
         body.query,
         logistics_session=body.logistics_session,
-        authenticated_user=body.authenticated_user,
+        inventory_session=body.inventory_session,
+        authenticated_user=authenticated_user,
     )
 
 
@@ -38,9 +41,12 @@ def health() -> dict[str, str]:
 
 
 @router.post("/query")
-def query(body: CopilotRequest) -> Any:
+def query(
+    body: CopilotRequest,
+    current_user: Annotated[TokenUser, Depends(get_current_user)],
+) -> Any:
     try:
-        result = _invoke_orchestrator(body)
+        result = _invoke_orchestrator(body, current_user)
         return _parse_final_response(result["final_response"])
     except Exception as exc:
         logger.exception("Copilot query failed")
@@ -48,9 +54,12 @@ def query(body: CopilotRequest) -> Any:
 
 
 @router.post("/debug")
-def debug(body: CopilotRequest) -> dict[str, Any]:
+def debug(
+    body: CopilotRequest,
+    current_user: Annotated[TokenUser, Depends(get_current_user)],
+) -> dict[str, Any]:
     try:
-        result = _invoke_orchestrator(body)
+        result = _invoke_orchestrator(body, current_user)
         return {
             "intent": result.get("intent"),
             "task": result.get("task"),

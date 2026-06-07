@@ -17,7 +17,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from bootstrap import REPO_ROOT
-from routers import auth, demand_forecasting, orders, route_prediction, eta_prediction
+from routers import auth, dashboard, demand_forecasting, inventory, notifications, orders, route_prediction, eta_prediction, users
 from routers.auth import configure_auth
 from services.registry import init_all_services
 
@@ -73,6 +73,10 @@ app.include_router(demand_forecasting.router)
 app.include_router(eta_prediction.router)
 app.include_router(orders.router)
 app.include_router(orders.couriers_router)
+app.include_router(users.router)
+app.include_router(inventory.router)
+app.include_router(dashboard.router)
+app.include_router(notifications.router)
 
 
 @app.get("/health")

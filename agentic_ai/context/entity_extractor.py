@@ -15,19 +15,25 @@ _ENTITY_PATTERNS: dict[str, list[re.Pattern[str]]] = {
         re.compile(r"\b(ORD[A-Za-z0-9]+)\b", re.I),
     ],
     "shipment_id": [
-        re.compile(r"\bshipment[\s#:_-]*([A-Za-z0-9-]+)\b", re.I),
+        re.compile(r"\bshipment[\s#:_-]+([A-Za-z0-9-]{3,})\b", re.I),
+        re.compile(r"\b(SH\d+[A-Za-z0-9-]*)\b", re.I),
+        re.compile(r"\b(ord-[A-Za-z0-9-]+)\b", re.I),
     ],
     "courier_id": [
         re.compile(r"\bcourier[\s#:_-]*([A-Za-z0-9]+)\b", re.I),
         re.compile(r"\b(C\d+)\b", re.I),
     ],
     "hub_id": [
-        re.compile(r"\bhub[\s#:_-]*([A-Za-z0-9]+)\b", re.I),
+        re.compile(r"\bhub[\s#:_-]*(\d+)\b", re.I),
     ],
     "from_hub": [
+        re.compile(r"\bfrom\s+(?:hub[\s#:_-]*)?(\d+)\b", re.I),
+        re.compile(r"\bbetween\s+hub[\s#:_-]*(\d+)\s+and\s+hub", re.I),
         re.compile(r"\bfrom\s+([A-Za-z][A-Za-z0-9_]*)\b", re.I),
     ],
     "to_hub": [
+        re.compile(r"\bto\s+(?:hub[\s#:_-]*)?(\d+)\b", re.I),
+        re.compile(r"\bbetween\s+hub[\s#:_-]*\d+\s+and\s+hub[\s#:_-]*(\d+)\b", re.I),
         re.compile(r"\bto\s+([A-Za-z][A-Za-z0-9_]*)\b", re.I),
     ],
     "city_name": [
@@ -134,5 +140,10 @@ class EntityExtractor:
 
         if "city_name" in entities and "city" not in entities:
             entities["city"] = entities["city_name"]
+
+        if entities.get("from_hub", "").isdigit():
+            entities["from_hub"] = f"Hub_{entities['from_hub']}"
+        if entities.get("to_hub", "").isdigit():
+            entities["to_hub"] = f"Hub_{entities['to_hub']}"
 
         return entities

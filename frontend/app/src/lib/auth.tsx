@@ -1,16 +1,14 @@
-import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
+import { ApiError, getApiBase, setAccessToken, type AuthUserResponse, type LoginResponse } from '@/lib/api';
 
-const API_BASE = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000';
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-export type AppRole = 'admin' | 'logistics_manager' | 'inventory_manager';
+export type AppRole = 'admin' | 'logistics_manager' | 'inventory_manager' | 'courier';
 
 export interface AuthUser {
   id?: string;
   name: string;
   email: string;
   role: AppRole;
+  courier_id?: string;
 }
 
 interface AuthContextValue {
@@ -18,9 +16,11 @@ interface AuthContextValue {
   loading: boolean;
   login: (email: string, password: string) => Promise<{ success: boolean; message?: string; role?: AppRole }>;
   logout: () => void;
+  refreshUser: () => Promise<void>;
+  updateProfile: (payload: { name: string }) => Promise<{ success: boolean; message?: string }>;
 }
 
-// ─── Demo fallback credentials (used when backend is unreachable) ─────────────
+const DEMO_ENABLED = import.meta.env.VITE_DEMO_AUTH !== 'false';
 
 const DEMO_USERS: Record<string, { password: string; user: AuthUser }> = {
   'admin@demo.com': {
@@ -39,15 +39,32 @@ const DEMO_USERS: Record<string, { password: string; user: AuthUser }> = {
 
 const STORAGE_KEY = 'intellisupply_user';
 
-// ─── Role redirect map ────────────────────────────────────────────────────────
-
 export const ROLE_HOME: Record<AppRole, string> = {
   admin: '/admin/dashboard',
   logistics_manager: '/logistics',
   inventory_manager: '/inventory',
+  courier: '/logistics',
 };
 
-// ─── Context ──────────────────────────────────────────────────────────────────
+export function normalizeRole(role: string | undefined | null): AppRole | null {
+  const value = (role ?? '').trim().toLowerCase();
+  if (value === 'admin' || value === 'administrator') return 'admin';
+  if (value === 'courier') return 'courier';
+  if (value === 'inventory_manager' || value === 'inventory') return 'inventory_manager';
+  if (value === 'logistics_manager' || value === 'logistics') return 'logistics_manager';
+  return null;
+}
+
+function toAuthUser(user: AuthUserResponse): AuthUser {
+  const role = normalizeRole(user.role) ?? 'courier';
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role,
+    courier_id: user.courier_id,
+  };
+}
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
@@ -55,54 +72,71 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Rehydrate from localStorage on mount
+  const persistSession = useCallback((nextUser: AuthUser, token?: string | null) => {
+    const role = normalizeRole(nextUser.role) ?? nextUser.role;
+    const normalizedUser = { ...nextUser, role };
+    setUser(normalizedUser);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(normalizedUser));
+    if (token) {
+      setAccessToken(token);
+    }
+  }, []);
+
+  const clearSession = useCallback(() => {
+    setUser(null);
+    localStorage.removeItem(STORAGE_KEY);
+    setAccessToken(null);
+  }, []);
+
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) setUser(JSON.parse(raw));
+      if (raw) {
+        const parsed = JSON.parse(raw) as AuthUser;
+        const role = normalizeRole(parsed.role);
+        if (role) {
+          setUser({ ...parsed, role });
+        } else {
+          clearSession();
+        }
+      }
     } catch {
-      // ignore corrupt storage
+      clearSession();
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [clearSession]);
 
   const login = async (
     email: string,
     password: string,
   ): Promise<{ success: boolean; message?: string; role?: AppRole }> => {
-    // 1. Try real backend
     try {
-      const res = await fetch(`${API_BASE}/api/login`, {
+      const res = await fetch(`${getApiBase()}/api/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
         signal: AbortSignal.timeout(5000),
       });
-      const data = await res.json();
-      if (res.ok && data.success && data.user) {
-        const authUser: AuthUser = {
-          id: data.user.id,
-          name: data.user.name,
-          email: data.user.email,
-          role: data.user.role as AppRole,
-        };
-        setUser(authUser);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(authUser));
+      const data = (await res.json()) as LoginResponse & { message?: string };
+      if (res.ok && data.success && data.user && data.access_token) {
+        const authUser = toAuthUser(data.user);
+        persistSession(authUser, data.access_token);
         return { success: true, role: authUser.role };
       }
-      // Backend reachable but auth failed
       return { success: false, message: data.message ?? 'Invalid credentials.' };
     } catch {
-      // Backend unreachable — fall through to demo credentials
+      if (!DEMO_ENABLED) {
+        return { success: false, message: 'Unable to reach authentication service.' };
+      }
     }
 
-    // 2. Demo credential fallback
-    const entry = DEMO_USERS[email.toLowerCase().trim()];
-    if (entry && entry.password === password) {
-      setUser(entry.user);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(entry.user));
-      return { success: true, role: entry.user.role };
+    if (DEMO_ENABLED) {
+      const entry = DEMO_USERS[email.toLowerCase().trim()];
+      if (entry && entry.password === password) {
+        persistSession(entry.user, null);
+        return { success: true, role: entry.user.role };
+      }
     }
 
     return {
@@ -112,12 +146,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = () => {
-    setUser(null);
-    localStorage.removeItem(STORAGE_KEY);
+    clearSession();
+  };
+
+  const refreshUser = async () => {
+    const token = localStorage.getItem('intellisupply_token');
+    if (!token) return;
+    try {
+      const res = await fetch(`${getApiBase()}/api/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return;
+      const data = (await res.json()) as { user: AuthUserResponse };
+      persistSession(toAuthUser(data.user), token);
+    } catch {
+      // ignore refresh errors
+    }
+  };
+
+  const updateProfile = async (payload: { name: string }) => {
+    try {
+      const token = localStorage.getItem('intellisupply_token');
+      if (!token) {
+        return { success: false, message: 'Not authenticated.' };
+      }
+      const res = await fetch(`${getApiBase()}/api/me`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        return { success: false, message: data.message ?? 'Profile update failed.' };
+      }
+      persistSession(toAuthUser(data.user), token);
+      return { success: true };
+    } catch (error) {
+      const message = error instanceof ApiError ? error.message : 'Profile update failed.';
+      return { success: false, message };
+    }
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, refreshUser, updateProfile }}>
       {children}
     </AuthContext.Provider>
   );

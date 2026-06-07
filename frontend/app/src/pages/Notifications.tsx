@@ -1,100 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Navbar from '@/components/Navbar';
 import { Bell, AlertTriangle, Clock3, Search, Package, Truck, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/lib/auth';
-
-const notificationItems = [
-  {
-    id: 'NTF-001',
-    title: 'Cold-chain load RT-2850 enters high risk zone',
-    description: 'NH-44 congestion is causing temperature exposure alerts for refrigerated cargo bound for Chennai.',
-    category: 'Logistics',
-    severity: 'Critical',
-    location: 'NH-44 / Bengaluru corridor',
-    time: '5 min ago',
-    status: 'Investigate',
-    unread: true,
-  },
-  {
-    id: 'NTF-002',
-    title: 'Route deviation detected — Courier C-192',
-    description: 'Courier C-192 has deviated 4.2 km from assigned route. Dispatch review recommended.',
-    category: 'Route Alerts',
-    severity: 'High',
-    location: 'Bengaluru South',
-    time: '11 min ago',
-    status: 'Review',
-    unread: true,
-  },
-  {
-    id: 'NTF-003',
-    title: 'Dispatch slot conflict — Hub_3 overloaded',
-    description: 'Hub_3 has 3 concurrent dispatch windows overlapping. Reassign to Hub_5 or delay.',
-    category: 'Dispatch',
-    severity: 'High',
-    location: 'Hub_3 — Chennai',
-    time: '22 min ago',
-    status: 'Reassign',
-    unread: true,
-  },
-  {
-    id: 'NTF-004',
-    title: 'Stockout warning for USB-C Hub 7-in-1',
-    description: 'Bengaluru warehouse inventory has dropped to zero units, triggering immediate replenishment.',
-    category: 'Inventory',
-    severity: 'Critical',
-    location: 'Bengaluru WH',
-    time: '52 min ago',
-    status: 'Restock',
-    unread: false,
-  },
-  {
-    id: 'NTF-005',
-    title: 'Reorder alert — Vitamin C 1000mg below threshold',
-    description: 'Stock level at 68 units. Reorder point is 100 units. Vendor lead time: 3 days.',
-    category: 'Reorder Alerts',
-    severity: 'Medium',
-    location: 'All hubs',
-    time: '1h ago',
-    status: 'Reorder',
-    unread: false,
-  },
-  {
-    id: 'NTF-006',
-    title: 'AI insights ready for route planning',
-    description: 'Demand surge forecast suggests rerouting 4 shipments to reduce delay exposure.',
-    category: 'AI Insights',
-    severity: 'Medium',
-    location: 'Route network',
-    time: '1h 10 min ago',
-    status: 'Review',
-    unread: false,
-  },
-  {
-    id: 'NTF-007',
-    title: 'Warehouse scanner offline — WH-Pune',
-    description: 'Scanner device WHS-1120 at Pune warehouse lost connectivity. Manual override active.',
-    category: 'Stock Alerts',
-    severity: 'High',
-    location: 'Pune WH',
-    time: '2h ago',
-    status: 'Check',
-    unread: false,
-  },
-  {
-    id: 'NTF-008',
-    title: 'Delivery SLA breach risk — 6 orders',
-    description: '6 orders en route to Hyderabad are projected to miss 4-hour SLA due to traffic.',
-    category: 'Dispatch',
-    severity: 'High',
-    location: 'Hyderabad corridor',
-    time: '2h 30 min ago',
-    status: 'Escalate',
-    unread: false,
-  },
-];
+import { listNotifications, type NotificationItem } from '@/lib/api';
 
 // ─── Role tab config ──────────────────────────────────────────────────────────
 
@@ -139,6 +49,13 @@ export default function Notifications() {
   const [activeTab, setActiveTab] = useState('All');
   const [search, setSearch] = useState('');
   const [unreadOnly, setUnreadOnly] = useState(false);
+  const [notificationItems, setNotificationItems] = useState<NotificationItem[]>([]);
+
+  useEffect(() => {
+    void listNotifications()
+      .then(setNotificationItems)
+      .catch(() => setNotificationItems([]));
+  }, []);
 
   const visibleNotifications = useMemo(
     () =>
@@ -156,7 +73,7 @@ export default function Notifications() {
         const matchesUnread = !unreadOnly || item.unread;
         return matchesRole && matchesTab && matchesSearch && matchesUnread;
       }),
-    [activeTab, search, unreadOnly, allowedCategories],
+    [activeTab, search, unreadOnly, allowedCategories, notificationItems],
   );
 
   const criticalCount = visibleNotifications.filter((n) => n.severity === 'Critical').length;

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ElementType } from 'react';
 import Navbar from '@/components/Navbar';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -23,7 +23,7 @@ import { registerUser, createCourierFrontend } from '@/lib/api';
 
 type UserType = 'logistics_manager' | 'inventory_manager' | 'courier';
 
-const USER_TYPE_CONFIG: Record<UserType, { label: string; icon: React.ElementType; color: string; description: string }> = {
+const USER_TYPE_CONFIG: Record<UserType, { label: string; icon: ElementType; color: string; description: string }> = {
   logistics_manager: {
     label: 'Logistics Manager',
     icon: Truck,

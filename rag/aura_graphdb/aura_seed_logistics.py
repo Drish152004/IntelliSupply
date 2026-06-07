@@ -98,6 +98,7 @@ def load_hubs_to_aura():
     SET city.city_name = row.city_name
 
     MERGE (hub:Hub {hub_id: toInteger(row.hub_id)})
+    ON CREATE SET hub.created_at = datetime()
     SET
         hub.name = row.name,
         hub.poi_lat = toFloat(row.poi_lat),
@@ -114,8 +115,6 @@ def load_hubs_to_aura():
         hub.is_mixed_hub = row.is_mixed_hub,
         hub.capacity = row.capacity,
         hub.updated_at = datetime()
-    ON CREATE SET
-        hub.created_at = datetime()
 
     MERGE (hub)-[:LOCATED_IN]->(city)
     """
@@ -140,24 +139,30 @@ def load_synthetic_couriers_to_aura(json_path="synthetic_couriers.json"):
     query = """
     UNWIND $rows AS row
 
-    MERGE (city:City {city_name: row.city_name})
+    MATCH (city:City {city_name: row.city_name})<-[:LOCATED_IN]-(hub:Hub)
+    WITH row, city, hub
+    ORDER BY hub.hub_id
+    WITH row, city, collect(hub)[0] AS hub
 
     MERGE (role:Role {role_id: 2})
     SET role.role_name = "courier"
 
     MERGE (courier:Courier {courier_id: row.courier_id})
+    ON CREATE SET courier.created_at = datetime()
     SET
+        courier.city_id = city.city_id,
         courier.city_name = row.city_name,
+        courier.hub_id = hub.hub_id,
+        courier.hub_name = hub.name,
         courier.ds = toInteger(row.ds),
         courier.start_lat_wgs84 = toFloat(row.start_lat_wgs84),
         courier.start_lon_wgs84 = toFloat(row.start_lon_wgs84),
         courier.is_active = true,
         courier.updated_at = datetime()
-    ON CREATE SET
-        courier.created_at = datetime()
 
     MERGE (courier)-[:HAS_ROLE]->(role)
     MERGE (courier)-[:OPERATES_IN]->(city)
+    MERGE (courier)-[:ASSIGNED_TO_HUB]->(hub)
     """
 
     try:
@@ -183,6 +188,7 @@ def load_synthetic_orders_to_aura(json_path="synthetic_orders.json"):
     MERGE (city:City {city_name: row.city_name})
 
     MERGE (order:Order {order_id: row.order_id})
+    ON CREATE SET order.created_at = datetime()
     SET
         order.lat_wgs84 = toFloat(row.lat_wgs84),
         order.lon_wgs84 = toFloat(row.lon_wgs84),
@@ -196,15 +202,12 @@ def load_synthetic_orders_to_aura(json_path="synthetic_orders.json"):
         order.receipt_lon_wgs84 = toFloat(row.receipt_lon_wgs84),
         order.notes_text = row.notes,
         order.updated_at = datetime()
-    ON CREATE SET
-        order.created_at = datetime()
 
     MERGE (notes:Notes {notes_id: "note_" + row.order_id})
+    ON CREATE SET notes.created_at = datetime()
     SET
         notes.text = row.notes,
         notes.updated_at = datetime()
-    ON CREATE SET
-        notes.created_at = datetime()
 
     MERGE (order)-[:BELONGS_TO_CITY]->(city)
     MERGE (order)-[:HAS_NOTES]->(notes)
@@ -254,6 +257,14 @@ def seed_aura_logistics():
         load_assigned_routes_to_aura(assigned_routes)
     else:
         print(f"Skipping assigned routes — not found at {assigned_routes}")
+
+    from aura_graphdb.aura_profiles import sync_all_profiles_from_supabase
+
+    try:
+        synced = sync_all_profiles_from_supabase()
+        print(f"Synced {synced} Supabase profiles into Aura.")
+    except Exception as exc:
+        print(f"Profile sync skipped/failed: {exc}")
 
     print("Aura logistics seed completed.")
 

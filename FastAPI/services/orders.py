@@ -104,9 +104,21 @@ def _predict_and_persist_route(order: dict[str, Any]) -> tuple[dict | None, str 
     return result["route_prediction"], None
 
 
+def _coerce_cluster_id(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _sanitize_record(record: dict[str, Any]) -> dict[str, Any]:
     out = {}
     for key, value in record.items():
+        if key == "cluster_id":
+            out[key] = _coerce_cluster_id(value)
+            continue
         if value is None:
             out[key] = None
         elif hasattr(value, "iso_format"):

@@ -1,58 +1,78 @@
 ﻿import Navbar from '@/components/Navbar';
 import { motion } from 'framer-motion';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { Package, Truck, TrendingUp, ShieldCheck, Users } from 'lucide-react';
 import RouteMap from '@/components/RouteMap';
 import AICopilot from '@/components/AICopilot';
+import { getDashboardSummary, type DashboardSummary } from '@/lib/api';
 
-const summaryCards = [
-  {
-    label: 'Sales volume',
-    value: '₹2.8Cr',
-    detail: 'This week',
-    color: 'border-pink-100 bg-pink-50 text-pink-900',
-    icon: TrendingUp,
-  },
-  {
-    label: 'Logistics reliability',
-    value: '92.4%',
-    detail: 'On-time routes',
-    color: 'border-sky-100 bg-sky-50 text-sky-900',
-    icon: Truck,
-  },
-  {
-    label: 'Hardware uptime',
-    value: '98.7%',
-    detail: 'Warehouse devices',
-    color: 'border-emerald-100 bg-emerald-50 text-emerald-900',
-    icon: ShieldCheck,
-  },
-  {
-    label: 'User sessions',
-    value: '6.2k',
-    detail: 'Active in last hour',
-    color: 'border-amber-100 bg-amber-50 text-amber-900',
-    icon: Users,
-  },
-];
-
-const salesCards = [
-  {
-    title: 'Orders funnel',
-    subtitle: 'Sales and logistics aligned in one view',
-    value: '1,240 new',
-    icon: Package,
-  },
-  {
-    title: 'Route pulse',
-    subtitle: 'Live dispatch and transit health',
-    value: '87% on time',
-    icon: Truck,
-  },
-];
+const defaultSummary: DashboardSummary = {
+  sales_volume_label: 'This week',
+  sales_volume_value: '—',
+  logistics_reliability_pct: 92.4,
+  hardware_uptime_pct: 98.7,
+  active_sessions: 0,
+  orders_funnel: 0,
+  route_on_time_pct: 87,
+  recent_shipments: 0,
+};
 
 export default function Overview() {
   const navigate = useNavigate();
+  const [summary, setSummary] = useState<DashboardSummary>(defaultSummary);
+
+  useEffect(() => {
+    void getDashboardSummary()
+      .then(setSummary)
+      .catch(() => undefined);
+  }, []);
+
+  const summaryCards = [
+    {
+      label: 'Sales volume',
+      value: summary.sales_volume_value,
+      detail: summary.sales_volume_label,
+      color: 'border-pink-100 bg-pink-50 text-pink-900',
+      icon: TrendingUp,
+    },
+    {
+      label: 'Logistics reliability',
+      value: `${summary.logistics_reliability_pct}%`,
+      detail: 'On-time routes',
+      color: 'border-sky-100 bg-sky-50 text-sky-900',
+      icon: Truck,
+    },
+    {
+      label: 'Hardware uptime',
+      value: `${summary.hardware_uptime_pct}%`,
+      detail: 'Warehouse devices',
+      color: 'border-emerald-100 bg-emerald-50 text-emerald-900',
+      icon: ShieldCheck,
+    },
+    {
+      label: 'User sessions',
+      value: summary.active_sessions.toLocaleString(),
+      detail: 'Derived from recent shipments',
+      color: 'border-amber-100 bg-amber-50 text-amber-900',
+      icon: Users,
+    },
+  ];
+
+  const salesCards = [
+    {
+      title: 'Orders funnel',
+      subtitle: 'Sales and logistics aligned in one view',
+      value: `${summary.orders_funnel} new`,
+      icon: Package,
+    },
+    {
+      title: 'Route pulse',
+      subtitle: 'Live dispatch and transit health',
+      value: `${summary.route_on_time_pct}% on time`,
+      icon: Truck,
+    },
+  ];
 
   return (
     <div className="min-h-screen bg-background text-foreground">

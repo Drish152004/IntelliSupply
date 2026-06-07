@@ -1,4 +1,4 @@
-﻿import { useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useState } from 'react';
 import Navbar from '@/components/Navbar';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -6,50 +6,69 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import AICopilot from '@/components/AICopilot';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Search, RefreshCcw, Box, ShieldCheck } from 'lucide-react';
+import { getInventoryForecastTrend, getInventorySummary, listInventoryProducts } from '@/lib/api';
 
-const metrics = [
-  { label: 'On-hand units', value: '124,800', detail: 'Across 8 hubs' },
-  { label: 'Stockout risk', value: '14%', detail: 'Target < 10%' },
-  { label: 'Demand coverage', value: '92%', detail: 'Next 14 days' },
-  { label: 'Reorder alerts', value: '18', detail: 'Priority items' },
-];
-
-const products = [
-  { id: '01', name: 'USB-C Hub 7-in-1', category: 'Electronics', stock: '0', change: '-100%', risk: 'Critical' },
-  { id: '02', name: 'Wireless Earbuds X3', category: 'Electronics', stock: '42', change: '-38%', risk: 'High' },
-  { id: '03', name: 'Vitamin C 1000mg', category: 'Pharma', stock: '68', change: '-21%', risk: 'Elevated' },
-  { id: '04', name: 'Laptop Stand Pro', category: 'Accessories', stock: '180', change: '+12%', risk: 'Stable' },
-  { id: '05', name: 'Cotton T-Shirt (M)', category: 'Apparel', stock: '320', change: '+5%', risk: 'Stable' },
-];
-
-const forecastTrend = [
-  { period: 'Mon', demand: 860, inventory: 430 },
-  { period: 'Tue', demand: 920, inventory: 410 },
-  { period: 'Wed', demand: 1040, inventory: 405 },
-  { period: 'Thu', demand: 980, inventory: 395 },
-  { period: 'Fri', demand: 1150, inventory: 380 },
-  { period: 'Sat', demand: 1280, inventory: 360 },
-  { period: 'Sun', demand: 1360, inventory: 350 },
-];
-
-const riskSignals = [
-  { title: 'Immediate reorder needed', description: 'USB-C Hub 7-in-1 is depleted across primary hubs.', severity: 'Critical' },
-  { title: 'Low buffer stock', description: 'Wireless Earbuds X3 below safety threshold.', severity: 'High' },
-  { title: 'Seasonal surge prep', description: 'Increase Apparel orders ahead of weekend demand.', severity: 'Medium' },
+const fallbackMetrics = [
+  { label: 'On-hand units', value: '—', detail: 'Loading...' },
+  { label: 'Stockout risk', value: '—', detail: 'Loading...' },
+  { label: 'Demand coverage', value: '—', detail: 'Loading...' },
+  { label: 'Reorder alerts', value: '—', detail: 'Loading...' },
 ];
 
 export default function Inventory() {
   const [search, setSearch] = useState('');
   const [activeStatus, setActiveStatus] = useState('All');
+  const [metrics, setMetrics] = useState(fallbackMetrics);
+  const [products, setProducts] = useState<Array<{ id: string; name: string; category: string; stock: string; change: string; risk: string }>>([]);
+  const [forecastTrend, setForecastTrend] = useState<Array<{ period: string; demand: number; inventory: number }>>([]);
+  const [riskSignals, setRiskSignals] = useState<Array<{ title: string; description: string; severity: string }>>([]);
+  const [loading, setLoading] = useState(true);
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const [summary, inventoryProducts, trend] = await Promise.all([
+        getInventorySummary(),
+        listInventoryProducts(search),
+        getInventoryForecastTrend(),
+      ]);
+      setMetrics([
+        { label: 'On-hand units', value: summary.on_hand_units.toLocaleString(), detail: `Across ${summary.warehouse_count} hubs` },
+        { label: 'Stockout risk', value: `${summary.stockout_risk_pct}%`, detail: 'Target < 10%' },
+        { label: 'Demand coverage', value: `${summary.demand_coverage_pct}%`, detail: 'Next 14 days' },
+        { label: 'Reorder alerts', value: String(summary.reorder_alerts), detail: 'Priority items' },
+      ]);
+      setProducts(
+        inventoryProducts.map((product) => ({
+          id: product.id,
+          name: product.name ?? 'Unnamed product',
+          category: product.category ?? 'General',
+          stock: String(product.stock ?? 0),
+          change: (product.stock ?? 0) > 0 ? `${product.stock} units` : '-100%',
+          risk: product.status === 'Out of Stock' ? 'Critical' : product.status === 'Low Stock' ? 'High' : 'Stable',
+        })),
+      );
+      setForecastTrend(trend);
+      setRiskSignals(summary.risk_signals);
+    } catch {
+      setMetrics(fallbackMetrics);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadData();
+  }, [search]);
 
   const filteredProducts = useMemo(
     () =>
       products.filter((product) => {
-        const matchesSearch = product.name.toLowerCase().includes(search.toLowerCase());
+        const matchesSearch = (product.name ?? '').toLowerCase().includes(search.toLowerCase());
         const matchesStatus = activeStatus === 'All' || product.risk === activeStatus;
         return matchesSearch && matchesStatus;
       }),
-    [search, activeStatus],
+    [search, activeStatus, products],
   );
 
   return (
@@ -66,7 +85,7 @@ export default function Inventory() {
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-3">
-              <Button variant="outline" className="rounded-full px-4 py-2 text-sm font-medium">
+              <Button variant="outline" className="rounded-full px-4 py-2 text-sm font-medium" onClick={() => void loadData()} disabled={loading}>
                 <RefreshCcw className="mr-2 h-4 w-4" /> Refresh snapshot
               </Button>
               <Button className="rounded-full bg-black px-4 py-2 text-sm font-medium text-white">
@@ -191,7 +210,7 @@ export default function Inventory() {
                     <DialogDescription>Ask about reorder planning, shortage risk, and inbound stock using AI.</DialogDescription>
                   </DialogHeader>
                   <div className="h-[640px]">
-                    <AICopilot />
+                    <AICopilot domain="inventory" />
                   </div>
                 </DialogContent>
               </Dialog>

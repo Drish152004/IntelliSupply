@@ -1,6 +1,6 @@
 // src/pages/ProductManagement.tsx
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Navbar from '@/components/Navbar';
 import {
   Dialog,
@@ -25,6 +25,11 @@ import {
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import {
+  createInventoryProduct,
+  deleteInventoryProduct,
+  listInventoryProducts,
+} from '@/lib/api';
 
 const initialProducts = [
   {
@@ -144,6 +149,27 @@ const EMPTY_FORM = {
 
 export default function ProductManagement() {
   const [products, setProducts] = useState(initialProducts);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    void listInventoryProducts()
+      .then((rows) =>
+        setProducts(
+          rows.map((product) => ({
+            id: product.id,
+            name: product.name,
+            sku: product.id,
+            category: product.category ?? 'General',
+            stock: product.stock,
+            price: product.unit_price ? `₹${product.unit_price.toLocaleString('en-IN')}` : '₹0',
+            status: product.status,
+            updated: 'Synced',
+          })),
+        ),
+      )
+      .catch(() => undefined)
+      .finally(() => setLoading(false));
+  }, []);
 
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All');
@@ -164,52 +190,39 @@ export default function ProductManagement() {
     setAddSubmitting(true);
     setAddSuccess(false);
 
-    // Auto-generate product_id like DB schema (P-prefix + sequential)
-    const nextId = `PRD-${String(products.length + 1).padStart(3, '0')}`;
-    const qty = parseInt(form.quantity) || 0;
-    const threshold = parseInt(form.threshold_limit) || 0;
-    const price = parseFloat(form.unit_price) || 0;
+    try {
+      const price = parseFloat(form.unit_price) || 0;
+      const created = await createInventoryProduct({
+        name: form.product_name,
+        category: form.category,
+        unit_price: price,
+        supplier_name: form.supplier_name || undefined,
+      });
 
-    // Determine status from qty vs threshold (matches DB logic)
-    const status =
-      qty === 0
-        ? 'Out of Stock'
-        : qty <= threshold
-        ? 'Low Stock'
-        : 'Healthy';
+      const newProduct = {
+        id: created.id,
+        name: created.name,
+        sku: created.id,
+        category: created.category ?? form.category,
+        stock: created.stock,
+        price: `₹${price.toLocaleString('en-IN')}`,
+        status: created.status,
+        updated: 'Just now',
+        supplier_name: form.supplier_name,
+        hub_id: form.hub_id,
+        threshold_limit: parseInt(form.threshold_limit) || 0,
+      };
 
-    // Format price like existing entries
-    const formattedPrice = `₹${price.toLocaleString('en-IN')}`;
-
-    const newProduct = {
-      id: nextId,
-      name: form.product_name,
-      // SKU derived from category prefix + id
-      sku: `${form.category.slice(0, 3).toUpperCase()}-${Date.now().toString().slice(-4)}`,
-      category: form.category,
-      stock: qty,
-      price: formattedPrice,
-      status,
-      updated: 'Just now',
-      // Store extra DB fields for reference
-      supplier_name: form.supplier_name,
-      hub_id: form.hub_id,
-      threshold_limit: threshold,
-    };
-
-    // Simulate brief API call delay
-    await new Promise((res) => setTimeout(res, 600));
-
-    setProducts((prev) => [newProduct, ...prev]);
-    setAddSubmitting(false);
-    setAddSuccess(true);
-
-    // Auto-close after showing success
-    setTimeout(() => {
-      setShowAddModal(false);
-      setAddSuccess(false);
-      setForm(EMPTY_FORM);
-    }, 1200);
+      setProducts((prev) => [newProduct, ...prev]);
+      setAddSuccess(true);
+      setTimeout(() => {
+        setShowAddModal(false);
+        setAddSuccess(false);
+        setForm(EMPTY_FORM);
+      }, 1200);
+    } finally {
+      setAddSubmitting(false);
+    }
   };
 
   const filteredProducts = useMemo(() => {
@@ -230,8 +243,13 @@ export default function ProductManagement() {
     });
   }, [search, categoryFilter, statusFilter, products]);
 
-  const deleteProduct = (id: string) => {
-    setProducts((prev) => prev.filter((item) => item.id !== id));
+  const deleteProduct = async (id: string) => {
+    try {
+      await deleteInventoryProduct(id);
+      setProducts((prev) => prev.filter((item) => item.id !== id));
+    } catch {
+      // ignore delete errors in UI for now
+    }
 
     if (selectedProduct?.id === id) {
       setSelectedProduct(null);
@@ -762,4 +780,4 @@ export default function ProductManagement() {
 
     </div>
   );
-}
+}

@@ -9,6 +9,7 @@ MERGE (city:City {city_name: route.city_name})
 MERGE (rp:RoutePrediction {
     route_prediction_id: route.courier_id + "_" + toString(route.ds) + "_" + route.delivery_day
 })
+ON CREATE SET rp.created_at = datetime()
 SET
     rp.courier_id = route.courier_id,
     rp.cluster_id = toInteger(route.cluster_id),
@@ -19,8 +20,6 @@ SET
     rp.predicted_sequence = route.predicted_sequence,
     rp.stop_count = size(route.stops),
     rp.updated_at = datetime()
-ON CREATE SET
-    rp.created_at = datetime()
 
 MERGE (rp)-[:FOR_COURIER]->(courier)
 MERGE (rp)-[:BELONGS_TO_CITY]->(city)

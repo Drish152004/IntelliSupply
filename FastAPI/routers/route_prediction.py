@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from typing import Annotated
 
+from fastapi import APIRouter, Depends, HTTPException
+
+from dependencies.auth import TokenUser, require_roles
 from ml_services.route_prediction.schemas import (
     HealthResponse,
     NextStopRequest,
@@ -15,6 +18,11 @@ from services import route_prediction as route_svc
 from services.registry import get_route_predictor, route_model_path
 
 router = APIRouter(prefix="/route", tags=["route_prediction"])
+
+LogisticsUser = Annotated[
+    TokenUser,
+    Depends(require_roles("admin", "logistics_manager", "courier")),
+]
 
 
 @router.get("/health", response_model=HealthResponse)
@@ -33,7 +41,8 @@ def health():
 
 
 @router.post("/predict/next-stop", response_model=NextStopResponse)
-def predict_next_stop(body: NextStopRequest):
+def predict_next_stop(body: NextStopRequest, current_user: LogisticsUser):
+    del current_user
     try:
         result = route_svc.predict_next_stop(body.model_dump())
     except FileNotFoundError as exc:
@@ -44,7 +53,8 @@ def predict_next_stop(body: NextStopRequest):
 
 
 @router.post("/predict/route", response_model=RouteSequenceResponse)
-def predict_route(body: RouteSequenceRequest):
+def predict_route(body: RouteSequenceRequest, current_user: LogisticsUser):
+    del current_user
     try:
         result = route_svc.predict_route_sequence(body.model_dump())
     except FileNotFoundError as exc:

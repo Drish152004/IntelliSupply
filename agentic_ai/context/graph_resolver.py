@@ -10,8 +10,7 @@ from graph_retrieval.graph_service import GraphService, get_graph_service
 logger = logging.getLogger(__name__)
 
 _ORDER_BY_ID_CYPHER = """
-MATCH (o:Order)
-WHERE o.order_id = $order_id OR o.shipment_id = $order_id
+MATCH (o:Order {order_id: $order_id})
 OPTIONAL MATCH (o)-[:FROM_HUB]->(from_hub:Hub)
 OPTIONAL MATCH (o)-[:TO_HUB]->(to_hub:Hub)
 OPTIONAL MATCH (o)-[:ASSIGNED_TO]->(c:Courier)

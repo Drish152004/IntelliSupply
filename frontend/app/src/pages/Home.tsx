@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Navbar from '@/components/Navbar';
 import RouteMap from '@/components/RouteMap';
 import AICopilot from '@/components/AICopilot';
@@ -15,7 +15,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
-import { createShipment } from '@/lib/api';
+import { createShipment, listShipments, type ShipmentListItem } from '@/lib/api';
 import {
   Plus,
   MapPin,
@@ -33,27 +33,6 @@ const dispatchChecklist = [
   'Verify cargo documentation',
   'Confirm hub slot availability',
   'Assign driver and vehicle',
-];
-
-const currentShipments = [
-  {
-    id: 'SH-2841',
-    route: 'Bengaluru → Chennai',
-    courier: 'CR-102',
-    status: 'In Transit',
-  },
-  {
-    id: 'SH-2842',
-    route: 'Mumbai → Pune',
-    courier: 'CR-044',
-    status: 'Delayed',
-  },
-  {
-    id: 'SH-2843',
-    route: 'Delhi → Jaipur',
-    courier: 'CR-311',
-    status: 'Delivered',
-  },
 ];
 
 export default function LogisticsDashboard() {
@@ -76,6 +55,13 @@ export default function LogisticsDashboard() {
     sequence?: string[];
     routeError?: string | null;
   } | null>(null);
+  const [currentShipments, setCurrentShipments] = useState<ShipmentListItem[]>([]);
+
+  useEffect(() => {
+    void listShipments()
+      .then(setCurrentShipments)
+      .catch(() => setCurrentShipments([]));
+  }, []);
 
   const handleRouteSelect = (routeId: string) => {
     setSelectedRouteId((prev) => (prev === routeId ? null : routeId));
@@ -117,6 +103,7 @@ export default function LogisticsDashboard() {
         sequence: result.route_prediction?.predicted_sequence,
         routeError: result.route_error,
       });
+      void listShipments().then(setCurrentShipments).catch(() => undefined);
     } catch (err) {
       setError(
         err instanceof Error
@@ -410,37 +397,33 @@ export default function LogisticsDashboard() {
                 <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar p-4 space-y-3">
                   {currentShipments.map((shipment) => (
                     <div
-                      key={shipment.id}
+                      key={shipment.order_id}
                       className="rounded-2xl border border-border bg-slate-50 p-4"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <p className="text-sm font-semibold">
-                            {shipment.id}
+                            {shipment.order_id}
                           </p>
 
                           <p className="mt-1 text-sm text-muted-foreground">
-                            {shipment.route}
+                            {shipment.from_hub_name} → {shipment.to_hub_name}
                           </p>
                         </div>
 
                         <span
                           className={cn(
                             'rounded-full px-3 py-1 text-[11px] font-semibold',
-                            shipment.status === 'Delivered'
-                              ? 'bg-emerald-50 text-emerald-700'
-                              : shipment.status === 'Delayed'
-                              ? 'bg-red-50 text-red-700'
-                              : 'bg-amber-50 text-amber-700',
+                            'bg-amber-50 text-amber-700',
                           )}
                         >
-                          {shipment.status}
+                          {shipment.status ?? 'In Transit'}
                         </span>
                       </div>
 
                       <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
                         <span>
-                          Courier: {shipment.courier}
+                          Courier: {shipment.assigned_courier_name ?? shipment.assigned_courier_id ?? 'Unassigned'}
                         </span>
 
                         <button className="font-medium text-slate-900 hover:underline">

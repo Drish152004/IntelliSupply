@@ -119,7 +119,7 @@ def create_order_and_assign_nearest_courier(
         distance_m AS nearest_courier_distance_m,
         from_hub.name AS from_hub_name,
         to_hub.name AS to_hub_name,
-        to_hub.rep_dipan_id AS cluster_id
+        to_hub.hub_id AS cluster_id
     """
 
     try:

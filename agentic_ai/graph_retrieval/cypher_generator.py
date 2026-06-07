@@ -88,16 +88,15 @@ _TASK_TEMPLATES: dict[str, tuple[str, tuple[str, ...]]] = {
     "courier_lookup": (
         """
         MATCH (c:Courier {courier_id: $courier_id})
-        OPTIONAL MATCH (c)-[:ASSIGNED_TO_HUB]->(h:Hub)
         OPTIONAL MATCH (c)-[:OPERATES_IN]->(city:City)
         OPTIONAL MATCH (c)-[:HAS_ROLE]->(r:Role)
         RETURN
             c.courier_id AS courier_id,
             c.name AS name,
             c.email AS email,
-            h.hub_id AS hub_id,
-            h.name AS hub_name,
-            city.city_name AS city_name,
+            c.hub_id AS hub_id,
+            c.hub_name AS hub_name,
+            coalesce(city.city_name, c.city_name) AS city_name,
             r.role_name AS role_name
         LIMIT 1
         """.strip(),
@@ -105,21 +104,19 @@ _TASK_TEMPLATES: dict[str, tuple[str, tuple[str, ...]]] = {
     ),
     "shipment_lookup": (
         """
-        MATCH (o:Order)
-        WHERE o.order_id = $shipment_id OR o.shipment_id = $shipment_id
+        MATCH (o:Order {order_id: $shipment_id})
         OPTIONAL MATCH (o)-[:ASSIGNED_TO]->(c:Courier)
         OPTIONAL MATCH (o)-[:FROM_HUB]->(fromHub:Hub)
         OPTIONAL MATCH (o)-[:TO_HUB]->(toHub:Hub)
         RETURN
             o.order_id AS order_id,
-            o.shipment_id AS shipment_id,
             o.city_name AS city_name,
             o.delivery_day AS delivery_day,
             o.receipt_time AS receipt_time,
             c.courier_id AS courier_id,
             c.name AS courier_name,
-            fromHub.name AS from_hub,
-            toHub.name AS to_hub,
+            coalesce(fromHub.name, o.from_hub_name) AS from_hub,
+            coalesce(toHub.name, o.to_hub_name) AS to_hub,
             o.assigned_courier_id AS assigned_courier_id
         LIMIT 1
         """.strip(),
@@ -130,6 +127,15 @@ _TASK_TEMPLATES: dict[str, tuple[str, tuple[str, ...]]] = {
 
 def _normalize_cypher(cypher: str) -> str:
     return re.sub(r"\s+", " ", cypher.strip())
+
+
+def _is_valid_shipment_reference(value: str) -> bool:
+    cleaned = value.strip()
+    if len(cleaned) < 3:
+        return False
+    if cleaned.lower() in {"s", "sh", "ship", "shipment", "shipments"}:
+        return False
+    return True
 
 
 def _validate_read_only(cypher: str) -> None:
@@ -189,7 +195,7 @@ class CypherGenerator:
 
         elif task == "shipment_lookup":
             shipment_id = entities.get("shipment_id") or entities.get("order_id")
-            if not shipment_id:
+            if not shipment_id or not _is_valid_shipment_reference(shipment_id):
                 return None
             parameters["shipment_id"] = shipment_id
 

@@ -50,8 +50,8 @@ export default function Login() {
         setError(result.message ?? 'Login failed. Please try again.');
         return;
       }
-      // Redirect to the role's home page
-      navigate(ROLE_HOME[result.role!], { replace: true });
+      const home = result.role ? ROLE_HOME[result.role] : '/';
+      navigate(home ?? '/', { replace: true });
     } catch {
       setError('Unexpected error. Please try again.');
     } finally {
