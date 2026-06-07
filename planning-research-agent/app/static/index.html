@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Planning Research Agent</title>
+    <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
+    <style>
+        .loading-dots:after { content: '.'; animation: dots 1s steps(5, end) infinite; }
+        @keyframes dots { 0%, 20% { content: '.'; } 40% { content: '..'; } 60% { content: '...'; } 80%, 100% { content: ''; } }
+        
+        /* Citation Styling */
+        .prose a { 
+            text-decoration: none !important; 
+            background: #eff6ff; 
+            color: #2563eb !important; 
+            padding: 2px 8px; 
+            border-radius: 6px; 
+            font-size: 0.8em; 
+            font-weight: 700; 
+            border: 1px solid #dbeafe;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            margin: 0 2px;
+        }
+        .prose a:hover { 
+            background: #2563eb; 
+            color: white !important; 
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+        }
+        .prose a::before {
+            content: '🔗';
+            font-size: 0.9em;
+        }
+        
+        /* Source Card in Bibliography */
+        .source-card {
+            background: white;
+            border-left: 4px solid #2563eb;
+            padding: 12px 16px;
+            margin: 8px 0;
+            border-radius: 0 8px 8px 0;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body class="bg-slate-100 font-sans text-slate-900">
+    <div class="max-w-5xl mx-auto py-12 px-4">
+        <header class="mb-10 text-center">
+            <h1 class="text-5xl font-black text-slate-800 tracking-tight mb-3">Planning <span class="text-blue-600">Research</span> Agent</h1>
+            <p class="text-lg text-slate-600 font-medium">Professional scenario planning with real-time web research.</p>
+        </header>
+
+        <main class="bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col h-[800px]">
+            <!-- Top Status Bar -->
+            <div id="status-bar" class="bg-slate-50 border-b border-slate-200 px-6 py-2 text-xs font-bold text-slate-500 uppercase tracking-widest hidden">
+                <span id="status-text">Idle</span>
+            </div>
+
+            <div class="flex flex-1 overflow-hidden">
+                <!-- Chat Container -->
+                <div id="chat-container" class="flex-1 overflow-y-auto p-8 space-y-6 bg-white border-r border-slate-100">
+                    <div class="flex items-start gap-4">
+                        <div class="bg-blue-600 text-white p-3 rounded-xl shadow-md">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                            </svg>
+                        </div>
+                        <div class="bg-slate-100 p-5 rounded-2xl rounded-tl-none max-w-[85%] border border-slate-200">
+                            <p class="text-slate-800 leading-relaxed font-medium">System initialized. I am your Autonomous Research Agent. Describe your planning challenge, and I will perform multi-step strategic research to build your plan.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Research Log Panel -->
+                <div id="log-panel" class="w-80 bg-slate-50 p-6 overflow-y-auto border-l border-slate-100 hidden sm:block">
+                    <h3 class="text-sm font-black text-slate-400 uppercase tracking-tighter mb-4">Autonomous Thought Log</h3>
+                    <div id="logs" class="space-y-3">
+                        <p class="text-xs text-slate-400 italic">Waiting for scenario...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Suggested Scenarios -->
+            <div id="suggestions" class="px-6 py-3 bg-white border-t border-slate-100 flex gap-3 overflow-x-auto no-scrollbar">
+                <button onclick="useSuggestion(this)" class="whitespace-nowrap px-4 py-2 bg-slate-50 hover:bg-blue-50 text-slate-600 hover:text-blue-600 text-xs font-bold rounded-full border border-slate-200 hover:border-blue-200 transition-all">
+                    🚢 Red Sea Logistics Disruption
+                </button>
+                <button onclick="useSuggestion(this)" class="whitespace-nowrap px-4 py-2 bg-slate-50 hover:bg-blue-50 text-slate-600 hover:text-blue-600 text-xs font-bold rounded-full border border-slate-200 hover:border-blue-200 transition-all">
+                    📱 300-Unit Demand Spike
+                </button>
+                <button onclick="useSuggestion(this)" class="whitespace-nowrap px-4 py-2 bg-slate-50 hover:bg-blue-50 text-slate-600 hover:text-blue-600 text-xs font-bold rounded-full border border-slate-200 hover:border-blue-200 transition-all">
+                    🏭 Supplier Bankruptcy in APAC
+                </button>
+                <button onclick="useSuggestion(this)" class="whitespace-nowrap px-4 py-2 bg-slate-50 hover:bg-blue-50 text-slate-600 hover:text-blue-600 text-xs font-bold rounded-full border border-slate-200 hover:border-blue-200 transition-all">
+                    🔋 Lithium Price Surge Mitigation
+                </button>
+            </div>
+
+            <!-- Input Area -->
+            <form id="chat-form" class="p-6 bg-slate-50 border-t border-slate-200">
+                <div class="flex gap-4">
+                    <textarea id="scenario-input" 
+                        placeholder="e.g., We're launching a new product in the APAC region next month but a primary supplier just declared bankruptcy. Research mitigation steps." 
+                        class="flex-1 border border-slate-300 rounded-xl p-4 focus:ring-4 focus:ring-blue-100 focus:border-blue-500 outline-none resize-none h-24 transition-all shadow-sm"
+                        required></textarea>
+                    <button type="submit" id="send-btn" class="bg-blue-600 hover:bg-blue-700 text-white px-8 rounded-xl font-bold transition-all flex flex-col items-center justify-center shadow-lg hover:shadow-xl active:transform active:scale-95 disabled:bg-slate-400">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                        </svg>
+                        <span>Analyze</span>
+                    </button>
+                </div>
+            </form>
+        </main>
+
+        <footer class="mt-8 text-center text-gray-400 text-sm">
+            &copy; 2026 Planning Research Agent. Powered by NVIDIA NIM / Hugging Face.
+        </footer>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
