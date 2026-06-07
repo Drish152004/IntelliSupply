@@ -40,11 +40,11 @@ taskkill /PID 12345 /F
 $env:PORT=8001; python fastapi/run.py
 ```
 
-### Demand forecasting / health
+### Demand forecasting
 
-The bundled model was pickled with **scikit-learn 1.5.2**. On **Python 3.14 + sklearn 1.8**, `/demand` may fail until you retrain and save a new `.pkl` on your target runtime.
+`/demand` proxies inference to the **Hugging Face Space** (same as the agent orchestrator). Set `HF_TOKEN` if the Space is private; optional override via `HF_DEMAND_FORECAST_URL`.
 
-See [ml_services/demand_forecasting/MODEL_COMPATIBILITY.md](../ml_services/demand_forecasting/MODEL_COMPATIBILITY.md) for the exact issue and fix steps.
+See [ml_services/demand_forecasting/hf_client.py](../ml_services/demand_forecasting/hf_client.py).
 
 ## Endpoints
 

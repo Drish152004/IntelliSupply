@@ -1,12 +1,10 @@
+from chatbot import env_setup  # noqa: F401
 from sqlalchemy import create_engine, text
-from dotenv import load_dotenv
 import os
 from openai import OpenAI
 
 from sql_generator import generate_sql
 
-# LOAD ENV
-load_dotenv()
 # NVIDIA CLIENT
 client = OpenAI(
     base_url="https://integrate.api.nvidia.com/v1",

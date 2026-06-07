@@ -11,14 +11,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from dotenv import load_dotenv
+from config.env import load_env
+from config.paths import REPO_ROOT
 from openai import OpenAI
 from sqlalchemy import create_engine, text
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
 CHATBOT_ROOT = REPO_ROOT / "rag" / "inventory" / "chatbot"
-GRAPHDB_ENV = REPO_ROOT / "rag" / "graphdb" / ".env"
-INVENTORY_ENV = REPO_ROOT / "rag" / "inventory" / ".env"
 
 _engine = None
 _client: OpenAI | None = None
@@ -30,11 +28,7 @@ def _ensure_env() -> None:
     global _env_loaded
     if _env_loaded:
         return
-    if GRAPHDB_ENV.is_file():
-        load_dotenv(GRAPHDB_ENV)
-    if INVENTORY_ENV.is_file():
-        load_dotenv(INVENTORY_ENV)
-    load_dotenv()
+    load_env()
     _env_loaded = True
 
 

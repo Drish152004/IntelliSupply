@@ -1,12 +1,17 @@
 import logging
 import os
+import sys
 from pathlib import Path
 
-from dotenv import load_dotenv
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from config.env import load_env
+from config.paths import ENV_FILE
 from neo4j import GraphDatabase, NotificationMinimumSeverity
 
-_ENV_FILE = Path(__file__).resolve().parent / ".env"
-load_dotenv(_ENV_FILE)
+load_env()
 
 # Driver 5.21+ logs DBMS notifications to stderr by default in dev mode.
 logging.getLogger("neo4j.notifications").setLevel(logging.CRITICAL)
@@ -32,7 +37,7 @@ class Neo4jConnection:
         if missing:
             raise ValueError(
                 f"Missing Neo4j environment variables: {', '.join(missing)}. "
-                f"Set them in {_ENV_FILE} (see .env.example)."
+                f"Set them in {ENV_FILE} (see .env.example)."
             )
 
         self.driver = GraphDatabase.driver(

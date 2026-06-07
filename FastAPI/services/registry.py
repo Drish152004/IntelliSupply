@@ -10,12 +10,10 @@ from config import (
     DEMAND_FORECASTING_ROOT,
     ETA_SRC_ROOT,
     ROUTE_PREDICTION_ROOT,
-    demand_model_name,
     route_model_path,
 )
 
 _route_predictor: Any | None = None
-_demand_bundle: dict[str, Any] | None = None
 _eta_ready: bool = False
 
 
@@ -52,14 +50,10 @@ def get_route_predictor():
     return _route_predictor
 
 
-def get_demand_bundle() -> dict[str, Any]:
-    global _demand_bundle
-    if _demand_bundle is None:
-        _ensure_demand_path()
-        from inference import load_bundle
+def init_demand_service() -> None:
+    from services import demand_forecasting as demand_svc
 
-        _demand_bundle = load_bundle(demand_model_name())
-    return _demand_bundle
+    demand_svc.check_health()
 
 
 def init_eta_service() -> None:
@@ -86,7 +80,7 @@ def init_all_services() -> dict[str, str]:
         status["route_prediction"] = f"error: {exc}"
 
     try:
-        get_demand_bundle()
+        init_demand_service()
         status["demand_forecasting"] = "ok"
     except Exception as exc:
         status["demand_forecasting"] = f"error: {exc}"

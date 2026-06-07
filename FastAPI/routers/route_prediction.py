@@ -2,25 +2,17 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
 
-ROUTE_ROOT = Path(__file__).resolve().parents[2] / "ml_services" / "route_prediction"
-if str(ROUTE_ROOT) not in sys.path:
-    sys.path.insert(0, str(ROUTE_ROOT))
-
-from api.schemas import (  # noqa: E402
+from ml_services.route_prediction.schemas import (
     HealthResponse,
     NextStopRequest,
     NextStopResponse,
     RouteSequenceRequest,
     RouteSequenceResponse,
 )
-from services import route_prediction as route_svc  # noqa: E402
-from services.registry import get_route_predictor, route_model_path  # noqa: E402
+from services import route_prediction as route_svc
+from services.registry import get_route_predictor, route_model_path
 
 router = APIRouter(prefix="/route", tags=["route_prediction"])
 

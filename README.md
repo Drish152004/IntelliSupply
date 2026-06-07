@@ -74,16 +74,20 @@ IntelliSupply connects warehouse and hub data with logistics ML (clustering, cou
 
 ```text
 IntelliSupply/
+├── config/                    # Shared paths and env loader
+├── notebooks/route_prediction/  # Training notebooks (local) + route_ranker.pkl
 ├── frontend/app/              # React + Vite + Tailwind operator UI
 ├── FastAPI/                   # Unified ML API gateway (/route, /demand, /eta)
 ├── agentic_ai/                # LangGraph orchestrator + inventory/logistics agents
+├── ml/                        # Orchestrator ML adapter layer
 ├── ml_services/
-│   ├── route_prediction/      # LightGBM ranker, FastAPI, full dispatch pipeline
+│   ├── route_prediction/      # LightGBM ranker, full dispatch pipeline
 │   ├── eta-prediction/        # ETA model training & inference
-│   └── demand_forecasting/    # Regional demand model + API / HF space
+│   └── demand_forecasting/    # Regional demand model + HF space
 ├── rag/
 │   ├── inventory/             # NL-to-SQL chatbot over Postgres
 │   └── graphdb/               # Neo4j load + GraphRAG
+├── tests/                     # Root pytest suite
 └── README.md                  # This file
 ```
 
@@ -115,15 +119,16 @@ python -m venv .venv
 
 Install dependencies per component you need (see [Running services](#running-services)).
 
-### 2. Environment files
+### 2. Environment file
 
-Copy examples and fill in secrets (never commit `.env`):
+Copy the example and fill in secrets (never commit `.env`):
 
-| File | Purpose |
-|------|---------|
-| `rag/graphdb/.env` | Neo4j, Supabase (graph load), `NVIDIA_API_KEY` |
-| `rag/inventory/.env` | `DATABASE_URL`, `NVIDIA_API_KEY` |
-| `ml_services/route_prediction/full_pipeline/.env` | Map/routing API keys for visualization (optional) |
+```powershell
+copy .env.example .env
+# Edit .env with your keys
+```
+
+For the frontend, optionally copy `frontend/app/.env.example` to `frontend/app/.env.local`.
 
 See [Configuration](#configuration).
 
@@ -161,7 +166,7 @@ python main.py
 
 ### Unified ML API (`FastAPI/`)
 
-Single gateway for all inference. Prefer this over legacy per-service apps under `ml_services/*/api`.
+Single gateway for all inference.
 
 ```powershell
 pip install -r FastAPI/requirements.txt
@@ -211,31 +216,9 @@ python main.py
 
 Agents call ML inference in-process via `agentic_ai/integrations/ml_bridge.py` (same logic as `FastAPI/services/`).
 
-### Route prediction — standalone API
-
-Legacy service (still valid for development):
-
-```powershell
-cd ml_services\route_prediction
-pip install -r requirements.txt
-uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
-```
-
-Full API contract and samples: [ml_services/route_prediction/README.md](ml_services/route_prediction/README.md).
-
-### Demand forecasting — standalone API
-
-```powershell
-pip install -r ml_services/demand_forecasting/requirements.txt
-python ml_services/demand_forecasting/run_api.py
-```
-
-See [ml_services/demand_forecasting/README.md](ml_services/demand_forecasting/README.md).  
-**Note:** bundled demand model was pickled with scikit-learn 1.5.2; on Python 3.14 + sklearn 1.8, `/demand` may need a re-exported `.pkl` — see [MODEL_COMPATIBILITY.md](ml_services/demand_forecasting/MODEL_COMPATIBILITY.md).
-
 ### RAG — inventory chatbot
 
-Requires `rag/inventory/.env` with `DATABASE_URL` and `NVIDIA_API_KEY`.
+Requires root `.env` with `DATABASE_URL` and `NVIDIA_API_KEY`.
 
 ```powershell
 pip install -r rag/requirements.txt
@@ -262,6 +245,8 @@ Full guide: [rag/graphdb/README.md](rag/graphdb/README.md).
 
 ## Configuration
 
+All services load a **single** root [`.env`](.env.example) via [`config/env.py`](config/env.py). Copy `.env.example` to `.env` and fill in values.
+
 ### NVIDIA / LLM (agents + GraphRAG)
 
 ```env
@@ -269,15 +254,11 @@ NVIDIA_API_KEY=your_key
 GRAPH_LLM_MODEL=meta/llama-3.1-8b-instruct
 ```
 
-Loaded from `rag/graphdb/.env` and `rag/inventory/.env` by `agentic_ai/integrations/llm_client.py`.
-
 ### Inventory Postgres
 
 ```env
 DATABASE_URL=postgresql+psycopg2://user:password@host:5432/dbname
 ```
-
-`rag/inventory/.env.example` — used for NL-to-SQL.
 
 ### Neo4j + Supabase (graph load)
 
@@ -290,12 +271,12 @@ SUPABASE_DB_HOST=...
 SUPABASE_DB_PASSWORD=...
 ```
 
-`rag/graphdb/.env.example`
+See [`.env.example`](.env.example) for the full list (auth, Aura, ML overrides, frontend `VITE_API_URL`).
 
 ### Route model path
 
-Default: `ml_services/route_prediction/notebooks/route_ranker.pkl`.  
-Override for standalone route API: `ROUTE_RANKER_MODEL` env var.
+Default: `notebooks/route_prediction/route_ranker.pkl`.  
+Override: `ROUTE_RANKER_MODEL` env var.
 
 ---
 
@@ -303,10 +284,10 @@ Override for standalone route API: `ROUTE_RANKER_MODEL` env var.
 
 ### Train the route ranker
 
-1. Open `ml_services/route_prediction/notebooks/route_prediction_pipeline.ipynb`.
-2. Run from `ml_services/route_prediction/notebooks/` so `Couriers_seg/Delivery.csv` resolves.
+1. Place `route_prediction_pipeline.ipynb` under `notebooks/route_prediction/` (notebooks are gitignored).
+2. Run from `notebooks/route_prediction/` so `Couriers_seg/Delivery.csv` resolves.
 3. Pass sanity checks (`READY_FOR_FULL_TRAIN`) before full-dataset training.
-4. Export `route_ranker.pkl` to `notebooks/`.
+4. Export `route_ranker.pkl` to `notebooks/route_prediction/`.
 
 Metrics, leakage fixes, and feature list: [ml_services/route_prediction/README.md](ml_services/route_prediction/README.md).
 
@@ -329,26 +310,24 @@ Pipeline code: `ml_services/route_prediction/full_pipeline/pipeline.py`.
 
 ### Phase-1 clustering notebook
 
-`ml_services/route_prediction/notebooks/phase1_clustering.ipynb` — produces `cluster_assignments.csv` used by `CourierAssigner`.
+`notebooks/route_prediction/phase1_clustering.ipynb` — produces `cluster_assignments.csv` in `notebooks/route_prediction/outputs/` used by `CourierAssigner`.
 
 ---
 
 ## Testing
 
-### Orchestrator
+Install dev dependencies and run the full suite from repo root:
+
+```powershell
+pip install -r FastAPI/requirements.txt -r agentic_ai/requirements.txt -r requirements-dev.txt
+pytest -v
+```
+
+### Orchestrator (legacy CLI runner)
 
 ```powershell
 cd agentic_ai
 python -m tests.test_orchestrator
-```
-
-Validates intent detection, routing, and response formatting (may call LLM depending on test mocks).
-
-### ML payload extraction
-
-```powershell
-cd agentic_ai
-python -m tests.test_ml_payload
 ```
 
 ---

@@ -1,10 +1,8 @@
-import pandas as pd
-from sqlalchemy import create_engine
-from dotenv import load_dotenv
 import os
 
-# Load env variables
-load_dotenv()
+import pandas as pd
+from chatbot import env_setup  # noqa: F401
+from sqlalchemy import create_engine
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:

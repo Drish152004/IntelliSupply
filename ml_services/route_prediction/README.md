@@ -588,7 +588,7 @@ AI-assisted delivery sequencing.
 
 Single notebook: load data → train LambdaRank on `Delivery.csv` → evaluate → save `route_ranker.pkl` / `route_ranker.lgb` → optional pkl demo. (OSRM map cells are optional; production inference uses the FastAPI service below.)
 
-**Run from** `ml_services/route_prediction/notebooks/` so `Couriers_seg/Delivery.csv` resolves.
+**Run from** `notebooks/route_prediction/` so `Couriers_seg/Delivery.csv` resolves.
 
 | Config | Purpose |
 | --- | --- |
@@ -694,7 +694,7 @@ Earlier runs inflated metrics (~**95%** Hit@1, ~**0.89** Kendall τ) because the
 
 | Artifact | Path | Purpose |
 | --- | --- | --- |
-| **`route_ranker.pkl`** | `notebooks/route_ranker.pkl` | Full v3 bundle (model + encoders) |
+| **`route_ranker.pkl`** | `notebooks/route_prediction/route_ranker.pkl` | Full v3 bundle (model + encoders) |
 | **`route_predictor.py`** | package root | `RoutePredictor` + feature helpers (notebook-independent) |
 | **FastAPI** | `api/main.py` | HTTP API for LangGraph / dashboard |
 

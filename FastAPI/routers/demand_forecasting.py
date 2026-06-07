@@ -8,7 +8,6 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from services import demand_forecasting as demand_svc
-from services.registry import get_demand_bundle
 
 router = APIRouter(prefix="/demand", tags=["demand_forecasting"])
 
@@ -38,8 +37,7 @@ class PredictRequest(BaseModel):
 @router.get("/health")
 def health() -> dict[str, Any]:
     try:
-        bundle = get_demand_bundle()
-        return {"status": "ok", "granularity": bundle.get("granularity", "daily")}
+        return demand_svc.check_health()
     except Exception as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
@@ -47,18 +45,9 @@ def health() -> dict[str, Any]:
 @router.get("/meta")
 def meta() -> dict[str, Any]:
     try:
-        bundle = get_demand_bundle()
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    metadata = bundle.get("metadata", {})
-
-    return {
-        "feature_cols": bundle.get("feature_cols", []),
-        "granularity": bundle.get("granularity", "daily"),
-        "holdout_metrics": metadata.get("holdout_metrics", {}),
-        "cities": metadata.get("cities", []),
-        "last_history_date": metadata.get("last_history_date"),
-    }
+        return demand_svc.get_meta()
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.post("/predict")
@@ -66,9 +55,7 @@ def predict_endpoint(body: PredictRequest) -> dict[str, Any]:
     try:
         records = [r.model_dump() for r in body.records]
         return demand_svc.predict_demand(records)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Inference failed: {exc}") from exc
+        raise HTTPException(status_code=503, detail=f"Inference failed: {exc}") from exc

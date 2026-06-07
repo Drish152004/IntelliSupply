@@ -6,12 +6,10 @@ from __future__ import annotations
 
 import re
 import sys
-from pathlib import Path
 from typing import Any
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-RAG_ROOT = REPO_ROOT / "rag"
-GRAPHDB_ENV = RAG_ROOT / "graphdb" / ".env"
+from config.env import load_env
+from config.paths import RAG_ROOT
 
 _INSUFFICIENT_PHRASES = (
     "no matching data",
@@ -59,10 +57,8 @@ def _ensure_graph_rag() -> None:
     rag_path = str(RAG_ROOT)
     if rag_path not in sys.path:
         sys.path.insert(0, rag_path)
-    if not _env_loaded and GRAPHDB_ENV.is_file():
-        from dotenv import load_dotenv
-
-        load_dotenv(GRAPHDB_ENV)
+    if not _env_loaded:
+        load_env()
         _env_loaded = True
 
 

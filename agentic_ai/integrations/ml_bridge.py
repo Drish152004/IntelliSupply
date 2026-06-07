@@ -1,23 +1,21 @@
 """
-Bridge from LangGraph agents to unified ML inference (fastapi/services).
+Bridge from LangGraph agents to unified ML inference (FastAPI/services).
 """
 
 from __future__ import annotations
 
 import importlib.util
-import json
 import sys
 from pathlib import Path
 from typing import Any
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-FASTAPI_ROOT = REPO_ROOT / "fastapi"
-SAMPLES_DIR = FASTAPI_ROOT / "samples"
+from config.paths import FASTAPI_ROOT, REPO_ROOT
+
 _AGENTIC_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _ensure_fastapi_path() -> None:
-    """Put fastapi/ first and drop agentic_ai from path to avoid `services` name clash."""
+    """Put FastAPI/ first and drop agentic_ai from path to avoid `services` name clash."""
     fastapi_path = str(FASTAPI_ROOT)
     agentic_path = str(_AGENTIC_ROOT.parent)
 
@@ -40,10 +38,6 @@ def _load_fastapi_module(relative_path: str):
     return module
 
 
-def load_sample(filename: str) -> dict[str, Any]:
-    return json.loads((SAMPLES_DIR / filename).read_text(encoding="utf-8"))
-
-
 def run_eta_prediction(payload: dict[str, Any]) -> dict[str, Any]:
     eta = _load_fastapi_module("services/eta_prediction.py")
     return eta.predict_eta(payload)
@@ -60,10 +54,6 @@ def run_route_sequence(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def run_demand_prediction(records: list[dict[str, Any]]) -> dict[str, Any]:
-    """Call hosted demand model on Hugging Face (no local sklearn bundle)."""
-    demand_root = str(REPO_ROOT / "ml_services" / "demand_forecasting")
-    if demand_root not in sys.path:
-        sys.path.insert(0, demand_root)
-    from hf_client import predict_demand
-
-    return {"predictions": predict_demand(records)}
+    """Call hosted demand model on Hugging Face (via FastAPI demand service)."""
+    demand = _load_fastapi_module("services/demand_forecasting.py")
+    return demand.predict_demand(records)

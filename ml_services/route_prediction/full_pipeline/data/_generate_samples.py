@@ -3,12 +3,19 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import pandas as pd
 
+_REPO_ROOT = Path(__file__).resolve().parents[4]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from config.paths import NOTEBOOK_OUTPUTS_DIR
+
 DATA_DIR = Path(__file__).parent
-OUT = DATA_DIR.parents[1] / "notebooks" / "outputs"
+OUT = NOTEBOOK_OUTPUTS_DIR
 df = pd.read_csv(OUT / "orders_clustered.csv")
 ca = pd.read_csv(OUT / "cluster_assignments.csv")
 

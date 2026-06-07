@@ -13,17 +13,13 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 
 import bootstrap  # noqa: F401 — sets up sys.path before other imports
-from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from bootstrap import REPO_ROOT
-from bootstrap import REPO_ROOT
 from routers import auth, demand_forecasting, orders, route_prediction, eta_prediction
 from routers.auth import configure_auth
 from services.registry import init_all_services
-
-load_dotenv(REPO_ROOT / ".env")
 
 
 def _load_copilot_router():

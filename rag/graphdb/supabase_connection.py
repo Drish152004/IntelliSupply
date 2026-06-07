@@ -1,12 +1,16 @@
 import os
+import sys
 from pathlib import Path
 from urllib.parse import quote_plus
 
-from dotenv import load_dotenv
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from config.env import load_env
 from sqlalchemy import create_engine
 
-_ENV_FILE = Path(__file__).resolve().parent / ".env"
-load_dotenv(_ENV_FILE)
+load_env()
 
 
 def get_supabase_engine():

@@ -1,20 +1,16 @@
 import os
 import socket
+import sys
 from pathlib import Path
 from urllib.parse import urlparse
 
-from dotenv import load_dotenv
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from config.env import load_env
 from neo4j import GraphDatabase, basic_auth
 from neo4j.exceptions import Neo4jError, ServiceUnavailable
-
-RAG_ROOT = Path(__file__).resolve().parents[1]
-REPO_ROOT = RAG_ROOT.parent
-
-_AURA_ENV_PATHS = (
-    RAG_ROOT / "graphdb" / ".env",
-    RAG_ROOT / "aura_graphdb" / ".env",
-    REPO_ROOT / ".env",
-)
 
 _env_loaded = False
 _CONNECTION_TIMEOUT_SEC = 10
@@ -24,10 +20,7 @@ def _load_aura_env() -> None:
     global _env_loaded
     if _env_loaded:
         return
-    for path in _AURA_ENV_PATHS:
-        if path.is_file():
-            load_dotenv(path, override=False)
-    load_dotenv(override=False)
+    load_env()
     _env_loaded = True
 
 
@@ -57,7 +50,7 @@ def _resolve_config() -> tuple[str, str, str, str, str]:
         if missing:
             raise ValueError(
                 f"NEO4J_USE_LOCAL is enabled but missing: {', '.join(missing)}. "
-                "Set them in rag/graphdb/.env and start Neo4j on localhost:7687."
+                "Set them in the repo root .env (see .env.example) and start Neo4j on localhost:7687."
             )
         return uri, user, password, database, backend
 
@@ -69,7 +62,7 @@ def _resolve_config() -> tuple[str, str, str, str, str]:
 
     if not uri:
         raise ValueError(
-            "Missing NEO4J_AURA_URI. Set Aura credentials in rag/graphdb/.env, "
+            "Missing NEO4J_AURA_URI. Set Aura credentials in the repo root .env, "
             "or set NEO4J_USE_LOCAL=true to use local Neo4j (NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD)."
         )
     if not user:
@@ -96,7 +89,7 @@ def _preflight_dns(uri: str) -> None:
     except socket.gaierror as exc:
         raise ConnectionError(
             f"Cannot resolve Neo4j host '{host}'. The Aura instance may be paused, deleted, "
-            f"or the URI in rag/graphdb/.env is outdated. "
+            f"or the URI in the repo root .env is outdated. "
             f"Get a fresh URI from https://console.neo4j.io/ or set NEO4J_USE_LOCAL=true "
             f"and run local Neo4j on bolt://localhost:7687. ({exc})"
         ) from exc
@@ -107,7 +100,7 @@ def _format_neo4j_error(exc: Exception, backend: str) -> str:
     if "getaddrinfo failed" in message or "Failed to DNS resolve" in message:
         return (
             f"{backend} is unreachable (DNS lookup failed). "
-            "Update NEO4J_AURA_URI in rag/graphdb/.env from the Neo4j Aura console, "
+            "Update NEO4J_AURA_URI in the repo root .env from the Neo4j Aura console, "
             "or set NEO4J_USE_LOCAL=true and start local Neo4j."
         )
     if "Connection refused" in message:

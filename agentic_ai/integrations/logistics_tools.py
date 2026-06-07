@@ -118,7 +118,7 @@ def _validate_ml_payload(tool_name: str, payload: dict[str, Any]) -> None:
         ETARequest.model_validate(payload)
         return
     _ensure_route_import()
-    from api.schemas import NextStopRequest, RouteSequenceRequest
+    from ml_services.route_prediction.schemas import NextStopRequest, RouteSequenceRequest
 
     if tool_name == "predict_next_stop":
         NextStopRequest.model_validate(payload)

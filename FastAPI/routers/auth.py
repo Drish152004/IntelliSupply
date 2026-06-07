@@ -1,21 +1,18 @@
 import os
 
 from authlib.integrations.starlette_client import OAuth
-from dotenv import load_dotenv
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
-from bootstrap import BACKEND_ROOT, REPO_ROOT
+from bootstrap import BACKEND_ROOT
 from aura_graphdb.aura_auth import (
     login_or_register_google_user,
     login_user_with_password,
     register_user_with_password,
 )
-
-load_dotenv(REPO_ROOT / ".env")
 
 router = APIRouter(tags=["auth"])
 

@@ -1,9 +1,6 @@
-from openai import OpenAI
-from dotenv import load_dotenv
+from chatbot import env_setup  # noqa: F401
 import os
-
-# LOAD ENV
-load_dotenv()
+from openai import OpenAI
 
 # NVIDIA CLIENT
 client = OpenAI(

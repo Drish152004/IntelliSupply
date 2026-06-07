@@ -3,14 +3,9 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 
-from dotenv import load_dotenv
+from config.env import load_env
 from openai import OpenAI
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
-RAG_ENV = REPO_ROOT / "rag" / "graphdb" / ".env"
-INVENTORY_ENV = REPO_ROOT / "rag" / "inventory" / ".env"
 
 _env_loaded = False
 _client: OpenAI | None = None
@@ -19,10 +14,7 @@ _client: OpenAI | None = None
 def ensure_env() -> None:
     global _env_loaded
     if not _env_loaded:
-        if RAG_ENV.is_file():
-            load_dotenv(RAG_ENV)
-        if INVENTORY_ENV.is_file():
-            load_dotenv(INVENTORY_ENV)
+        load_env()
         _env_loaded = True
 
 

@@ -1,13 +1,18 @@
 import os
 import json
-from dotenv import load_dotenv
+import sys
+from pathlib import Path
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from config.env import load_env
 from openai import OpenAI
 
 from graphdb.neo4j_connection import Neo4jConnection
 
-from pathlib import Path
-
-load_dotenv(Path(__file__).resolve().parent / ".env")
+load_env()
 
 
 # =========================================================

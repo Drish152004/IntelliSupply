@@ -15,12 +15,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from dotenv import load_dotenv
+from config.env import load_env
 from openai import OpenAI
 from pydantic import BaseModel, ValidationError
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-RAG_ENV = REPO_ROOT / "rag" / "graphdb" / ".env"
 ROUTE_ROOT = REPO_ROOT / "ml_services" / "route_prediction"
 ETA_SRC = REPO_ROOT / "ml_services" / "eta-prediction" / "src"
 
@@ -70,8 +69,8 @@ class PayloadResolution:
 
 def _ensure_env() -> None:
     global _env_loaded
-    if not _env_loaded and RAG_ENV.is_file():
-        load_dotenv(RAG_ENV)
+    if not _env_loaded:
+        load_env()
         _env_loaded = True
 
 
@@ -105,7 +104,7 @@ def _model_for_task(task: str) -> type[BaseModel]:
 
         return ETARequest
     _ensure_route_import()
-    from api.schemas import NextStopRequest, RouteSequenceRequest
+    from ml_services.route_prediction.schemas import NextStopRequest, RouteSequenceRequest
 
     if task == "next_stop":
         return NextStopRequest
