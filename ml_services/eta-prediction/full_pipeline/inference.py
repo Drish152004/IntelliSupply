@@ -1,77 +1,284 @@
-"""ETA model loading, feature engineering, and inference."""
-
-from __future__ import annotations
-
-import pickle
-from functools import lru_cache
-from pathlib import Path
-from typing import Any
-
+# =============================================================================
+# ETA PREDICTOR CLASS
+# =============================================================================
 import numpy as np
 import pandas as pd
-from pydantic import BaseModel
+import pickle
 
-MODELS_DIR = Path(__file__).resolve().parents[1] / "models"
+class ETAPredictor:
 
+    """
+    Serializable ETA prediction bundle.
+    """
 
-def _read_pickle_dataframe(path: Path) -> pd.DataFrame:
-    """Load a pickled DataFrame without requiring pyarrow (pandas 3.x compat)."""
-    with path.open("rb") as fh:
-        obj = pickle.load(fh)
-    if isinstance(obj, pd.DataFrame):
+    def __init__(
+        self,
+        model,
+        feature_cols,
+        label_encoders,
+        aoi_map,
+        city_eta,
+        type_eta,
+        aoi_eta,
+        courier_avg_eta,
+        courier_total_orders,
+        version="2.0",
+    ):
+        self.model = model
+
+        self.feature_cols = feature_cols
+
+        self.label_encoders = label_encoders
+
+        self.aoi_map = aoi_map
+
+        self.city_eta = city_eta
+
+        self.type_eta = type_eta
+
+        self.aoi_eta = aoi_eta
+
+        self.courier_avg_eta = courier_avg_eta
+
+        self.courier_total_orders = courier_total_orders
+
+        self.version = version
+
+    # =========================================================================
+    # FEATURE PREP
+    # =========================================================================
+
+    def prepare_features(
+        self,
+        orders_df,
+    ):
+
+        df = orders_df.copy()
+
+        # ---------------------------------------------------------------------
+        # TIME FEATURES
+        # ---------------------------------------------------------------------
+
+        df["receipt_time"] = pd.to_datetime(
+            df["receipt_time"]
+        )
+
+        df["hour_of_day"] = (
+            df["receipt_time"].dt.hour
+        )
+
+        df["minute"] = (
+            df["receipt_time"].dt.minute
+        )
+
+        df["day_of_week"] = (
+            df["receipt_time"].dt.dayofweek
+        )
+
+        df["month"] = (
+            df["receipt_time"].dt.month
+        )
+
+        df["is_morning"] = (
+            df["hour_of_day"] < 12
+        ).astype(np.int8)
+
+        df["is_afternoon"] = (
+            (df["hour_of_day"] >= 12)
+            & (df["hour_of_day"] < 17)
+        ).astype(np.int8)
+
+        df["is_evening"] = (
+            df["hour_of_day"] >= 17
+        ).astype(np.int8)
+
+        # ---------------------------------------------------------------------
+        # DISTANCE FEATURES
+        # ---------------------------------------------------------------------
+
+        dlat = (
+            df["poi_lat"]
+            - df["receipt_lat"]
+        )
+
+        dlng = (
+            df["poi_lng"]
+            - df["receipt_lng"]
+        )
+
+        df["euclidean_dist"] = np.sqrt(
+            dlat**2 + dlng**2
+        )
+
+        df["manhattan_dist"] = (
+            np.abs(dlat)
+            + np.abs(dlng)
+        )
+
+        df["log_distance"] = np.log1p(
+            df["euclidean_dist"]
+        )
+
+        bearing = np.arctan2(
+            dlng,
+            dlat,
+        )
+
+        df["bearing_sin"] = np.sin(
+            bearing
+        )
+
+        df["bearing_cos"] = np.cos(
+            bearing
+        )
+
+        # ---------------------------------------------------------------------
+        # DEFAULT ROUTE FEATURES
+        # ---------------------------------------------------------------------
+
+        if "stop_rank" not in df.columns:
+            df["stop_rank"] = 0
+
+        if "stops_remaining" not in df.columns:
+            df["stops_remaining"] = 1
+
+        df["receipt_hour"] = (
+            df["receipt_time"].dt.hour
+        )
+
+        if "wait_since_first_order_min" not in df.columns:
+            df["wait_since_first_order_min"] = 0.0
+
+        df["log_wait_since_first_order"] = np.log1p(
+            df["wait_since_first_order_min"]
+        )
+
+        # ---------------------------------------------------------------------
+        # ENCODERS
+        # ---------------------------------------------------------------------
+
+        for col in [
+            "city_name",
+            "typecode",
+        ]:
+
+            le = self.label_encoders[col]
+
+            known = set(le.classes_)
+
+            df[col + "_enc"] = (
+                df[col]
+                .astype(str)
+                .map(
+                    lambda x: (
+                        int(le.transform([x])[0])
+                        if x in known
+                        else -1
+                    )
+                )
+            )
+
+        df["aoi_id_enc"] = (
+            df["aoi_id"]
+            .astype(str)
+            .map(self.aoi_map)
+            .fillna(-1)
+            .astype(np.int32)
+        )
+
+        # ---------------------------------------------------------------------
+        # HISTORICAL FEATURES
+        # ---------------------------------------------------------------------
+
+        df["city_avg_eta"] = (
+            df["city_name"]
+            .map(self.city_eta)
+            .fillna(45)
+        )
+
+        df["type_avg_eta"] = (
+            df["typecode"]
+            .map(self.type_eta)
+            .fillna(45)
+        )
+
+        df["aoi_avg_eta"] = (
+            df["aoi_id"]
+            .map(self.aoi_eta)
+            .fillna(45)
+        )
+
+        df["courier_avg_eta"] = (
+            df["delivery_user_id"]
+            .map(self.courier_avg_eta)
+            .fillna(45)
+        )
+
+        df["courier_total_orders"] = (
+            df["delivery_user_id"]
+            .map(self.courier_total_orders)
+            .fillna(1)
+        )
+
+        return df
+
+    # =========================================================================
+    # PREDICT ETA
+    # =========================================================================
+
+    def predict_eta(
+        self,
+        orders_df,
+    ):
+
+        feat_df = self.prepare_features(
+            orders_df
+        )
+
+        X = feat_df[self.feature_cols]
+
+        preds = self.model.predict(
+            X,
+            num_iteration=self.model.best_iteration,
+        )
+
+        preds = np.clip(
+            preds,
+            1,
+            480,
+        )
+
+        return preds
+
+    # =========================================================================
+    # SAVE
+    # =========================================================================
+
+    def save(
+        self,
+        path,
+    ):
+
+        with open(path, "wb") as f:
+            pickle.dump(
+                self,
+                f,
+                protocol=pickle.HIGHEST_PROTOCOL,
+            )
+
+        print(f"Saved model -> {path}")
+
+    # =========================================================================
+    # LOAD
+    # =========================================================================
+
+    @classmethod
+    def load(
+        cls,
+        path,
+    ):
+
+        with open(path, "rb") as f:
+            obj = pickle.load(f)
+
         return obj
-    return pd.DataFrame(obj)
-
-
-class ETARequest(BaseModel):
-    delivery_user_id: int
-    from_dipan_id: int
-    aoi_id: int
-    receipt_time: str
-    receipt_lat: float
-    receipt_lng: float
-    poi_lat: float
-    poi_lng: float
-
-
-@lru_cache(maxsize=1)
-def _load_artifacts() -> dict[str, Any]:
-    model = pickle.load(open(MODELS_DIR / "lgbm_eta_model.pkl", "rb"))
-    features = pickle.load(open(MODELS_DIR / "features.pkl", "rb"))
-    cat_mappings = pickle.load(open(MODELS_DIR / "cat_mappings.pkl", "rb"))
-
-    courier_stats = _read_pickle_dataframe(MODELS_DIR / "courier_stats.pkl")
-    courier_daily = _read_pickle_dataframe(MODELS_DIR / "courier_daily.pkl")
-    courier_hourly = _read_pickle_dataframe(MODELS_DIR / "courier_hourly.pkl")
-    aoi_stats = _read_pickle_dataframe(MODELS_DIR / "aoi_stats.pkl")
-
-    courier_stats["delivery_user_id"] = courier_stats["delivery_user_id"].astype(str)
-    courier_daily["delivery_user_id"] = courier_daily["delivery_user_id"].astype(str)
-    courier_hourly["delivery_user_id"] = courier_hourly["delivery_user_id"].astype(str)
-    aoi_stats["aoi_id"] = aoi_stats["aoi_id"].astype(str)
-
-    return {
-        "model": model,
-        "features": features,
-        "cat_mappings": cat_mappings,
-        "courier_stats": courier_stats,
-        "courier_daily": courier_daily,
-        "courier_hourly": courier_hourly,
-        "aoi_stats": aoi_stats,
-    }
-
-
-def build_features(data: ETARequest | dict[str, Any], artifacts: dict[str, Any] | None = None) -> pd.DataFrame:
-    if artifacts is None:
-        artifacts = _load_artifacts()
-
-    from full_pipeline.feature_engineering import build_features as bf
-    return bf(data, artifacts)
-
-
-
-def predict_eta(data: ETARequest | dict[str, Any]) -> dict[str, float]:
-    artifacts = _load_artifacts()
-    features = build_features(data, artifacts)
-    pred = artifacts["model"].predict(features)[0]
-    return {"eta_minutes": round(float(pred), 2)}
