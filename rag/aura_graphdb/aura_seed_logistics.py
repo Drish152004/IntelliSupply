@@ -3,8 +3,8 @@ import pandas as pd
 from pathlib import Path
 
 from aura_graphdb.aura_connection import AuraConnection
-from aura_graphdb.supabase_connection import get_supabase_engine
-from aura_graphdb.aura_route_cypher import PERSIST_ASSIGNED_ROUTE_QUERY
+from rag.supabase.supabase_connection import get_supabase_engine
+from rag.aura_graphdb.shared_cypher import PERSIST_ASSIGNED_ROUTE_QUERY
 
 PIPELINE_DATA_DIR = (
     Path(__file__).resolve().parents[2]
@@ -20,11 +20,6 @@ PIPELINE_OUTPUT_DIR = (
     / "full_pipeline"
     / "outputs"
 )
-
-
-# =========================================================
-# 1. LOAD CITIES FROM SUPABASE
-# =========================================================
 
 def load_cities_to_aura():
     engine = get_supabase_engine()
@@ -52,11 +47,6 @@ def load_cities_to_aura():
         print(f"Loaded {len(rows)} cities into Aura.")
     finally:
         conn.close()
-
-
-# =========================================================
-# 2. LOAD HUBS FROM SUPABASE
-# =========================================================
 
 def load_hubs_to_aura():
     engine = get_supabase_engine()
@@ -125,11 +115,6 @@ def load_hubs_to_aura():
     finally:
         conn.close()
 
-
-# =========================================================
-# 3. LOAD COURIERS FROM synthetic_couriers.json
-# =========================================================
-
 def load_synthetic_couriers_to_aura(json_path="synthetic_couriers.json"):
     conn = AuraConnection()
 
@@ -170,11 +155,6 @@ def load_synthetic_couriers_to_aura(json_path="synthetic_couriers.json"):
         print(f"Loaded {len(rows)} synthetic couriers into Aura.")
     finally:
         conn.close()
-
-
-# =========================================================
-# 4. LOAD ORDERS FROM synthetic_orders.json
-# =========================================================
 
 def load_synthetic_orders_to_aura(json_path="synthetic_orders.json"):
     conn = AuraConnection()
@@ -219,11 +199,6 @@ def load_synthetic_orders_to_aura(json_path="synthetic_orders.json"):
     finally:
         conn.close()
 
-
-# =========================================================
-# 5. LOAD ASSIGNED ROUTES FROM assigned_routes.json
-# =========================================================
-
 def load_assigned_routes_to_aura(json_path=None):
     conn = AuraConnection()
 
@@ -239,11 +214,6 @@ def load_assigned_routes_to_aura(json_path=None):
         print(f"Loaded {len(routes)} assigned routes into Aura.")
     finally:
         conn.close()
-
-
-# =========================================================
-# MAIN SEED FUNCTION
-# =========================================================
 
 def seed_aura_logistics():
     load_cities_to_aura()
@@ -267,7 +237,6 @@ def seed_aura_logistics():
         print(f"Profile sync skipped/failed: {exc}")
 
     print("Aura logistics seed completed.")
-
 
 if __name__ == "__main__":
     seed_aura_logistics()

@@ -1,3 +1,7 @@
+"""Order graph operations in Neo4j Aura."""
+
+from __future__ import annotations
+
 import uuid
 from typing import Optional
 
@@ -12,23 +16,14 @@ def create_order_and_assign_nearest_courier(
     ds: int = 318,
     typecode: Optional[str] = None,
     aoi_id: Optional[str] = None,
-    extra_notes: Optional[str] = None
+    extra_notes: Optional[str] = None,
 ):
     """
-    Logistics manager creates a new order.
+    Create a new order and assign it to the nearest active courier.
 
-    from_hub_name:
-        Starting hub / pickup hub.
-        Used for receipt_lat_wgs84 and receipt_lon_wgs84.
-
-    to_hub_name:
-        Destination hub / delivery hub.
-        Used for lat_wgs84 and lon_wgs84.
-
-    Nearest courier is selected based on distance from courier current/start location
-    to from_hub coordinates.
+    The source hub is used as the pickup location.
+    The destination hub is used as the delivery location.
     """
-
     order_id = f"ord-{uuid.uuid4().hex[:12]}"
     notes_id = f"note-{uuid.uuid4().hex[:12]}"
 
@@ -123,43 +118,33 @@ def create_order_and_assign_nearest_courier(
     """
 
     try:
-        result = conn.execute_write(query, {
-            "order_id": order_id,
-            "notes_id": notes_id,
-            "from_hub_name": from_hub_name.strip(),
-            "to_hub_name": to_hub_name.strip(),
-            "delivery_day": delivery_day,
-            "receipt_time": receipt_time,
-            "ds": ds,
-            "typecode": typecode,
-            "aoi_id": aoi_id,
-            "notes_text": extra_notes or ""
-        })
+        result = conn.execute_write(
+            query,
+            {
+                "order_id": order_id,
+                "notes_id": notes_id,
+                "from_hub_name": from_hub_name.strip(),
+                "to_hub_name": to_hub_name.strip(),
+                "delivery_day": delivery_day,
+                "receipt_time": receipt_time,
+                "ds": int(ds),
+                "typecode": typecode,
+                "aoi_id": aoi_id,
+                "notes_text": extra_notes or "",
+            },
+        )
 
         if not result:
             return {
                 "success": False,
-                "message": "Could not create order. Check that both hubs exist in the same city and at least one active courier exists."
+                "message": "Could not create order. Check that both hubs exist in the same city and at least one active courier exists.",
             }
 
         return {
             "success": True,
             "message": "Order created and assigned to nearest courier successfully.",
-            "order": result[0]
+            "order": result[0],
         }
 
     finally:
         conn.close()
-
-
-if __name__ == "__main__":
-    response = create_order_and_assign_nearest_courier(
-        from_hub_name="Hub_1",
-        to_hub_name="Hub_5",
-        delivery_day="2026-06-03",
-        receipt_time="2026-06-03 08:00:00",
-        ds=318,
-        extra_notes="created from test script"
-    )
-
-    print(response)

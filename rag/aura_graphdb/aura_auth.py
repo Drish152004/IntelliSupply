@@ -4,7 +4,7 @@ from typing import Optional
 
 from aura_graphdb.aura_connection import AuraConnection
 from aura_graphdb.aura_profiles import sync_profile_to_aura
-from aura_graphdb import supabase_auth
+from rag.supabase import supabase_auth
 
 logger = logging.getLogger(__name__)
 
