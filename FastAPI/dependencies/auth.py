@@ -29,7 +29,7 @@ class TokenUser:
 
 
 def _jwt_secret() -> str:
-    return os.getenv("JWT_SECRET") or os.getenv("FASTAPI_SECRET_KEY", "dev-secret-change-this")
+    return os.getenv("JWT_SECRET", "dev-secret-change-this")
 
 
 def _jwt_expire_minutes() -> int:

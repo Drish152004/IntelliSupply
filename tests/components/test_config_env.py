@@ -23,4 +23,4 @@ def test_load_env_is_idempotent():
 
 def test_env_file_variables_readable():
     load_env()
-    assert os.getenv("NVIDIA_API_KEY") or os.getenv("GOOGLE_CLIENT_ID") or True
+    assert os.getenv("NVIDIA_API_KEY") or os.getenv("JWT_SECRET") or True

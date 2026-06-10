@@ -17,7 +17,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from routers import auth, copilot, dashboard, demand_forecasting, inventory, notifications, orders, route_prediction, eta_prediction, users
-from routers.auth import configure_auth
 from services.registry import init_all_services
 
 
@@ -40,8 +39,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-configure_auth(app)
-
+app.include_router(auth.router)
 app.include_router(copilot.router)
 app.include_router(route_prediction.router)
 app.include_router(demand_forecasting.router)
@@ -68,7 +66,7 @@ def root():
         "message": "IntelliSupply unified API",
         "docs": "/docs",
         "services": {
-            "auth": "/login",
+            "auth": "/api/login",
             "copilot": "/copilot",
             "orders": "/orders",
             "couriers": "/couriers",

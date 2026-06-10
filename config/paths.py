@@ -8,7 +8,6 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 RAG_ROOT = REPO_ROOT / "rag"
 FASTAPI_ROOT = REPO_ROOT / "FastAPI"
 AGENTIC_ROOT = REPO_ROOT / "agentic_ai"
-BACKEND_ROOT = REPO_ROOT / "backend"
 
 ROUTE_PREDICTION_ROOT = REPO_ROOT / "ml_services" / "route_prediction"
 ETA_PREDICTION_ROOT = REPO_ROOT / "ml_services" / "eta-prediction"

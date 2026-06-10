@@ -117,13 +117,6 @@ C:.
 |       schemas.py
 |       __init__.py
 |       
-+---backend
-|   |   .gitkeep
-|   |   app.py
-|   |   
-|   \---static
-|           style.css
-|           
 +---config
 |       env.py
 |       ml_api.py

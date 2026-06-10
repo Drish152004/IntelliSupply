@@ -12,7 +12,6 @@ if str(_REPO_ROOT) not in sys.path:
 
 from config.paths import (  # noqa: E402
     AGENTIC_ROOT,
-    BACKEND_ROOT,
     FASTAPI_ROOT,
     RAG_ROOT,
     REPO_ROOT,

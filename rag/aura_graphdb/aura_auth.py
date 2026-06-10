@@ -1,14 +1,10 @@
 import logging
-import uuid
-from typing import Optional
 
 from aura_graphdb.aura_connection import AuraConnection
 from aura_graphdb.aura_profiles import sync_profile_to_aura
 from rag.supabase import supabase_auth
 
 logger = logging.getLogger(__name__)
-
-from aura_graphdb.aura_roles import ALLOWED_ROLES, ROLE_MAP, get_role_id, normalize_role
 
 
 def count_profiles() -> int:
@@ -97,112 +93,6 @@ def login_user_with_password(email: str, password: str):
     return result
 
 
-def login_or_register_google_user(
-    name: str,
-    email: str,
-    google_sub: str,
-    selected_role: Optional[str] = None,
-):
-    """Google OAuth still stores profiles directly in Aura (no Supabase auth.users integration yet)."""
-    existing_user = _get_aura_profile_by_email(email)
-
-    if existing_user:
-        conn = AuraConnection()
-
-        query = """
-        MATCH (p:Profile {email: $email})
-        SET
-            p.google_sub = coalesce(p.google_sub, $google_sub),
-            p.last_login_at = datetime(),
-            p.updated_at = datetime()
-
-        WITH p
-        OPTIONAL MATCH (p)-[:HAS_ROLE]->(r:Role)
-
-        RETURN
-            p.id AS id,
-            p.name AS name,
-            p.email AS email,
-            r.role_id AS role_id,
-            r.role_name AS role
-        LIMIT 1
-        """
-
-        try:
-            result = conn.execute_write(
-                query,
-                {
-                    "email": email.lower().strip(),
-                    "google_sub": google_sub,
-                },
-            )
-
-            return {
-                "success": True,
-                "message": "Google login successful.",
-                "user": result[0],
-            }
-        finally:
-            conn.close()
-
-    is_first_user = _count_aura_profiles() == 0 and count_profiles() == 0
-
-    final_role = "admin" if is_first_user else normalize_role(selected_role)
-    final_role_id = get_role_id(final_role)
-
-    user_id = str(uuid.uuid4())
-
-    conn = AuraConnection()
-
-    query = """
-    MERGE (r:Role {role_id: $role_id})
-    SET r.role_name = $role_name
-
-    CREATE (p:Profile {
-        id: $user_id,
-        name: $name,
-        email: $email,
-        password_hash: null,
-        auth_provider: "google",
-        google_sub: $google_sub,
-        is_active: true,
-        created_at: datetime(),
-        updated_at: datetime(),
-        last_login_at: datetime()
-    })
-
-    MERGE (p)-[:HAS_ROLE]->(r)
-
-    RETURN
-        p.id AS id,
-        p.name AS name,
-        p.email AS email,
-        r.role_id AS role_id,
-        r.role_name AS role
-    """
-
-    try:
-        result = conn.execute_write(
-            query,
-            {
-                "user_id": user_id,
-                "name": name.strip(),
-                "email": email.lower().strip(),
-                "google_sub": google_sub,
-                "role_id": final_role_id,
-                "role_name": final_role,
-            },
-        )
-
-        return {
-            "success": True,
-            "message": "Google user registered successfully.",
-            "user": result[0],
-        }
-    finally:
-        conn.close()
-
-
 def list_all_users(limit: int = 100):
     """Return Supabase profiles plus Aura courier accounts."""
     profiles = supabase_auth.list_all_users(limit=limit)
@@ -240,36 +130,3 @@ def list_all_users(limit: int = 100):
         for row in couriers
     ]
     return combined[:limit]
-
-
-def _count_aura_profiles() -> int:
-    conn = AuraConnection()
-    query = "MATCH (p:Profile) RETURN count(p) AS profile_count"
-    try:
-        result = conn.execute_query(query)
-        return result[0]["profile_count"] if result else 0
-    finally:
-        conn.close()
-
-
-def _get_aura_profile_by_email(email: str):
-    conn = AuraConnection()
-    query = """
-    MATCH (p:Profile {email: $email})
-    OPTIONAL MATCH (p)-[:HAS_ROLE]->(r:Role)
-    RETURN
-        p.id AS id,
-        p.name AS name,
-        p.email AS email,
-        p.password_hash AS password_hash,
-        p.auth_provider AS auth_provider,
-        p.google_sub AS google_sub,
-        r.role_id AS role_id,
-        r.role_name AS role
-    LIMIT 1
-    """
-    try:
-        result = conn.execute_query(query, {"email": email.lower().strip()})
-        return result[0] if result else None
-    finally:
-        conn.close()
