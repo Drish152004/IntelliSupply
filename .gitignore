@@ -96,7 +96,4 @@ credentials/
 # Small pipeline artifact only (orders_clustered.csv is generated locally, ~170MB)
 !models/cluster_assignments.csv
 
-# Generated reports / exports
-*.html
-
 *.pkl
