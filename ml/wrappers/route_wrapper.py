@@ -49,7 +49,7 @@ class RouteWrapper(BaseModelWrapper):
         if not ROUTE_MODEL_PATH.is_file():
             raise FileNotFoundError(
                 f"Route model not found at {ROUTE_MODEL_PATH}. "
-                "Train the route ranker notebook first."
+                "Train the route ranker and export to models/route_ranker.pkl."
             )
         return DeliveryPipeline(route_model_path=ROUTE_MODEL_PATH, output_dir=None)
 

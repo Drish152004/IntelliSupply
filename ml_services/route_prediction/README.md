@@ -694,11 +694,11 @@ Earlier runs inflated metrics (~**95%** Hit@1, ~**0.89** Kendall τ) because the
 
 | Artifact | Path | Purpose |
 | --- | --- | --- |
-| **`route_ranker.pkl`** | `notebooks/route_prediction/route_ranker.pkl` | Full v3 bundle (model + encoders) |
+| **`route_ranker.pkl`** | `models/route_ranker.pkl` | Full v3 bundle (model + encoders) |
 | **`route_predictor.py`** | package root | `RoutePredictor` + feature helpers (notebook-independent) |
 | **FastAPI** | `api/main.py` | HTTP API for LangGraph / dashboard |
 
-Train and export the pkl from `route_prediction_pipeline.ipynb` (sanity gate must pass). The API loads `notebooks/route_ranker.pkl` by default.
+Train and export the pkl from your notebook workflow (sanity gate must pass). The API loads `models/route_ranker.pkl` by default.
 
 ### Run the inference API
 
@@ -712,7 +712,7 @@ Optional env:
 
 | Variable | Default |
 | --- | --- |
-| `ROUTE_RANKER_MODEL` | `notebooks/route_ranker.pkl` |
+| `ROUTE_RANKER_MODEL` | `models/route_ranker.pkl` |
 
 - **OpenAPI docs:** http://localhost:8000/docs  
 - **Health:** `GET /health`

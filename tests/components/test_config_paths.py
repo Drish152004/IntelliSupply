@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from config.paths import (
     CLUSTER_ASSIGNMENTS_PATH,
-    NOTEBOOK_OUTPUTS_DIR,
+    ETA_MODEL_PATH,
+    MODELS_ROOT,
     REPO_ROOT,
     ROUTE_MODEL_PATH,
-    ROUTE_NOTEBOOKS_DIR,
 )
 
 
@@ -15,15 +15,19 @@ def test_repo_root_exists():
     assert REPO_ROOT.is_dir()
 
 
-def test_notebook_dirs():
-    assert ROUTE_NOTEBOOKS_DIR.name == "route_prediction"
-    assert NOTEBOOK_OUTPUTS_DIR == ROUTE_NOTEBOOKS_DIR / "outputs"
+def test_models_root_location():
+    assert MODELS_ROOT == REPO_ROOT / "models"
 
 
 def test_route_model_path_location():
-    assert ROUTE_MODEL_PATH == ROUTE_NOTEBOOKS_DIR / "route_ranker.pkl"
-    assert ROUTE_MODEL_PATH.is_file(), "route_ranker.pkl should exist after notebook migration"
+    assert ROUTE_MODEL_PATH == MODELS_ROOT / "route_ranker.pkl"
+    assert ROUTE_MODEL_PATH.is_file(), "route_ranker.pkl should exist under models/"
 
 
-def test_cluster_assignments_path_under_outputs():
-    assert CLUSTER_ASSIGNMENTS_PATH.parent == NOTEBOOK_OUTPUTS_DIR
+def test_eta_model_path_location():
+    assert ETA_MODEL_PATH == MODELS_ROOT / "eta_lightgbm_model.pkl"
+    assert ETA_MODEL_PATH.is_file(), "eta_lightgbm_model.pkl should exist under models/"
+
+
+def test_cluster_assignments_path_under_models():
+    assert CLUSTER_ASSIGNMENTS_PATH.parent == MODELS_ROOT

@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 from typing import Any
 
 from config import (
-    DEMAND_FORECASTING_ROOT,
     ETA_PREDICTION_ROOT,
     ROUTE_PREDICTION_ROOT,
     route_model_path,
@@ -19,12 +17,6 @@ _eta_ready: bool = False
 
 def _ensure_route_path() -> None:
     path = str(ROUTE_PREDICTION_ROOT)
-    if path not in sys.path:
-        sys.path.insert(0, path)
-
-
-def _ensure_demand_path() -> None:
-    path = str(DEMAND_FORECASTING_ROOT)
     if path not in sys.path:
         sys.path.insert(0, path)
 

@@ -93,9 +93,10 @@ credentials/
 # Data files
 *.csv
 
-# Allow model-specific required files
-!ml_services/demand_forecasting/models/*.json
-!ml_services/demand_forecasting/models/*.csv
+# Small pipeline artifact only (orders_clustered.csv is generated locally, ~170MB)
+!models/cluster_assignments.csv
 
 # Generated reports / exports
 *.html
+
+*.pkl

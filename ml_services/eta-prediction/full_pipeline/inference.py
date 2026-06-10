@@ -282,3 +282,37 @@ class ETAPredictor:
             obj = pickle.load(f)
 
         return obj
+
+
+_predictor: ETAPredictor | None = None
+
+
+def _load_artifacts() -> ETAPredictor:
+    """Load the ETA predictor singleton from the central models/ path."""
+    global _predictor
+    if _predictor is None:
+        import sys
+        from pathlib import Path
+
+        repo_root = Path(__file__).resolve().parents[3]
+        if str(repo_root) not in sys.path:
+            sys.path.insert(0, str(repo_root))
+        from config.ml_api import eta_model_path
+
+        path = eta_model_path()
+        if not path.is_file():
+            raise FileNotFoundError(
+                f"ETA model not found: {path}. Set ETA_MODEL_PATH or train the model."
+            )
+        _predictor = ETAPredictor.load(path)
+    return _predictor
+
+
+def predict_eta(payload: dict) -> dict[str, float]:
+    """Run ETA inference for a single order payload."""
+    import pandas as pd
+
+    predictor = _load_artifacts()
+    frame = pd.DataFrame([payload])
+    minutes = float(predictor.predict_eta(frame)[0])
+    return {"eta_minutes": minutes}

@@ -1,14 +1,23 @@
-from fastapi import FastAPI
-import pandas as pd
+"""Legacy standalone ETA API — prefer FastAPI/ gateway."""
+
+from __future__ import annotations
+
+import sys
 from pathlib import Path
 
-from full_pipeline.inference import ETAPredictor
+import pandas as pd
+from fastapi import FastAPI
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from config.ml_api import eta_model_path  # noqa: E402
+from full_pipeline.inference import ETAPredictor  # noqa: E402
 
 app = FastAPI()
 
-MODEL_PATH = Path(__file__).resolve().parent.parent / "models/eta_lightgbm_model.pkl"
-
-predictor = ETAPredictor.load(MODEL_PATH)
+predictor = ETAPredictor.load(eta_model_path())
 
 
 @app.get("/")

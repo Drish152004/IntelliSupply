@@ -33,10 +33,7 @@ TASK_REQUIRED_FIELDS: dict[str, frozenset[str]] = {
         "aoi_id",
     }),
     "demand_forecast": frozenset({
-        "city",
-        "horizon",
-        "granularity",
-        "dataset_kind",
+        "records",
     }),
 }
 

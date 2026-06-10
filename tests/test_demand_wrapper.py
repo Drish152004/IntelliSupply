@@ -1,4 +1,4 @@
-"""Tests for demand forecast pipeline wrapper."""
+"""Tests for demand forecast HF wrapper."""
 
 from __future__ import annotations
 
@@ -15,57 +15,48 @@ if str(REPO_ROOT) not in sys.path:
 
 from ml.wrappers.demand_wrapper import DemandWrapper
 
-CONTEXT_PAYLOAD = {
-    "city": "Shanghai",
-    "horizon": "7",
-    "granularity": "daily",
-    "dataset_kind": "delivery",
+HF_RECORD = {
+    "city": "Hangzhou",
+    "region_id": "56",
+    "day_of_week": 2,
+    "month": 11,
+    "day_of_month": 5,
+    "day_of_year": 309,
+    "is_weekend": 0,
+    "lag_1": 120.0,
+    "lag_2": 115.0,
+    "lag_7": 98.0,
+    "lag_14": 105.0,
+    "rolling_mean_7": 110.0,
+    "rolling_std_7": 25.0,
+    "rolling_mean_28": 108.0,
 }
 
-
-def _pipeline_result() -> SimpleNamespace:
-    return SimpleNamespace(
-        granularity="daily",
-        horizon=7,
-        dataset_kind="delivery",
-        strategy="daily",
-        panel_rows=1200,
-        summary=SimpleNamespace(
-            total_predicted=15000.0,
-            period_start="2026-06-01",
-            period_end="2026-06-07",
-            n_regions=42,
-            cities=["Shanghai"],
-        ),
-        by_period=[{"date": "2026-06-01", "predicted_demand": 2000}],
-        by_city=[{"city": "Shanghai", "predicted_demand": 15000}],
-        top_regions=[{"city": "Shanghai", "region_id": "1", "predicted_demand": 500}],
-    )
+CONTEXT_PAYLOAD = {"records": [HF_RECORD]}
 
 
-def test_demand_wrapper_normalizes_prediction() -> None:
-    mock_pipeline = MagicMock()
-    mock_pipeline.run.return_value = _pipeline_result()
+def test_demand_wrapper_calls_hf_client() -> None:
+    mock_client = MagicMock()
+    mock_client.predict_demand.return_value = [
+        {"city": "Hangzhou", "region_id": "56", "predicted_demand": 42.0}
+    ]
 
-    result = DemandWrapper(pipeline=mock_pipeline).run(CONTEXT_PAYLOAD)
+    result = DemandWrapper(client=mock_client).run(CONTEXT_PAYLOAD)
 
     assert result["prediction_type"] == "demand_forecast"
     assert result["model_name"] == "lade_demand_forecaster"
-    assert result["result"]["horizon"] == 7
-    assert result["result"]["summary"]["total_predicted"] == 15000.0
-    assert result["result"]["by_city"][0]["city"] == "Shanghai"
-    mock_pipeline.run.assert_called_once_with(
-        granularity="daily",
-        horizon=7,
-        city="Shanghai",
-        dataset_kind="delivery",
-        save_outputs=False,
-    )
+    assert result["result"]["predictions"][0]["predicted_demand"] == 42.0
+    mock_client.predict_demand.assert_called_once_with([HF_RECORD])
 
 
-def test_demand_wrapper_propagates_pipeline_errors() -> None:
-    mock_pipeline = MagicMock()
-    mock_pipeline.run.side_effect = FileNotFoundError("LaDe data missing")
+def test_demand_wrapper_requires_records() -> None:
+    with pytest.raises(Exception, match="records"):
+        DemandWrapper(client=MagicMock()).run({"city": "Shanghai", "horizon": 7})
 
-    with pytest.raises(FileNotFoundError, match="LaDe data missing"):
-        DemandWrapper(pipeline=mock_pipeline).run(CONTEXT_PAYLOAD)
+
+def test_demand_wrapper_propagates_hf_errors() -> None:
+    mock_client = MagicMock()
+    mock_client.predict_demand.side_effect = RuntimeError("HF Space unavailable")
+
+    with pytest.raises(RuntimeError, match="HF Space unavailable"):
+        DemandWrapper(client=mock_client).run(CONTEXT_PAYLOAD)

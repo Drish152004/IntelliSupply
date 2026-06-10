@@ -12,10 +12,10 @@ _REPO_ROOT = Path(__file__).resolve().parents[4]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from config.paths import NOTEBOOK_OUTPUTS_DIR
+from config.paths import MODELS_ROOT
 
 DATA_DIR = Path(__file__).parent
-OUT = NOTEBOOK_OUTPUTS_DIR
+OUT = MODELS_ROOT
 df = pd.read_csv(OUT / "orders_clustered.csv")
 ca = pd.read_csv(OUT / "cluster_assignments.csv")
 

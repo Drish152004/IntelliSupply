@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -15,9 +16,14 @@ from full_pipeline.inference import ETAPredictor
 # =============================================================================
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+REPO_ROOT = BASE_DIR.parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from config.ml_api import eta_model_path  # noqa: E402
 
 DATA_PATH = BASE_DIR / "data/Delivery.csv"
-MODEL_PATH = BASE_DIR / "models/eta_lightgbm_model.pkl"
+MODEL_PATH = eta_model_path()
 
 TEST_RATIO = 0.2
 

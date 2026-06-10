@@ -75,7 +75,7 @@ IntelliSupply connects warehouse and hub data with logistics ML (clustering, cou
 ```text
 IntelliSupply/
 ├── config/                    # Shared paths and env loader
-├── notebooks/route_prediction/  # Training notebooks (local) + route_ranker.pkl
+├── models/                      # Trained artifacts (route, ETA pkls; demand HF bundle)
 ├── frontend/app/              # React + Vite + Tailwind operator UI
 ├── FastAPI/                   # Unified API gateway (/route, /demand, /eta, /copilot)
 ├── agentic_ai/                # LangGraph orchestrator + inventory/logistics agents
@@ -275,8 +275,8 @@ See [`.env.example`](.env.example) for the full list (auth, Aura, ML overrides, 
 
 ### Route model path
 
-Default: `notebooks/route_prediction/route_ranker.pkl`.  
-Override: `ROUTE_RANKER_MODEL` env var.
+Default: `models/route_ranker.pkl`.  
+Override: `ROUTE_RANKER_MODEL` env var. ETA default: `models/eta_lightgbm_model.pkl` (`ETA_MODEL_PATH`).
 
 ---
 
@@ -284,10 +284,9 @@ Override: `ROUTE_RANKER_MODEL` env var.
 
 ### Train the route ranker
 
-1. Place `route_prediction_pipeline.ipynb` under `notebooks/route_prediction/` (notebooks are gitignored).
-2. Run from `notebooks/route_prediction/` so `Couriers_seg/Delivery.csv` resolves.
-3. Pass sanity checks (`READY_FOR_FULL_TRAIN`) before full-dataset training.
-4. Export `route_ranker.pkl` to `notebooks/route_prediction/`.
+1. Train with your local notebook workflow (`.ipynb` files are gitignored).
+2. Export `route_ranker.pkl` to `models/route_ranker.pkl`.
+3. Optional pipeline CSVs (`cluster_assignments.csv`, `orders_clustered.csv`) also live under `models/`.
 
 Metrics, leakage fixes, and feature list: [ml_services/route_prediction/README.md](ml_services/route_prediction/README.md).
 
@@ -310,7 +309,7 @@ Pipeline code: `ml_services/route_prediction/full_pipeline/pipeline.py`.
 
 ### Phase-1 clustering notebook
 
-`notebooks/route_prediction/phase1_clustering.ipynb` — produces `cluster_assignments.csv` in `notebooks/route_prediction/outputs/` used by `CourierAssigner`.
+Phase-1 clustering produces `cluster_assignments.csv` under `models/` used by `CourierAssigner`.
 
 ---
 

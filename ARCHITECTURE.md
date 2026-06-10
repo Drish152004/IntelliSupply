@@ -45,7 +45,7 @@ flowchart TB
 | Inventory NL-to-SQL | [`rag/inventory/chatbot/`](rag/inventory/chatbot/) |
 | Neo4j ETL + GraphRAG | [`rag/graphdb/`](rag/graphdb/) |
 | Neo4j runtime (orders, auth) | [`rag/aura_graphdb/`](rag/aura_graphdb/) |
-| Training notebooks (local) | [`notebooks/route_prediction/`](notebooks/route_prediction/) |
+| Trained ML artifacts | [`models/`](models/) — route, ETA pkls; demand HF bundle |
 | Shared paths and env | [`config/`](config/) |
 | Frontend | [`frontend/app/`](frontend/app/) |
 

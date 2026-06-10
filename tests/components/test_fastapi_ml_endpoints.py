@@ -59,14 +59,13 @@ def test_eta_predict(client: TestClient):
     assert "eta_minutes" in body or "prediction" in body or isinstance(body, dict)
 
 
-@patch("services.demand_forecasting._import_hf_client")
-def test_demand_predict_uses_hf_client(mock_import_hf, client: TestClient):
-    mock_hf = mock_import_hf.return_value
-    mock_hf.predict_demand.return_value = [{"city": "Hangzhou", "predicted_demand": 42.0}]
+@patch("models.hf_client.predict_demand")
+def test_demand_predict_uses_hf_client(mock_predict_demand, client: TestClient):
+    mock_predict_demand.return_value = [{"city": "Hangzhou", "predicted_demand": 42.0}]
 
     payload = _load_sample("demand_forecast.json")
     response = client.post("/demand/predict", json=payload)
     assert response.status_code == 200
     body = response.json()
     assert body["predictions"] == [{"city": "Hangzhou", "predicted_demand": 42.0}]
-    mock_hf.predict_demand.assert_called_once()
+    mock_predict_demand.assert_called_once()
