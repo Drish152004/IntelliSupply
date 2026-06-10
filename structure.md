@@ -335,15 +335,10 @@ C:.
 |           |   courier_assigner.py
 |           |   pipeline.py
 |           |   run_demo.py
-|           |   __init__.py
 |           |   
 |           \---data
 |                   _generate_samples.py
 |                   
-+---notebooks
-|   \---route_prediction
-|           route_ranker.pkl
-|           
 +---rag
 |   |   .gitkeep
 |   |   __init__.py

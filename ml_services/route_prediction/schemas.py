@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -62,7 +61,3 @@ class HealthResponse(BaseModel):
     model_version: str | None = None
     model_path: str | None = None
     feature_count: int | None = None
-
-
-class ErrorResponse(BaseModel):
-    detail: str
