@@ -155,8 +155,8 @@ def full_evaluation(train_df, test_df, preds, model):
     # -----------------------------
     analysis_df["eta_bucket"] = pd.cut(
         analysis_df[TARGET_COL],
-        bins=[0, 10, 20, 30, 60, 120, 500, 1000],
-        labels=["0-10", "10-20", "20-30", "30-60", "60-120", "120-500", "500+"]
+        bins=[0, 100, 200, 300],
+        labels=["0-100", "100-200", "200-300"]
     )
 
     print("\n--- ETA BUCKET PERFORMANCE ---")

@@ -24,6 +24,13 @@ const roles = [
     color: 'from-amber-50 to-amber-100 border-amber-100',
     route: '/login/admin',
   },
+    {
+    title: 'Courier',
+    description: '.',
+    icon: Truck,
+    color: 'from-emerald-50 to-emerald-100 border-emerald-100',
+    route: '/login/courier',
+  },
 ];
 
 export default function Landing() {
@@ -56,7 +63,7 @@ export default function Landing() {
         </section>
 
         {/* ROLE CARDS */}
-        <section className="mt-12 grid gap-6 lg:grid-cols-3">
+        <section className="mt-12 grid gap-6 md:grid-cols-2 xl:grid-cols-4">
           {roles.map((role, index) => {
             const Icon = role.icon;
 
