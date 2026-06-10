@@ -1,7 +1,0 @@
-fastapi
-uvicorn
-lightgbm
-scikit-learn
-pandas
-numpy
-jupyter

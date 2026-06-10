@@ -1,4 +1,4 @@
-```gitignore
+# Python
 __pycache__/
 *.py[cod]
 *.pyo
@@ -8,69 +8,94 @@ __pycache__/
 *.egg
 build/
 dist/
+
+# Virtual environments
 .env
+.env.local
+.env.production
+.env.development
 venv/
 env/
 .venv/
 
+# Databases
 *.db
 *.sqlite3
+
+# Logs
 logs/
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
 
+# Machine learning artifacts
 *.h5
 *.pt
 *.pth
 *.ckpt
 *.onnx
+*.lgb
 saved_models/
 checkpoints/
 mlruns/
 
+# Notebooks
 .ipynb_checkpoints/
+*.ipynb
 
+# Frontend
 node_modules/
 .next/
 out/
-dist/
-build/
+dist-ssr/
 coverage/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
+*.local
 
+# Docker
 .docker/
 docker-data/
 
-.vscode/
+# Editors
+.vscode/*
+!.vscode/extensions.json
+.idea/
 .history/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
 
+# OS files
 .DS_Store
 Thumbs.db
 
-.env.local
-.env.production
-.env.development
-
+# Testing / coverage
 .pytest_cache/
 coverage.xml
 htmlcov/
 
+# Temporary files
 tmp/
 temp/
 *.tmp
 
+# Secrets / credentials
 secrets/
 credentials/
 *.pem
 *.key
 *.json
-!ml_services/demand_forecasting/models/*.json
+
+# Data files
 *.csv
+
+# Allow model-specific required files
+!ml_services/demand_forecasting/models/*.json
 !ml_services/demand_forecasting/models/*.csv
-*.pth
-*.lgb
+
+# Generated reports / exports
 *.html
-*.ipynb
-*.ipynb_checkpoints
-```
