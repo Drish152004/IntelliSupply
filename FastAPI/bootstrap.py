@@ -6,12 +6,19 @@ import sys
 from pathlib import Path
 
 # Repo root must be on sys.path before importing the shared config package.
-REPO_ROOT = Path(__file__).resolve().parents[1]
-FASTAPI_ROOT = Path(__file__).resolve().parent
-RAG_ROOT = REPO_ROOT / "rag"
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from config.paths import (  # noqa: E402
+    AGENTIC_ROOT,
+    BACKEND_ROOT,
+    FASTAPI_ROOT,
+    RAG_ROOT,
+    REPO_ROOT,
+)
+
 RAG_INVENTORY_ROOT = REPO_ROOT / "rag" / "inventory"
-AGENTIC_ROOT = REPO_ROOT / "agentic_ai"
-BACKEND_ROOT = REPO_ROOT / "backend"
 
 for path in (
     str(REPO_ROOT),
@@ -23,6 +30,6 @@ for path in (
     if path not in sys.path:
         sys.path.insert(0, path)
 
-from config.env import load_env
+from config.env import load_env  # noqa: E402
 
 load_env()

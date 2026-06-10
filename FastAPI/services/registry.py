@@ -8,7 +8,7 @@ from typing import Any
 
 from config import (
     DEMAND_FORECASTING_ROOT,
-    ETA_SRC_ROOT,
+    ETA_PREDICTION_ROOT,
     ROUTE_PREDICTION_ROOT,
     route_model_path,
 )
@@ -30,7 +30,7 @@ def _ensure_demand_path() -> None:
 
 
 def _ensure_eta_path() -> None:
-    path = str(ETA_SRC_ROOT)
+    path = str(ETA_PREDICTION_ROOT)
     if path not in sys.path:
         sys.path.insert(0, path)
 

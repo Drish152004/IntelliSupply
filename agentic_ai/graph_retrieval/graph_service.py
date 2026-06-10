@@ -4,13 +4,11 @@ from __future__ import annotations
 
 import logging
 import sys
-from pathlib import Path
 from typing import Any
 
-logger = logging.getLogger(__name__)
+from config.paths import RAG_ROOT
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-RAG_ROOT = REPO_ROOT / "rag"
+logger = logging.getLogger(__name__)
 
 _service: "GraphService | None" = None
 _aura_imported = False

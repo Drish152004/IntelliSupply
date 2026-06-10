@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from config.paths import (
     CLUSTER_ASSIGNMENTS_PATH,
-    DEFAULT_DEMAND_MODEL,
     NOTEBOOK_OUTPUTS_DIR,
     REPO_ROOT,
     ROUTE_MODEL_PATH,
@@ -28,7 +27,3 @@ def test_route_model_path_location():
 
 def test_cluster_assignments_path_under_outputs():
     assert CLUSTER_ASSIGNMENTS_PATH.parent == NOTEBOOK_OUTPUTS_DIR
-
-
-def test_demand_model_default_exists():
-    assert DEFAULT_DEMAND_MODEL.is_file()

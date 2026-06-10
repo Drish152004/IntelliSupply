@@ -3,14 +3,10 @@
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-FASTAPI_ROOT = REPO_ROOT / "FastAPI"
-AGENTIC_ROOT = REPO_ROOT / "agentic_ai"
-RAG_ROOT = REPO_ROOT / "rag"
+from config.paths import AGENTIC_ROOT, FASTAPI_ROOT, RAG_ROOT, REPO_ROOT
 
 for path in (str(REPO_ROOT), str(FASTAPI_ROOT), str(AGENTIC_ROOT), str(RAG_ROOT)):
     if path not in sys.path:
