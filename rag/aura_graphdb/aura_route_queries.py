@@ -1,6 +1,5 @@
 from aura_graphdb.aura_connection import AuraConnection
 
-
 def get_order_route(order_id: str):
     conn = AuraConnection()
 
@@ -44,7 +43,6 @@ def get_order_route(order_id: str):
     finally:
         conn.close()
 
-
 def get_recent_order_routes(limit: int = 20):
     conn = AuraConnection()
 
@@ -81,7 +79,6 @@ def get_recent_order_routes(limit: int = 20):
 
     finally:
         conn.close()
-
 
 def get_orders_for_courier_day(
     courier_id: str,
@@ -125,7 +122,6 @@ def get_orders_for_courier_day(
     finally:
         conn.close()
 
-
 def get_orders_for_courier(courier_id: str, limit: int = 20):
     conn = AuraConnection()
 
@@ -167,7 +163,6 @@ def get_orders_for_courier(courier_id: str, limit: int = 20):
 
     finally:
         conn.close()
-
 
 def answer_route_question(question: str):
     """
@@ -223,7 +218,3 @@ def answer_route_question(question: str):
         "answer": "Please provide an order ID, for example: show route for order ord-xxxx.",
         "data": None
     }
-
-
-if __name__ == "__main__":
-    print(get_recent_order_routes())

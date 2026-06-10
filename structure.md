@@ -406,6 +406,7 @@ C:.
 |   |       aura_route_queries.py
 |   |       aura_seed_logistics.py
 |   |       readme.md
+|   +---supabase
 |   |       supabase_auth.py
 |   |       supabase_connection.py
 |   |       __init__.py

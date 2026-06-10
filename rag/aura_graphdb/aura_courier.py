@@ -1,182 +1,195 @@
+"""Courier graph operations in Neo4j Aura."""
+
+from __future__ import annotations
 import uuid
-from typing import Optional
-
-from werkzeug.security import generate_password_hash, check_password_hash
-
+from typing import Any
 from aura_graphdb.aura_connection import AuraConnection
-
 
 COURIER_ROLE_ID = 2
 COURIER_ROLE_NAME = "courier"
 
 
-def get_courier_by_email(email: str):
+def get_courier_by_email(email: str) -> dict[str, Any] | None:
+    """Fetch a Courier node from Aura using email."""
     conn = AuraConnection()
 
     query = """
-    MATCH (c:Courier {email: $email})
+    MATCH (c:Courier {email: toLower(trim($email))})
     OPTIONAL MATCH (c)-[:HAS_ROLE]->(r:Role)
     OPTIONAL MATCH (c)-[:OPERATES_IN]->(city:City)
+    OPTIONAL MATCH (c)-[:ASSIGNED_TO_HUB]->(hub:Hub)
+    OPTIONAL MATCH (c)-[:LINKED_TO_PROFILE]->(p:Profile)
 
     RETURN
         c.courier_id AS courier_id,
+        c.profile_id AS profile_id,
+        p.id AS linked_profile_id,
         c.name AS name,
         c.email AS email,
-        c.password_hash AS password_hash,
         c.ds AS ds,
         c.start_lat_wgs84 AS start_lat_wgs84,
         c.start_lon_wgs84 AS start_lon_wgs84,
         coalesce(city.city_id, c.city_id) AS city_id,
         coalesce(city.city_name, c.city_name) AS city_name,
-        c.hub_id AS hub_id,
-        c.hub_name AS hub_name,
+        coalesce(hub.hub_id, c.hub_id) AS hub_id,
+        coalesce(hub.name, c.hub_name) AS hub_name,
         r.role_id AS role_id,
-        r.role_name AS role
+        r.role_name AS role,
+        c.is_active AS is_active
     LIMIT 1
     """
 
     try:
-        result = conn.execute_query(query, {
-            "email": email.lower().strip()
-        })
-
+        result = conn.execute_query(query, {"email": email.lower().strip()})
         return result[0] if result else None
-
     finally:
         conn.close()
 
 
-def create_courier_user(
+def create_courier_node(
+    *,
     name: str,
     email: str,
-    password: str,
     city_name: str,
     hub_name: str,
-    ds: int = 318
-):
+    profile_id: str | None = None,
+    courier_id: str | None = None,
+    ds: int = 318,
+) -> dict[str, Any]:
+    """
+    Create an operational Courier node in Aura.
+
+    Authentication stays in Supabase.
+    Aura stores only courier graph data.
+    """
     existing = get_courier_by_email(email)
 
     if existing:
         return {
             "success": False,
-            "message": "Courier with this email already exists."
+            "message": "Courier with this email already exists in Aura.",
+            "courier": existing,
         }
 
-    courier_id = uuid.uuid4().hex
-    password_hash = generate_password_hash(password)
-
+    courier_id = courier_id or uuid.uuid4().hex
     conn = AuraConnection()
 
     query = """
     MATCH (hub:Hub {name: $hub_name})-[:LOCATED_IN]->(city:City {city_name: $city_name})
 
-    MERGE (role:Role {role_id: $role_id})
-    SET role.role_name = $role_name
+    MERGE (role:Role {role_id: toInteger($role_id)})
+    ON CREATE SET
+        role.created_at = datetime()
+    SET
+        role.role_name = $role_name,
+        role.updated_at = datetime()
 
-    CREATE (courier:Courier {
-        courier_id: $courier_id,
-        name: $name,
-        email: $email,
-        password_hash: $password_hash,
-        city_id: city.city_id,
-        city_name: city.city_name,
-        hub_id: hub.hub_id,
-        hub_name: hub.name,
-        ds: toInteger($ds),
-        start_lat_wgs84: hub.latitude,
-        start_lon_wgs84: hub.longitude,
-        is_active: true,
-        created_at: datetime(),
-        updated_at: datetime()
-    })
+    MERGE (courier:Courier {courier_id: $courier_id})
+    ON CREATE SET
+        courier.created_at = datetime()
+    SET
+        courier.profile_id = $profile_id,
+        courier.name = $name,
+        courier.email = toLower(trim($email)),
+        courier.city_id = city.city_id,
+        courier.city_name = city.city_name,
+        courier.hub_id = hub.hub_id,
+        courier.hub_name = hub.name,
+        courier.ds = toInteger($ds),
+        courier.start_lat_wgs84 = hub.latitude,
+        courier.start_lon_wgs84 = hub.longitude,
+        courier.is_active = true,
+        courier.updated_at = datetime()
 
     MERGE (courier)-[:HAS_ROLE]->(role)
     MERGE (courier)-[:OPERATES_IN]->(city)
     MERGE (courier)-[:ASSIGNED_TO_HUB]->(hub)
 
+    WITH courier, role, city, hub
+    OPTIONAL MATCH (profile:Profile {id: $profile_id})
+    FOREACH (_ IN CASE WHEN profile IS NULL THEN [] ELSE [1] END |
+        MERGE (courier)-[:LINKED_TO_PROFILE]->(profile)
+    )
+
     RETURN
         courier.courier_id AS courier_id,
+        courier.profile_id AS profile_id,
         courier.name AS name,
         courier.email AS email,
-        courier.city_name AS city_name,
-        courier.hub_name AS hub_name,
+        city.city_id AS city_id,
+        city.city_name AS city_name,
+        hub.hub_id AS hub_id,
+        hub.name AS hub_name,
         courier.ds AS ds,
         courier.start_lat_wgs84 AS start_lat_wgs84,
-        courier.start_lon_wgs84 AS start_lon_wgs84
+        courier.start_lon_wgs84 AS start_lon_wgs84,
+        role.role_id AS role_id,
+        role.role_name AS role,
+        courier.is_active AS is_active
     """
 
     try:
-        result = conn.execute_write(query, {
-            "courier_id": courier_id,
-            "name": name.strip(),
-            "email": email.lower().strip(),
-            "password_hash": password_hash,
-            "city_name": city_name.strip(),
-            "hub_name": hub_name.strip(),
-            "ds": ds,
-            "role_id": COURIER_ROLE_ID,
-            "role_name": COURIER_ROLE_NAME
-        })
+        result = conn.execute_write(
+            query,
+            {
+                "courier_id": courier_id,
+                "profile_id": str(profile_id) if profile_id else None,
+                "name": name.strip(),
+                "email": email.lower().strip(),
+                "city_name": city_name.strip(),
+                "hub_name": hub_name.strip(),
+                "ds": int(ds),
+                "role_id": COURIER_ROLE_ID,
+                "role_name": COURIER_ROLE_NAME,
+            },
+        )
 
         if not result:
             return {
                 "success": False,
-                "message": "Hub and city combination not found in Aura. Seed hubs/cities first."
+                "message": "Hub and city combination not found in Aura. Seed hubs/cities first.",
             }
 
         return {
             "success": True,
-            "message": "Courier created successfully.",
-            "courier": result[0]
+            "message": "Courier node created successfully.",
+            "courier": result[0],
         }
 
     finally:
         conn.close()
 
 
-def login_courier(email: str, password: str):
-    courier = get_courier_by_email(email)
+def deactivate_courier(courier_id: str) -> dict[str, Any]:
+    """Mark a courier inactive instead of deleting the node."""
+    conn = AuraConnection()
 
-    if not courier:
+    query = """
+    MATCH (courier:Courier {courier_id: $courier_id})
+    SET
+        courier.is_active = false,
+        courier.updated_at = datetime()
+    RETURN
+        courier.courier_id AS courier_id,
+        courier.name AS name,
+        courier.email AS email,
+        courier.is_active AS is_active
+    """
+
+    try:
+        result = conn.execute_write(query, {"courier_id": courier_id})
+
+        if not result:
+            return {
+                "success": False,
+                "message": "Courier not found.",
+            }
+
         return {
-            "success": False,
-            "message": "Invalid email or password."
+            "success": True,
+            "message": "Courier deactivated successfully.",
+            "courier": result[0],
         }
 
-    password_hash = courier.get("password_hash")
-
-    if not password_hash or not check_password_hash(password_hash, password):
-        return {
-            "success": False,
-            "message": "Invalid email or password."
-        }
-
-    return {
-        "success": True,
-        "message": "Courier login successful.",
-        "courier": {
-            "courier_id": courier["courier_id"],
-            "name": courier["name"],
-            "email": courier["email"],
-            "city_id": courier["city_id"],
-            "city_name": courier["city_name"],
-            "hub_id": courier["hub_id"],
-            "hub_name": courier["hub_name"],
-            "ds": courier["ds"],
-            "start_lat_wgs84": courier["start_lat_wgs84"],
-            "start_lon_wgs84": courier["start_lon_wgs84"],
-            "role_id": courier["role_id"],
-            "role": courier["role"]
-        }
-    }
-
-
-if __name__ == "__main__":
-    print(create_courier_user(
-        name="Test Courier",
-        email="courier1@example.com",
-        password="test123",
-        city_name="Chongqing",
-        hub_name="Hub_1",
-        ds=318
-    ))
+    finally:
+        conn.close()

@@ -1,15 +1,30 @@
-"""Supabase-backed profile authentication (source of truth)."""
-
+"""Supabase-backed profile authentication."""
 from __future__ import annotations
-
 import uuid
 from typing import Any
-
 import bcrypt
 from sqlalchemy import text
+from rag.supabase.supabase_connection import get_supabase_engine
 
-from aura_graphdb.aura_roles import get_role_id, normalize_role
-from aura_graphdb.supabase_connection import get_supabase_engine
+ROLE_MAP = {
+    "admin": 1,
+    "courier": 2,
+    "logistics_manager": 3,
+    "inventory_manager": 4,
+}
+
+ALLOWED_ROLES = set(ROLE_MAP.keys())
+
+
+def normalize_role(role_name: str | None) -> str:
+    if not role_name:
+        return "courier"
+    role_name = role_name.strip().lower()
+    return role_name if role_name in ALLOWED_ROLES else "courier"
+
+
+def get_role_id(role_name: str) -> int:
+    return ROLE_MAP[normalize_role(role_name)]
 
 
 def _engine():
@@ -17,14 +32,20 @@ def _engine():
 
 
 def _hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt(rounds=6)).decode("utf-8")
+    return bcrypt.hashpw(
+        password.encode("utf-8"),
+        bcrypt.gensalt(rounds=6),
+    ).decode("utf-8")
 
 
 def _verify_password(password: str, password_hash: str) -> bool:
     if not password_hash:
         return False
     try:
-        return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
+        return bcrypt.checkpw(
+            password.encode("utf-8"),
+            password_hash.encode("utf-8"),
+        )
     except ValueError:
         return False
 
@@ -45,8 +66,10 @@ def get_user_by_email(email: str) -> dict[str, Any] | None:
             r.role_id AS role_id,
             r.role_name AS role
         FROM profiles p
-        JOIN user_roles ur ON ur.user_id = p.id
-        JOIN roles r ON r.role_id = ur.role_id
+        JOIN user_roles ur
+            ON ur.user_id = p.id
+        JOIN roles r
+            ON r.role_id = ur.role_id
         WHERE lower(p.email) = lower(:email)
         LIMIT 1
         """
@@ -67,8 +90,10 @@ def get_user_by_id(user_id: str) -> dict[str, Any] | None:
             r.role_id AS role_id,
             r.role_name AS role
         FROM profiles p
-        JOIN user_roles ur ON ur.user_id = p.id
-        JOIN roles r ON r.role_id = ur.role_id
+        JOIN user_roles ur
+            ON ur.user_id = p.id
+        JOIN roles r
+            ON r.role_id = ur.role_id
         WHERE p.id::text = :user_id
         LIMIT 1
         """
@@ -89,8 +114,10 @@ def list_profiles_with_roles(limit: int = 500) -> list[dict[str, Any]]:
             r.role_id AS role_id,
             r.role_name AS role
         FROM profiles p
-        JOIN user_roles ur ON ur.user_id = p.id
-        JOIN roles r ON r.role_id = ur.role_id
+        JOIN user_roles ur
+            ON ur.user_id = p.id
+        JOIN roles r
+            ON r.role_id = ur.role_id
         ORDER BY p.created_at DESC
         LIMIT :limit
         """
@@ -128,11 +155,13 @@ def update_user_profile(user_id: str, *, name: str | None = None) -> dict[str, A
         """
     )
     with _engine().begin() as conn:
-        row = conn.execute(query, {"user_id": str(user_id), "name": name.strip()}).mappings().first()
+        row = conn.execute(
+            query,
+            {"user_id": str(user_id), "name": name.strip()},
+        ).mappings().first()
         if not row:
             return None
-        profile = get_user_by_id(user_id)
-        return profile
+        return get_user_by_id(user_id)
 
 
 def register_user_in_supabase(
@@ -147,8 +176,6 @@ def register_user_in_supabase(
 
     is_first_user = count_profiles() == 0
     final_role = "admin" if is_first_user else normalize_role(selected_role)
-    if final_role not in ALLOWED_ROLES:
-        final_role = "courier"
     final_role_id = get_role_id(final_role)
 
     profile_id = str(uuid.uuid4())
@@ -185,17 +212,16 @@ def register_user_in_supabase(
             },
         )
 
-    user = {
-        "id": profile_id,
-        "name": name.strip(),
-        "email": email.lower().strip(),
-        "role_id": final_role_id,
-        "role": final_role,
-    }
     return {
         "success": True,
         "message": "User registered successfully.",
-        "user": user,
+        "user": {
+            "id": profile_id,
+            "name": name.strip(),
+            "email": email.lower().strip(),
+            "role_id": final_role_id,
+            "role": final_role,
+        },
     }
 
 
