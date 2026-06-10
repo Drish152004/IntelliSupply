@@ -1,58 +1,44 @@
-"""Derived operational notifications."""
-
+"""Supabase-backed operational notification service."""
+from rag.supabase.supabase_notifications import mark_all_notifications_read
 from __future__ import annotations
-
 from typing import Any
+from rag.supabase.supabase_notifications import (
+    get_unread_count,
+    list_notifications_for_user,
+    mark_notification_read,
+)
 
-from aura_graphdb.aura_route_queries import get_recent_order_routes
+def list_notifications(
+    *,
+    user_id: str,
+    role: str,
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    return list_notifications_for_user(
+        user_id=user_id,
+        role=role,
+        limit=limit,
+    )
 
-from services import inventory as inventory_svc
+def unread_count(
+    *,
+    user_id: str,
+    role: str,
+) -> int:
+    return get_unread_count(
+        user_id=user_id,
+        role=role,
+    )
 
+def mark_as_read(notification_id: str) -> dict[str, Any] | None:
+    return mark_notification_read(notification_id)
 
-def list_notifications(*, role: str, limit: int = 20) -> list[dict[str, Any]]:
-    items: list[dict[str, Any]] = []
-
-    if role in {"admin", "inventory_manager"} and inventory_svc.inventory_db_available():
-        try:
-            summary = inventory_svc.get_summary()
-            for index, signal in enumerate(summary.get("risk_signals", [])[:5]):
-                items.append(
-                    {
-                        "id": f"NTF-INV-{index + 1:03d}",
-                        "title": signal["title"],
-                        "description": signal["description"],
-                        "category": "Inventory",
-                        "severity": signal["severity"],
-                        "location": "Warehouse network",
-                        "time": "recent",
-                        "status": "Restock" if signal["severity"] == "Critical" else "Review",
-                        "unread": True,
-                    }
-                )
-        except Exception:
-            pass
-
-    if role in {"admin", "logistics_manager"}:
-        try:
-            shipments = get_recent_order_routes(limit=5)
-            for index, shipment in enumerate(shipments):
-                items.append(
-                    {
-                        "id": f"NTF-LOG-{index + 1:03d}",
-                        "title": f"Shipment {shipment.get('order_id')} assigned",
-                        "description": (
-                            f"Route {shipment.get('from_hub_name')} → {shipment.get('to_hub_name')} "
-                            f"assigned to {shipment.get('assigned_courier_name') or 'courier'}."
-                        ),
-                        "category": "Dispatch",
-                        "severity": "Medium",
-                        "location": shipment.get("city_name") or "Logistics network",
-                        "time": "recent",
-                        "status": "Review",
-                        "unread": True,
-                    }
-                )
-        except Exception:
-            pass
-
-    return items[:limit]
+def mark_all_as_read(
+    *,
+    user_id: str,
+    role: str,
+) -> int:
+    return mark_all_notifications_read(
+        user_id=user_id,
+        role=role,
+    )

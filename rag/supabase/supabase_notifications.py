@@ -1,12 +1,9 @@
 from typing import Any
 from sqlalchemy import text
-
 from rag.supabase.supabase_connection import get_supabase_engine
-
 
 def _engine():
     return get_supabase_engine()
-
 
 def create_notification(
     *,
@@ -64,8 +61,7 @@ def create_notification(
             },
         ).mappings().first()
 
-        return dict(row) if row else None
-
+    return dict(row) if row else None
 
 def list_notifications_for_user(
     *,
@@ -96,8 +92,7 @@ def list_notifications_for_user(
             },
         ).mappings().all()
 
-        return [dict(row) for row in rows]
-
+    return [dict(row) for row in rows]
 
 def mark_notification_read(notification_id: str) -> dict[str, Any] | None:
     query = text(
@@ -115,8 +110,36 @@ def mark_notification_read(notification_id: str) -> dict[str, Any] | None:
             {"notification_id": str(notification_id)},
         ).mappings().first()
 
-        return dict(row) if row else None
+    return dict(row) if row else None
 
+def mark_all_notifications_read(
+    *,
+    user_id: str,
+    role: str,
+) -> int:
+    query = text(
+        """
+        UPDATE notifications
+        SET is_read = true
+        WHERE is_read = false
+          AND (
+              target_user_id::text = :user_id
+              OR target_role = :role
+              OR target_role IS NULL
+          )
+        """
+    )
+
+    with _engine().begin() as conn:
+        result = conn.execute(
+            query,
+            {
+                "user_id": str(user_id),
+                "role": role,
+            },
+        )
+
+    return int(result.rowcount or 0)
 
 def get_unread_count(
     *,
@@ -137,13 +160,28 @@ def get_unread_count(
     )
 
     with _engine().connect() as conn:
-        return int(
-            conn.execute(
-                query,
-                {
-                    "user_id": str(user_id),
-                    "role": role,
-                },
-            ).scalar()
-            or 0
+        count = conn.execute(
+            query,
+            {
+                "user_id": str(user_id),
+                "role": role,
+            },
+        ).scalar()
+
+    return int(count or 0)
+
+def delete_notification(notification_id: str) -> bool:
+    query = text(
+        """
+        DELETE FROM notifications
+        WHERE notification_id::text = :notification_id
+        """
+    )
+
+    with _engine().begin() as conn:
+        result = conn.execute(
+            query,
+            {"notification_id": str(notification_id)},
         )
+
+    return bool(result.rowcount)

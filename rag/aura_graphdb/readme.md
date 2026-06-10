@@ -1,11 +1,3 @@
-# IntelliSupply Aura GraphDB Module
-
-This folder contains the Neo4j Aura GraphDB layer for IntelliSupply. Aura is used for connected logistics data such as profiles, roles, couriers, cities, hubs, orders, notes, and route predictions.
-
-Supabase/PostgreSQL remains the source of truth for authentication, profiles, roles, inventory, and structured relational data. Neo4j Aura stores the graph version of important operational data so that route, courier, order, and GraphRAG workflows can work efficiently.
-
----
-
 ## 1. Current Architecture
 
 ```text

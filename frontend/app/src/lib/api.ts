@@ -346,22 +346,59 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
 }
 
 export interface NotificationItem {
-  id: string;
+  notification_id: string;
   title: string;
-  description: string;
-  category: string;
+  message: string;
+  alert_type: string;
   severity: string;
-  location: string;
-  time: string;
-  status: string;
-  unread: boolean;
+  target_role?: string | null;
+  target_user_id?: string | null;
+  related_entity_type?: string | null;
+  related_entity_id?: string | null;
+  source?: string | null;
+  is_read: boolean;
+  created_at?: string;
 }
 
 export async function listNotifications(limit = 20): Promise<NotificationItem[]> {
-  const data = await apiFetch<{ notifications: NotificationItem[] }>(`/api/notifications?limit=${limit}`);
+  const data = await apiFetch<{
+    success: boolean;
+    notifications: NotificationItem[];
+    count: number;
+  }>(`/api/notifications?limit=${limit}`);
+
   return data.notifications;
 }
 
-export async function getDemandMeta(): Promise<Record<string, unknown>> {
-  return apiFetch<Record<string, unknown>>('/demand/meta');
+export async function getUnreadNotificationCount(): Promise<number> {
+  const data = await apiFetch<{
+    success: boolean;
+    unread_count: number;
+  }>('/api/notifications/unread-count');
+
+  return data.unread_count;
+}
+
+export async function markNotificationRead(
+  notificationId: string,
+): Promise<NotificationItem> {
+  const data = await apiFetch<{
+    success: boolean;
+    notification: NotificationItem;
+  }>(`/api/notifications/${notificationId}/read`, {
+    method: 'PATCH',
+  });
+
+  return data.notification;
+}
+
+export async function markAllNotificationsRead(): Promise<number> {
+  const data = await apiFetch<{
+    success: boolean;
+    updated_count: number;
+  }>('/api/notifications/read-all', {
+    method: 'PATCH',
+  });
+
+  return data.updated_count;
 }
