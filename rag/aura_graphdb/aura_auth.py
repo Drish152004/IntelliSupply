@@ -1,23 +1,18 @@
 import logging
-
 from aura_graphdb.aura_connection import AuraConnection
 from aura_graphdb.aura_profiles import sync_profile_to_aura
 from rag.supabase import supabase_auth
 
 logger = logging.getLogger(__name__)
 
-
 def count_profiles() -> int:
     return supabase_auth.count_profiles()
-
 
 def get_user_by_email(email: str):
     return supabase_auth.get_user_by_email(email)
 
-
 def get_user_by_id(user_id: str):
     return supabase_auth.get_user_by_id(user_id)
-
 
 def update_user_profile(user_id: str, *, name: str | None = None):
     updated = supabase_auth.update_user_profile(user_id, name=name)
@@ -34,7 +29,6 @@ def update_user_profile(user_id: str, *, name: str | None = None):
     except Exception as exc:
         logger.warning("Aura sync failed after profile update: %s", exc)
     return updated
-
 
 def register_user_with_password(
     name: str,
@@ -66,7 +60,6 @@ def register_user_with_password(
 
     return supabase_result
 
-
 def login_user_with_password(email: str, password: str):
     result = supabase_auth.login_user_with_password(email=email, password=password)
     if not result["success"]:
@@ -85,9 +78,7 @@ def login_user_with_password(email: str, password: str):
             )
         except Exception as exc:
             logger.warning("Aura sync failed on login: %s", exc)
-
     return result
-
 
 def list_all_users(limit: int = 100):
     """Return Supabase profiles plus Aura courier accounts."""
@@ -108,12 +99,10 @@ def list_all_users(limit: int = 100):
     ORDER BY c.created_at DESC
     LIMIT $limit
     """
-
     try:
         couriers = conn.execute_query(query, {"limit": int(limit)})
     finally:
         conn.close()
-
     combined = profiles + [
         {
             "id": row.get("id"),

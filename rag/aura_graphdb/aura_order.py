@@ -1,12 +1,16 @@
 """Order graph operations in Neo4j Aura."""
 
 from __future__ import annotations
-
 import uuid
 from typing import Optional
-
 from aura_graphdb.aura_connection import AuraConnection
+from rag.supabase.supabase_notifications import create_notification
 
+def _safe_create_notification(**kwargs):
+    try:
+        create_notification(**kwargs)
+    except Exception as exc:
+        print(f"Notification create failed: {exc}")
 
 def create_order_and_assign_nearest_courier(
     from_hub_name: str,
@@ -18,15 +22,9 @@ def create_order_and_assign_nearest_courier(
     aoi_id: Optional[str] = None,
     extra_notes: Optional[str] = None,
 ):
-    """
-    Create a new order and assign it to the nearest active courier.
-
-    The source hub is used as the pickup location.
-    The destination hub is used as the delivery location.
-    """
+    """Create a new order and assign it to the nearest active courier."""
     order_id = f"ord-{uuid.uuid4().hex[:12]}"
     notes_id = f"note-{uuid.uuid4().hex[:12]}"
-
     conn = AuraConnection()
 
     query = """
@@ -110,6 +108,7 @@ def create_order_and_assign_nearest_courier(
         order.receipt_lon_wgs84 AS receipt_lon_wgs84,
         notes.text AS notes,
         courier.courier_id AS assigned_courier_id,
+        courier.profile_id AS assigned_courier_profile_id,
         courier.name AS assigned_courier_name,
         distance_m AS nearest_courier_distance_m,
         from_hub.name AS from_hub_name,
@@ -140,11 +139,36 @@ def create_order_and_assign_nearest_courier(
                 "message": "Could not create order. Check that both hubs exist in the same city and at least one active courier exists.",
             }
 
+        order = result[0]
+
+        for role in ["admin", "logistics_manager"]:
+            _safe_create_notification(
+                title="New shipment created",
+                message=f"Order {order['order_id']} was created from {order['from_hub_name']} to {order['to_hub_name']} and assigned to {order['assigned_courier_name']}.",
+                alert_type="order_created",
+                severity="medium",
+                target_role=role,
+                related_entity_type="order",
+                related_entity_id=order["order_id"],
+                source="graphdb",
+            )
+
+        if order.get("assigned_courier_profile_id"):
+            _safe_create_notification(
+                title="New order assigned",
+                message=f"You have been assigned order {order['order_id']} from {order['from_hub_name']} to {order['to_hub_name']}.",
+                alert_type="order_assigned",
+                severity="medium",
+                target_user_id=order["assigned_courier_profile_id"],
+                related_entity_type="order",
+                related_entity_id=order["order_id"],
+                source="graphdb",
+            )
+
         return {
             "success": True,
             "message": "Order created and assigned to nearest courier successfully.",
-            "order": result[0],
+            "order": order,
         }
-
     finally:
         conn.close()
