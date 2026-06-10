@@ -184,13 +184,13 @@ def register_user_in_supabase(
     insert_profile = text(
         """
         INSERT INTO profiles (id, name, email, password_hash)
-        VALUES (:id::uuid, :name, :email, :password_hash)
+        VALUES (CAST(:id AS uuid), :name, :email, :password_hash)
         """
     )
     insert_role = text(
         """
         INSERT INTO user_roles (user_id, role_id)
-        VALUES (:user_id::uuid, :role_id)
+        VALUES (CAST(:user_id AS uuid), :role_id)
         """
     )
 
