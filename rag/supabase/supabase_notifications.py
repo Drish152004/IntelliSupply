@@ -16,6 +16,7 @@ def create_notification(
     related_entity_type: str | None = None,
     related_entity_id: str | None = None,
     source: str = "system",
+    dedupe_key: str | None = None,
 ) -> dict[str, Any] | None:
     query = text(
         """
@@ -28,7 +29,8 @@ def create_notification(
             target_user_id,
             related_entity_type,
             related_entity_id,
-            source
+            source,
+            dedupe_key
         )
         VALUES (
             :title,
@@ -39,8 +41,12 @@ def create_notification(
             :target_user_id,
             :related_entity_type,
             :related_entity_id,
-            :source
+            :source,
+            :dedupe_key
         )
+        ON CONFLICT (dedupe_key)
+        WHERE dedupe_key IS NOT NULL
+        DO NOTHING
         RETURNING *
         """
     )
