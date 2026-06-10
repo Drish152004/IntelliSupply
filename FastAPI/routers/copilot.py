@@ -9,8 +9,8 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends
 
 from dependencies.auth import TokenUser, get_current_user, user_to_authenticated_payload
-from .schemas import CopilotRequest
 from orchestrator.graph import run_orchestrator
+from schemas.copilot import CopilotRequest
 
 logger = logging.getLogger(__name__)
 

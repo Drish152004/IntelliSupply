@@ -79,7 +79,7 @@ def test_health_endpoint(client: TestClient) -> None:
     assert response.json() == {"status": "healthy"}
 
 
-@patch("intellisupply_copilot.copilot_router.run_orchestrator")
+@patch("routers.copilot.run_orchestrator")
 def test_inventory_query(mock_run: patch, client: TestClient) -> None:
     mock_run.return_value = _orchestrator_result(
         domain="inventory",
@@ -113,7 +113,7 @@ def test_inventory_query(mock_run: patch, client: TestClient) -> None:
     )
 
 
-@patch("intellisupply_copilot.copilot_router.run_orchestrator")
+@patch("routers.copilot.run_orchestrator")
 def test_eta_prediction(mock_run: patch, client: TestClient) -> None:
     mock_run.return_value = _orchestrator_result(
         task="eta_prediction",
@@ -138,7 +138,7 @@ def test_eta_prediction(mock_run: patch, client: TestClient) -> None:
     assert payload["data"]["eta_minutes"] == 42.5
 
 
-@patch("intellisupply_copilot.copilot_router.run_orchestrator")
+@patch("routers.copilot.run_orchestrator")
 def test_route_prediction(mock_run: patch, client: TestClient) -> None:
     mock_run.return_value = _orchestrator_result(
         task="route_prediction",
@@ -163,7 +163,7 @@ def test_route_prediction(mock_run: patch, client: TestClient) -> None:
     assert payload["data"]["route_id"] == "R-99"
 
 
-@patch("intellisupply_copilot.copilot_router.run_orchestrator")
+@patch("routers.copilot.run_orchestrator")
 def test_courier_rbac(mock_run: patch, client: TestClient) -> None:
     mock_run.return_value = _orchestrator_result(
         task="route_lookup",
@@ -191,7 +191,7 @@ def test_courier_rbac(mock_run: patch, client: TestClient) -> None:
     )
 
 
-@patch("intellisupply_copilot.copilot_router.run_orchestrator")
+@patch("routers.copilot.run_orchestrator")
 def test_access_denied(mock_run: patch, client: TestClient) -> None:
     mock_run.return_value = _orchestrator_result(
         task="eta_prediction",
@@ -218,7 +218,7 @@ def test_access_denied(mock_run: patch, client: TestClient) -> None:
     assert payload["task"] == "eta_prediction"
 
 
-@patch("intellisupply_copilot.copilot_router.run_orchestrator")
+@patch("routers.copilot.run_orchestrator")
 def test_debug_endpoint(mock_run: patch, client: TestClient) -> None:
     mock_run.return_value = _orchestrator_result(
         intent="logistics",
@@ -256,7 +256,7 @@ def test_query_requires_auth(client: TestClient) -> None:
     assert response.status_code == 401
 
 
-@patch("intellisupply_copilot.copilot_router.run_orchestrator")
+@patch("routers.copilot.run_orchestrator")
 def test_query_handles_unhandled_exception(mock_run: patch, client: TestClient) -> None:
     mock_run.side_effect = RuntimeError("Neo4j connection failed")
 

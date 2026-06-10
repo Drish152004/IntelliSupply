@@ -77,7 +77,7 @@ IntelliSupply/
 ├── config/                    # Shared paths and env loader
 ├── notebooks/route_prediction/  # Training notebooks (local) + route_ranker.pkl
 ├── frontend/app/              # React + Vite + Tailwind operator UI
-├── FastAPI/                   # Unified ML API gateway (/route, /demand, /eta)
+├── FastAPI/                   # Unified API gateway (/route, /demand, /eta, /copilot)
 ├── agentic_ai/                # LangGraph orchestrator + inventory/logistics agents
 ├── ml/                        # Orchestrator ML adapter layer
 ├── ml_services/

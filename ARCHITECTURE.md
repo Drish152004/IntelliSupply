@@ -11,7 +11,7 @@ flowchart TB
   end
   subgraph gateway [API Gateway]
     GW[FastAPI/]
-    CP[api/copilot]
+    CP[routers/copilot]
   end
   subgraph agents [Agentic layer]
     ORCH[agentic_ai orchestrator]
@@ -22,8 +22,8 @@ flowchart TB
     N4J[(Neo4j graph)]
     MS[ml_services pipelines]
   end
-  FE -->|auth orders couriers| GW
-  FE -.->|copilot planned| CP
+  FE -->|auth orders couriers copilot| GW
+  GW --> CP
   CP --> ORCH
   ORCH --> MLAD
   ORCH -->|NL-to-SQL| PG
@@ -37,8 +37,7 @@ flowchart TB
 
 | Concern | Location |
 |---------|----------|
-| Unified HTTP API | [`FastAPI/`](FastAPI/) — `/route`, `/demand`, `/eta`, auth, orders |
-| Copilot HTTP | [`api/`](api/) — `/copilot/query` |
+| Unified HTTP API | [`FastAPI/`](FastAPI/) — `/route`, `/demand`, `/eta`, `/copilot`, auth, orders |
 | LangGraph orchestrator | [`agentic_ai/orchestrator/`](agentic_ai/orchestrator/) |
 | ML adapter layer (orchestrator) | [`ml/`](ml/) |
 | Route ranker + dispatch pipeline | [`ml_services/route_prediction/`](ml_services/route_prediction/) |
