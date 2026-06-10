@@ -4,15 +4,20 @@ from __future__ import annotations
 import uuid
 from typing import Any
 from aura_graphdb.aura_connection import AuraConnection
+from rag.supabase.supabase_notifications import create_notification
 
 COURIER_ROLE_ID = 2
 COURIER_ROLE_NAME = "courier"
 
+def _safe_create_notification(**kwargs):
+    try:
+        create_notification(**kwargs)
+    except Exception as exc:
+        print(f"Notification create failed: {exc}")
 
 def get_courier_by_email(email: str) -> dict[str, Any] | None:
     """Fetch a Courier node from Aura using email."""
     conn = AuraConnection()
-
     query = """
     MATCH (c:Courier {email: toLower(trim($email))})
     OPTIONAL MATCH (c)-[:HAS_ROLE]->(r:Role)
@@ -38,13 +43,11 @@ def get_courier_by_email(email: str) -> dict[str, Any] | None:
         c.is_active AS is_active
     LIMIT 1
     """
-
     try:
         result = conn.execute_query(query, {"email": email.lower().strip()})
         return result[0] if result else None
     finally:
         conn.close()
-
 
 def create_courier_node(
     *,
@@ -56,12 +59,7 @@ def create_courier_node(
     courier_id: str | None = None,
     ds: int = 318,
 ) -> dict[str, Any]:
-    """
-    Create an operational Courier node in Aura.
-
-    Authentication stays in Supabase.
-    Aura stores only courier graph data.
-    """
+    """Create an operational Courier node in Aura."""
     existing = get_courier_by_email(email)
 
     if existing:
@@ -73,7 +71,6 @@ def create_courier_node(
 
     courier_id = courier_id or uuid.uuid4().hex
     conn = AuraConnection()
-
     query = """
     MATCH (hub:Hub {name: $hub_name})-[:LOCATED_IN]->(city:City {city_name: $city_name})
 
@@ -150,20 +147,31 @@ def create_courier_node(
                 "message": "Hub and city combination not found in Aura. Seed hubs/cities first.",
             }
 
+        courier = result[0]
+
+        for role in ["admin", "logistics_manager"]:
+            _safe_create_notification(
+                title="New courier created",
+                message=f"Courier {courier['name']} was assigned to {courier['hub_name']} in {courier['city_name']}.",
+                alert_type="courier_created",
+                severity="medium",
+                target_role=role,
+                related_entity_type="courier",
+                related_entity_id=courier["courier_id"],
+                source="graphdb",
+            )
+
         return {
             "success": True,
             "message": "Courier node created successfully.",
-            "courier": result[0],
+            "courier": courier,
         }
-
     finally:
         conn.close()
-
 
 def deactivate_courier(courier_id: str) -> dict[str, Any]:
     """Mark a courier inactive instead of deleting the node."""
     conn = AuraConnection()
-
     query = """
     MATCH (courier:Courier {courier_id: $courier_id})
     SET
@@ -185,11 +193,24 @@ def deactivate_courier(courier_id: str) -> dict[str, Any]:
                 "message": "Courier not found.",
             }
 
+        courier = result[0]
+
+        for role in ["admin", "logistics_manager"]:
+            _safe_create_notification(
+                title="Courier deactivated",
+                message=f"Courier {courier['name']} has been marked inactive.",
+                alert_type="courier_deactivated",
+                severity="high",
+                target_role=role,
+                related_entity_type="courier",
+                related_entity_id=courier["courier_id"],
+                source="graphdb",
+            )
+
         return {
             "success": True,
             "message": "Courier deactivated successfully.",
-            "courier": result[0],
+            "courier": courier,
         }
-
     finally:
         conn.close()
