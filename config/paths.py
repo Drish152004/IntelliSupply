@@ -11,7 +11,6 @@ AGENTIC_ROOT = REPO_ROOT / "agentic_ai"
 BACKEND_ROOT = REPO_ROOT / "backend"
 
 ROUTE_PREDICTION_ROOT = REPO_ROOT / "ml_services" / "route_prediction"
-DEMAND_FORECASTING_ROOT = REPO_ROOT / "ml_services" / "demand_forecasting"
 ETA_PREDICTION_ROOT = REPO_ROOT / "ml_services" / "eta-prediction"
 
 MODELS_ROOT = REPO_ROOT / "models"

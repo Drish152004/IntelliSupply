@@ -303,49 +303,6 @@ C:.
 |   |   coordinate_mapping.py
 |   |   __init__.py
 |   |   
-|   +---demand_forecasting
-|   |   |   hf_client.py
-|   |   |   inference.py
-|   |   |   lade_demand.py
-|   |   |   lade_weekly.py
-|   |   |   MODEL_COMPATIBILITY.md
-|   |   |   README.md
-|   |   |   weekly_strategies.py
-|   |   |   __init__.py
-|   |   |   
-|   |   +---full_pipeline
-|   |   |       config.py
-|   |   |       pipeline.py
-|   |   |       run_demo.py
-|   |   |       __init__.py
-|   |   |       
-|   |   +---hf_space
-|   |   |   |   .gitattributes
-|   |   |   |   Dockerfile
-|   |   |   |   inference.py
-|   |   |   |   README.md
-|   |   |   |   
-|   |   |   +---api
-|   |   |   |       app.py
-|   |   |   |       __init__.py
-|   |   |   |       
-|   |   |   \---models
-|   |   |           lade_demand_forecaster.pkl
-|   |   |           
-|   |   \---models
-|   |           bridge_test.pkl
-|   |           forecast_next_4_weeks.csv
-|   |           forecast_next_7_days.csv
-|   |           lade_demand_forecaster.joblib
-|   |           lade_demand_forecaster.meta.json
-|   |           lade_demand_forecaster.pkl
-|   |           lade_demand_forecaster_py312.pkl
-|   |           lade_demand_forecaster_weekly.joblib
-|   |           lade_demand_forecaster_weekly.meta.json
-|   |           lade_demand_forecaster_weekly.pkl
-|   |           model.skops
-|   |           weekly_strategy.json
-|   |           
 |   +---eta-prediction
 |   |   |   README.md
 |   |   |   results.md

@@ -44,7 +44,7 @@ $env:PORT=8001; python fastapi/run.py
 
 `/demand` proxies inference to the **Hugging Face Space** (same as the agent orchestrator). Set `HF_TOKEN` if the Space is private; optional override via `HF_DEMAND_FORECAST_URL`.
 
-See [ml_services/demand_forecasting/hf_client.py](../ml_services/demand_forecasting/hf_client.py).
+See [models/hf_client.py](../models/hf_client.py).
 
 ## Endpoints
 
@@ -55,7 +55,7 @@ See [ml_services/demand_forecasting/hf_client.py](../ml_services/demand_forecast
 | `/demand` | Regional demand forecasting |
 | `/eta` | Delivery ETA (minutes) |
 
-Legacy per-service apps under `ml_services/*/api` remain for reference; prefer this gateway.
+Legacy per-service apps under `ml_services/eta-prediction/` remain for reference; prefer this gateway.
 
 ## Agent integration
 

@@ -82,8 +82,7 @@ IntelliSupply/
 ├── ml/                        # Orchestrator ML adapter layer
 ├── ml_services/
 │   ├── route_prediction/      # LightGBM ranker, full dispatch pipeline
-│   ├── eta-prediction/        # ETA model training & inference
-│   └── demand_forecasting/    # Regional demand model + HF space
+│   └── eta-prediction/        # ETA model training & inference
 ├── rag/
 │   ├── inventory/             # NL-to-SQL chatbot over Postgres
 │   └── graphdb/               # Neo4j load + GraphRAG
@@ -337,7 +336,7 @@ python -m tests.test_orchestrator
 |-------|----------|
 | Route prediction, metrics, inference API | [ml_services/route_prediction/README.md](ml_services/route_prediction/README.md) |
 | Unified ML gateway | [FastAPI/README.md](FastAPI/README.md) |
-| Demand forecasting | [ml_services/demand_forecasting/README.md](ml_services/demand_forecasting/README.md) |
+| Demand forecasting (HF Space client) | [models/hf_client.py](models/hf_client.py) |
 | ETA prediction | [ml_services/eta-prediction/README.md](ml_services/eta-prediction/README.md) |
 | Neo4j + GraphRAG setup | [rag/graphdb/README.md](rag/graphdb/README.md) |
 | Frontend app | [frontend/app/README.md](frontend/app/README.md) |

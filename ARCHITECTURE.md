@@ -41,7 +41,8 @@ flowchart TB
 | LangGraph orchestrator | [`agentic_ai/orchestrator/`](agentic_ai/orchestrator/) |
 | ML adapter layer (orchestrator) | [`ml/`](ml/) |
 | Route ranker + dispatch pipeline | [`ml_services/route_prediction/`](ml_services/route_prediction/) |
-| Demand / ETA models | [`ml_services/demand_forecasting/`](ml_services/demand_forecasting/), [`ml_services/eta-prediction/`](ml_services/eta-prediction/) |
+| Demand model (HF Space) | [`models/`](models/) — `hf_client.py`, `hf_space/`, `lade_demand_forecaster.pkl` |
+| ETA model | [`ml_services/eta-prediction/`](ml_services/eta-prediction/) |
 | Inventory NL-to-SQL | [`rag/inventory/chatbot/`](rag/inventory/chatbot/) |
 | Neo4j ETL + GraphRAG | [`rag/graphdb/`](rag/graphdb/) |
 | Neo4j runtime (orders, auth) | [`rag/aura_graphdb/`](rag/aura_graphdb/) |
