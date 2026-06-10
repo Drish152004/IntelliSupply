@@ -1,3 +1,14 @@
+from __future__ import annotations
+import sys
+from pathlib import Path
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_RAG_ROOT = _REPO_ROOT / "rag"
+for path in (_REPO_ROOT, _RAG_ROOT):
+    path_str = str(path)
+    if path_str not in sys.path:
+        sys.path.insert(0, path_str)
+from config.env import load_env
+load_env()
 from rag.aura_graphdb.aura_route_queries import get_recent_order_routes
 from rag.supabase.supabase_inventory import get_low_stock_inventory
 from rag.supabase.supabase_notifications import create_notification
