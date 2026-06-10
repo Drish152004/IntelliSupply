@@ -8,11 +8,13 @@ from pydantic import BaseModel, Field
 
 from aura_graphdb.aura_auth import (
     count_profiles,
+    get_user_by_email,
     get_user_by_id,
+    login_user_with_password,
     register_user_with_password,
     update_user_profile,
 )
-from aura_graphdb.aura_courier import get_courier_by_email, login_courier
+from aura_graphdb.aura_courier import get_courier_by_email
 from dependencies.auth import (
     TokenUser,
     create_access_token,
@@ -52,29 +54,22 @@ def _auth_response(user: dict, *, courier_id: str | None = None) -> dict:
 
 
 def _try_login(email: str, password: str) -> dict | None:
-    from aura_graphdb.aura_auth import login_user_with_password
-    from aura_graphdb.supabase_auth import get_user_by_email
-
     profile = get_user_by_email(email)
-    if profile:
-        result = login_user_with_password(email=email, password=password)
-        if result["success"]:
-            return _auth_response(result["user"])
+    if not profile:
         return None
 
-    courier_result = login_courier(email=email, password=password)
-    if courier_result["success"]:
-        courier = courier_result["courier"]
-        user = {
-            "id": courier["courier_id"],
-            "name": courier["name"],
-            "email": courier["email"],
-            "role_id": courier.get("role_id"),
-            "role": courier.get("role") or "courier",
-        }
-        return _auth_response(user, courier_id=courier["courier_id"])
+    result = login_user_with_password(email=email, password=password)
+    if not result["success"]:
+        return None
 
-    return None
+    user = result["user"]
+    courier_id = None
+    if user.get("role") == "courier":
+        courier = get_courier_by_email(email)
+        if courier:
+            courier_id = courier.get("courier_id")
+
+    return _auth_response(user, courier_id=courier_id)
 
 
 @router.post("/api/login")

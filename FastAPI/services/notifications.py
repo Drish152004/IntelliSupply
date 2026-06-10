@@ -1,6 +1,6 @@
 """Supabase-backed operational notification service."""
-from rag.supabase.supabase_notifications import mark_all_notifications_read
 from __future__ import annotations
+from rag.supabase.supabase_notifications import mark_all_notifications_read
 from typing import Any
 from rag.supabase.supabase_notifications import (
     get_unread_count,

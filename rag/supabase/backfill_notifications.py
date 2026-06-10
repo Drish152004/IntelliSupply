@@ -2,7 +2,6 @@ from rag.aura_graphdb.aura_route_queries import get_recent_order_routes
 from rag.supabase.supabase_inventory import get_low_stock_inventory
 from rag.supabase.supabase_notifications import create_notification
 
-
 def backfill_order_notifications(limit: int = 100) -> int:
     orders = get_recent_order_routes(limit=limit)
     created_count = 0

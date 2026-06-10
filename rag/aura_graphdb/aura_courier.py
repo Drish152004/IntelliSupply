@@ -169,6 +169,50 @@ def create_courier_node(
     finally:
         conn.close()
 
+
+def create_courier_user(
+    *,
+    name: str,
+    email: str,
+    password: str,
+    city_name: str,
+    hub_name: str,
+    ds: int = 318,
+) -> dict[str, Any]:
+    """
+    Register a courier in Supabase, sync profile to Aura, and create the Courier node.
+    """
+    from aura_graphdb.aura_auth import register_user_with_password
+
+    reg = register_user_with_password(
+        name=name,
+        email=email,
+        password=password,
+        selected_role="courier",
+    )
+    if not reg["success"]:
+        return reg
+
+    user = reg["user"]
+    courier_result = create_courier_node(
+        name=name,
+        email=email,
+        city_name=city_name,
+        hub_name=hub_name,
+        profile_id=user["id"],
+        ds=ds,
+    )
+    if not courier_result["success"]:
+        return courier_result
+
+    return {
+        "success": True,
+        "message": courier_result["message"],
+        "courier": courier_result["courier"],
+        "user": user,
+    }
+
+
 def deactivate_courier(courier_id: str) -> dict[str, Any]:
     """Mark a courier inactive instead of deleting the node."""
     conn = AuraConnection()

@@ -64,6 +64,7 @@ def create_notification(
                 "related_entity_type": related_entity_type,
                 "related_entity_id": related_entity_id,
                 "source": source,
+                "dedupe_key": dedupe_key,
             },
         ).mappings().first()
 

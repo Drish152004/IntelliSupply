@@ -25,7 +25,6 @@ def update_user_profile(user_id: str, *, name: str | None = None):
             email=updated["email"],
             role_id=updated["role_id"],
             role_name=updated["role"],
-            password_hash=updated.get("password_hash"),
         )
     except Exception as exc:
         logger.warning("Aura sync failed after profile update: %s", exc)
@@ -48,7 +47,6 @@ def register_user_with_password(
         return supabase_result
 
     user = supabase_result["user"]
-    stored = supabase_auth.get_user_by_email(user["email"])
     try:
         sync_profile_to_aura(
             profile_id=user["id"],
@@ -56,7 +54,6 @@ def register_user_with_password(
             email=user["email"],
             role_id=user["role_id"],
             role_name=user["role"],
-            password_hash=stored.get("password_hash") if stored else None,
         )
     except Exception as exc:
         logger.warning("Aura sync failed: %s", exc)
@@ -78,7 +75,6 @@ def login_user_with_password(email: str, password: str):
                 email=stored["email"],
                 role_id=stored["role_id"],
                 role_name=stored["role"],
-                password_hash=stored.get("password_hash"),
             )
         except Exception as exc:
             logger.warning("Aura sync failed on login: %s", exc)
