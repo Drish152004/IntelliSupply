@@ -109,8 +109,29 @@ export interface CreateShipmentPayload {
   from_hub_name: string;
   to_hub_name: string;
   delivery_date: string;
-  ds: number;
+  ds?: number;
   receipt_time?: string;
+  notes?: string;
+}
+
+export interface OrderDetail {
+  order_id: string;
+  city_name?: string;
+  ds?: number;
+  delivery_day?: string;
+  receipt_time?: string;
+  from_hub_name?: string;
+  from_lat?: number;
+  from_lon?: number;
+  to_hub_name?: string;
+  to_lat?: number;
+  to_lon?: number;
+  assigned_courier_id?: string;
+  assigned_courier_name?: string;
+  assigned_courier_email?: string;
+  nearest_courier_distance_m?: number;
+  typecode?: string;
+  aoi_id?: string;
   notes?: string;
 }
 
@@ -167,13 +188,20 @@ export interface CreateShipmentResult {
 export async function createShipment(payload: CreateShipmentPayload): Promise<CreateShipmentResult> {
   return apiFetch<CreateShipmentResult>('/orders/shipments', {
     method: 'POST',
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ ...payload, ds: payload.ds ?? 318 }),
   });
 }
 
 export async function listShipments(limit = 20): Promise<ShipmentListItem[]> {
   const data = await apiFetch<{ shipments: ShipmentListItem[] }>(`/orders/shipments?limit=${limit}`);
   return data.shipments;
+}
+
+export async function getShipment(orderId: string): Promise<OrderDetail> {
+  const data = await apiFetch<{ success: boolean; order: OrderDetail }>(
+    `/orders/${encodeURIComponent(orderId)}`,
+  );
+  return data.order;
 }
 
 // ─── Users ────────────────────────────────────────────────────────────────────

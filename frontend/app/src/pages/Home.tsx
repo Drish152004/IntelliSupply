@@ -15,7 +15,13 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
-import { createShipment, listShipments, type ShipmentListItem } from '@/lib/api';
+import {
+  createShipment,
+  getShipment,
+  listShipments,
+  type OrderDetail,
+  type ShipmentListItem,
+} from '@/lib/api';
 import {
   Plus,
   MapPin,
@@ -43,7 +49,6 @@ export default function LogisticsDashboard() {
   const [fromHubName, setFromHubName] = useState('');
   const [toHubName, setToHubName] = useState('');
   const [deliveryDate, setDeliveryDate] = useState('');
-  const [ds, setDs] = useState('318');
   const [receiptTime, setReceiptTime] = useState('');
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -56,6 +61,10 @@ export default function LogisticsDashboard() {
     routeError?: string | null;
   } | null>(null);
   const [currentShipments, setCurrentShipments] = useState<ShipmentListItem[]>([]);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [orderDetail, setOrderDetail] = useState<OrderDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
 
   useEffect(() => {
     void listShipments()
@@ -67,18 +76,30 @@ export default function LogisticsDashboard() {
     setSelectedRouteId((prev) => (prev === routeId ? null : routeId));
   };
 
+  const handleViewDetails = async (orderId: string) => {
+    setDetailOpen(true);
+    setDetailLoading(true);
+    setDetailError(null);
+    setOrderDetail(null);
+
+    try {
+      const order = await getShipment(orderId);
+      setOrderDetail(order);
+    } catch (err) {
+      setDetailError(
+        err instanceof Error ? err.message : 'Failed to load order details.',
+      );
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
   const handleCreateShipment = async () => {
     setSubmitting(true);
     setError(null);
     setSuccess(null);
 
     try {
-      const dsValue = parseInt(ds, 10);
-
-      if (Number.isNaN(dsValue)) {
-        throw new Error('Day index must be a number.');
-      }
-
       let receiptTimeFormatted: string | undefined;
 
       if (receiptTime) {
@@ -92,7 +113,6 @@ export default function LogisticsDashboard() {
         from_hub_name: fromHubName.trim(),
         to_hub_name: toHubName.trim(),
         delivery_date: deliveryDate,
-        ds: dsValue,
         receipt_time: receiptTimeFormatted,
         notes: notes.trim() || undefined,
       });
@@ -251,35 +271,18 @@ export default function LogisticsDashboard() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="rounded-xl border border-border bg-slate-50/80 p-3.5">
-                        <Label className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                          Day index
-                        </Label>
+                    <div className="rounded-xl border border-border bg-slate-50/80 p-3.5">
+                      <Label className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
+                        Receipt time
+                      </Label>
 
-                        <Input
-                          type="number"
-                          value={ds}
-                          onChange={(e) => setDs(e.target.value)}
-                          className="mt-2 rounded-lg border-border bg-white text-sm"
-                        />
-                      </div>
-
-                      <div className="rounded-xl border border-border bg-slate-50/80 p-3.5">
-                        <Label className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                          Receipt time
-                        </Label>
-
-                        <Input
-                          type="time"
-                          step={1}
-                          value={receiptTime}
-                          onChange={(e) =>
-                            setReceiptTime(e.target.value)
-                          }
-                          className="mt-2 rounded-lg border-border bg-white text-sm"
-                        />
-                      </div>
+                      <Input
+                        type="time"
+                        step={1}
+                        value={receiptTime}
+                        onChange={(e) => setReceiptTime(e.target.value)}
+                        className="mt-2 rounded-lg border-border bg-white text-sm"
+                      />
                     </div>
 
                     <div className="rounded-xl border border-border bg-slate-50/80 p-3.5">
@@ -426,7 +429,11 @@ export default function LogisticsDashboard() {
                           Courier: {shipment.assigned_courier_name ?? shipment.assigned_courier_id ?? 'Unassigned'}
                         </span>
 
-                        <button className="font-medium text-slate-900 hover:underline">
+                        <button
+                          type="button"
+                          onClick={() => void handleViewDetails(shipment.order_id)}
+                          className="font-medium text-slate-900 hover:underline"
+                        >
                           View details
                         </button>
                       </div>
@@ -610,6 +617,90 @@ export default function LogisticsDashboard() {
           </aside>
         </div>
       </main>
+
+      <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Shipment details</DialogTitle>
+            <DialogDescription>
+              Order and assigned courier information.
+            </DialogDescription>
+          </DialogHeader>
+
+          {detailLoading && (
+            <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Loading order details…
+            </div>
+          )}
+
+          {detailError && (
+            <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              {detailError}
+            </div>
+          )}
+
+          {orderDetail && !detailLoading && (
+            <div className="space-y-4 text-sm">
+              <div className="rounded-xl border border-border bg-slate-50 p-4">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                  Order
+                </p>
+                <p className="mt-2 font-semibold">{orderDetail.order_id}</p>
+                <p className="mt-1 text-muted-foreground">
+                  {orderDetail.from_hub_name ?? '—'} → {orderDetail.to_hub_name ?? '—'}
+                </p>
+                {orderDetail.city_name && (
+                  <p className="mt-1 text-muted-foreground">City: {orderDetail.city_name}</p>
+                )}
+                {orderDetail.delivery_day && (
+                  <p className="mt-1 text-muted-foreground">
+                    Delivery: {orderDetail.delivery_day}
+                  </p>
+                )}
+                {orderDetail.receipt_time && (
+                  <p className="mt-1 text-muted-foreground">
+                    Receipt: {orderDetail.receipt_time}
+                  </p>
+                )}
+                {orderDetail.notes && (
+                  <p className="mt-2 text-muted-foreground">Notes: {orderDetail.notes}</p>
+                )}
+              </div>
+
+              <div className="rounded-xl border border-border bg-slate-50 p-4">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                  Assigned courier
+                </p>
+                {orderDetail.assigned_courier_id ? (
+                  <>
+                    <p className="mt-2 font-semibold">
+                      {orderDetail.assigned_courier_name ?? orderDetail.assigned_courier_id}
+                    </p>
+                    <p className="mt-1 text-muted-foreground">
+                      ID: {orderDetail.assigned_courier_id}
+                    </p>
+                    {orderDetail.assigned_courier_email && (
+                      <p className="mt-1 text-muted-foreground">
+                        Email: {orderDetail.assigned_courier_email}
+                      </p>
+                    )}
+                    {orderDetail.nearest_courier_distance_m != null && (
+                      <p className="mt-1 text-muted-foreground">
+                        Distance at assignment:{' '}
+                        {Math.round(orderDetail.nearest_courier_distance_m)} m
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <p className="mt-2 text-muted-foreground">No courier assigned.</p>
+                )}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -14,7 +14,7 @@ class CreateShipmentRequest(BaseModel):
     from_hub_name: str = Field(..., min_length=1)
     to_hub_name: str = Field(..., min_length=1)
     delivery_date: str = Field(..., description="YYYY-MM-DD")
-    ds: int
+    ds: int = 318
     receipt_time: str | None = Field(None, description="HH:MM:SS; defaults to current IST")
     notes: str | None = None
 
