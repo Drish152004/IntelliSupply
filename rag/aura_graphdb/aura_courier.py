@@ -169,7 +169,6 @@ def create_courier_node(
     finally:
         conn.close()
 
-<<<<<<< HEAD
 
 def create_courier_user(
     *,
@@ -214,8 +213,6 @@ def create_courier_user(
     }
 
 
-=======
->>>>>>> 99cbc4def0211d9b1929d82169184fdf8535b474
 def deactivate_courier(courier_id: str) -> dict[str, Any]:
     """Mark a courier inactive instead of deleting the node."""
     conn = AuraConnection()

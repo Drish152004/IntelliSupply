@@ -1,3 +1,19 @@
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_RAG_ROOT = _REPO_ROOT / "rag"
+for path in (_REPO_ROOT, _RAG_ROOT):
+    path_str = str(path)
+    if path_str not in sys.path:
+        sys.path.insert(0, path_str)
+
+from config.env import load_env
+
+load_env()
+
 from rag.aura_graphdb.aura_route_queries import get_recent_order_routes
 from rag.supabase.supabase_notifications import create_notification
 
@@ -31,3 +47,8 @@ def backfill_order_notifications(limit: int = 100):
                 created_count += 1
 
     return created_count
+
+
+if __name__ == "__main__":
+    created = backfill_order_notifications()
+    print(f"Backfill complete. Created {created} notifications.")
