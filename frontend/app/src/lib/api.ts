@@ -229,6 +229,30 @@ export async function createShipment(payload: CreateShipmentPayload): Promise<Cr
   });
 }
 
+// ─── Cities / hubs (logistics dropdowns) ─────────────────────────────────────
+
+export interface CityListItem {
+  city_id?: number;
+  city_name: string;
+}
+
+export interface HubListItem {
+  hub_id?: number;
+  hub_name: string;
+  city_name?: string;
+}
+
+export async function listCities(): Promise<CityListItem[]> {
+  const data = await apiFetch<{ cities: CityListItem[] }>('/orders/cities');
+  return data.cities;
+}
+
+export async function listHubs(cityName: string): Promise<HubListItem[]> {
+  const params = new URLSearchParams({ city_name: cityName });
+  const data = await apiFetch<{ hubs: HubListItem[] }>(`/orders/hubs?${params.toString()}`);
+  return data.hubs;
+}
+
 export interface ListShipmentsOptions {
   limit?: number;
   courierId?: string;
@@ -263,10 +287,24 @@ export interface CourierListItem {
   hub_name?: string;
   city_name?: string;
   email?: string;
+  order_count?: number;
 }
 
 export async function listCouriers(limit = 200): Promise<CourierListItem[]> {
   const data = await apiFetch<{ couriers: CourierListItem[] }>(`/couriers?limit=${limit}`);
+  return data.couriers;
+}
+
+export async function listCouriersWithOrders(
+  deliveryDay: string,
+  limit = 200,
+): Promise<CourierListItem[]> {
+  const params = new URLSearchParams({
+    limit: String(limit),
+    with_orders_only: 'true',
+    delivery_day: deliveryDay,
+  });
+  const data = await apiFetch<{ couriers: CourierListItem[] }>(`/couriers?${params.toString()}`);
   return data.couriers;
 }
 
@@ -292,6 +330,7 @@ export interface CourierRouteResult {
   predicted_sequence: string[];
   stops: RouteStop[];
   total_eta_minutes: number;
+  source?: 'graphdb' | 'ml_model';
 }
 
 export async function predictCourierRoute(

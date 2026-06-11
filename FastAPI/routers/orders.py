@@ -8,8 +8,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from neo4j.exceptions import Neo4jError, ServiceUnavailable
 from pydantic import BaseModel
 
+from aura_graphdb.aura_hubs import list_cities, list_hubs
 from aura_graphdb.aura_route_queries import get_order_route, get_recent_order_routes
-from aura_graphdb.aura_courier import create_courier_user, list_active_couriers
+from aura_graphdb.aura_courier import (
+    create_courier_user,
+    get_courier_by_email,
+    list_active_couriers,
+    list_couriers_with_orders,
+)
 from dependencies.auth import TokenUser, require_roles, get_current_user
 from schemas.orders import (
     CreateCourierRequest,
@@ -44,8 +50,11 @@ def list_shipments(
 ):
     """List shipments. Couriers see only their own; managers can filter by any courier."""
     if current_user.role == "courier":
-        # Force the courier_id to their own JWT claim
+        # Force the courier_id to their own account (JWT claim or GraphDB lookup)
         effective_courier_id = current_user.courier_id
+        if not effective_courier_id and current_user.email:
+            courier = get_courier_by_email(current_user.email)
+            effective_courier_id = courier.get("courier_id") if courier else None
         if not effective_courier_id:
             return {"success": True, "shipments": [], "count": 0}
     elif current_user.role in ("admin", "logistics_manager"):
@@ -77,6 +86,31 @@ def list_shipments(
         for row in rows
     ]
     return {"success": True, "shipments": shipments, "count": len(shipments)}
+
+
+@router.get("/cities")
+def list_cities_endpoint(current_user: LogisticsUser):
+    """List cities that have hubs (for shipment / courier forms)."""
+    del current_user
+    try:
+        cities = list_cities()
+    except (ConnectionError, ServiceUnavailable, Neo4jError, OSError) as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {"success": True, "cities": cities, "count": len(cities)}
+
+
+@router.get("/hubs")
+def list_hubs_endpoint(
+    current_user: LogisticsUser,
+    city_name: str = Query(..., min_length=1),
+):
+    """List hubs in a city (for shipment / courier forms)."""
+    del current_user
+    try:
+        hubs = list_hubs(city_name=city_name)
+    except (ConnectionError, ServiceUnavailable, Neo4jError, OSError) as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {"success": True, "hubs": hubs, "count": len(hubs)}
 
 
 @router.get("/{order_id}")
@@ -118,11 +152,19 @@ def create_shipment(body: CreateShipmentRequest, current_user: LogisticsUser):
 # ── Couriers ──────────────────────────────────────────────────────────────────
 
 @couriers_router.get("")
-def list_couriers(current_user: LogisticsUser, limit: int = Query(default=200, ge=1, le=500)):
-    """List all active couriers (name, id, hub, city) for the manager dropdown."""
+def list_couriers(
+    current_user: LogisticsUser,
+    limit: int = Query(default=200, ge=1, le=500),
+    delivery_day: str | None = Query(default=None),
+    with_orders_only: bool = Query(default=False),
+):
+    """List couriers for the manager dropdown; optionally only those with assigned orders."""
     del current_user
     try:
-        couriers = list_active_couriers(limit=limit)
+        if with_orders_only:
+            couriers = list_couriers_with_orders(delivery_day=delivery_day, limit=limit)
+        else:
+            couriers = list_active_couriers(limit=limit)
     except (ConnectionError, ServiceUnavailable, Neo4jError, OSError) as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return {"success": True, "couriers": couriers, "count": len(couriers)}
@@ -149,6 +191,9 @@ def create_courier(body: CreateCourierRequest, current_user: LogisticsUser):
 def my_route(body: RouteRequest, current_user: Annotated[TokenUser, Depends(require_roles("courier"))]):
     """Courier requests their own route + ETA for a delivery day."""
     courier_id = current_user.courier_id
+    if not courier_id and current_user.email:
+        courier = get_courier_by_email(current_user.email)
+        courier_id = courier.get("courier_id") if courier else None
     if not courier_id:
         raise HTTPException(status_code=400, detail="No courier_id associated with this account.")
     result = route_svc.predict_courier_route(

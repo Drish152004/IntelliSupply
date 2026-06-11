@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from aura_graphdb.aura_connection import AuraConnection
 from rag.aura_graphdb.shared_cypher import PERSIST_ASSIGNED_ROUTE_QUERY
@@ -29,6 +31,7 @@ def persist_ml_courier_route(
     ds: int = DEFAULT_DS,
     city_name: str | None = None,
     delivery_day: str | None = None,
+    display_stops: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Persist route prediction output after the ML model runs."""
     conn = AuraConnection()
@@ -37,6 +40,8 @@ def persist_ml_courier_route(
     if delivery_day:
         route_prediction_id = f"{courier_id}_{ds}_{delivery_day}"
 
+    route_start_time = datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%d %H:%M:%S")
+
     route = {
         "route_prediction_id": route_prediction_id,
         "courier_id": courier_id,
@@ -44,10 +49,12 @@ def persist_ml_courier_route(
         "predicted_sequence": predicted_sequence,
         "stops": stops,
         "predicted_stops_json": json.dumps(stops),
+        "stops_json": json.dumps(display_stops) if display_stops else None,
         "predicted_eta_min": predicted_eta_min,
         "ds": int(ds),
         "city_name": city_name,
         "delivery_day": delivery_day,
+        "route_start_time": route_start_time,
     }
 
     try:

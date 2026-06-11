@@ -19,6 +19,8 @@ import {
   Loader2,
   MapPin,
 } from 'lucide-react';
+import { CitySelect, HubSelect } from '@/components/logistics/LocationSelect';
+import { useLogisticsLocations } from '@/hooks/useLogisticsLocations';
 import { registerUser, createCourierFrontend } from '@/lib/api';
 
 type UserType = 'logistics_manager' | 'inventory_manager' | 'courier';
@@ -53,6 +55,7 @@ export default function RegisterUser() {
   // Courier-only fields
   const [hubName, setHubName] = useState('');
   const [cityName, setCityName] = useState('');
+  const { cities, hubs, loadingHubs } = useLogisticsLocations(cityName);
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -93,9 +96,18 @@ export default function RegisterUser() {
     }
   };
 
+  const handleCourierCityChange = (city: string) => {
+    setCityName(city);
+    setHubName('');
+  };
+
   const handleCourierSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    if (!cityName || !hubName) {
+      setError('Please select a city and hub.');
+      return;
+    }
     setSubmitting(true);
     try {
       await createCourierFrontend({ name, email, password, hub_name: hubName, city_name: cityName });
@@ -299,29 +311,24 @@ export default function RegisterUser() {
           </DialogHeader>
 
           <form onSubmit={handleCourierSubmit} className="space-y-4 mt-2">
-            <div>
-              <label className="text-xs text-muted-foreground mb-1.5 block">Hub name</label>
-              <Input
-                value={hubName}
-                onChange={(e) => setHubName(e.target.value)}
-                placeholder="e.g. Hub_1"
-                required
-                className="rounded-2xl"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground mb-1.5 block">City</label>
-              <Input
-                value={cityName}
-                onChange={(e) => setCityName(e.target.value)}
-                placeholder="e.g. Chongqing"
-                required
-                className="rounded-2xl"
-              />
-            </div>
+            <CitySelect
+              label="City"
+              value={cityName}
+              onChange={handleCourierCityChange}
+              cities={cities}
+              placeholder="Select city"
+            />
+            <HubSelect
+              label="Hub"
+              value={hubName}
+              onChange={setHubName}
+              hubs={hubs}
+              disabled={!cityName || loadingHubs}
+              placeholder={cityName ? 'Select hub' : 'Select city first'}
+            />
 
             <div className="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-xs text-amber-800">
-              Hub and city must already exist in the GraphDB. Courier will be linked via ASSIGNED_TO_HUB and OPERATES_IN relationships.
+              Choose the city first, then pick a hub in that city. The courier will be linked via ASSIGNED_TO_HUB and OPERATES_IN in GraphDB.
             </div>
 
             {error && (

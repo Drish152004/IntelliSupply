@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from aura_graphdb.courier_assignment import MAX_ORDERS_PER_DAY, select_courier_for_order
-from aura_graphdb.hub_coordinates import NEARBY_HUB_KM
+from aura_graphdb.courier_assignment import MAX_ORDERS_PER_DAY, NEARBY_HUB_KM, select_courier_for_order
 
 
 # Chongqing-area WGS84 coords (realistic, a few km apart)

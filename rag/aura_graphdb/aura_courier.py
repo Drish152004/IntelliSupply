@@ -322,6 +322,56 @@ def deactivate_courier(courier_id: str) -> dict[str, Any]:
         conn.close()
 
 
+def list_couriers_with_orders(
+    delivery_day: str | None = None,
+    limit: int = 200,
+) -> list[dict[str, Any]]:
+    """Return couriers that have at least one assigned order (optionally on delivery_day)."""
+    conn = AuraConnection()
+
+    if delivery_day:
+        query = """
+        MATCH (c:Courier)<-[:ASSIGNED_TO]-(o:Order)
+        WHERE coalesce(c.is_active, true) = true
+          AND o.delivery_day = $delivery_day
+        WITH c, count(DISTINCT o) AS order_count
+        WHERE order_count > 0
+        OPTIONAL MATCH (c)-[:OPERATES_IN]->(city:City)
+        RETURN
+            c.courier_id AS courier_id,
+            c.name AS name,
+            c.email AS email,
+            coalesce(city.city_name, c.city_name) AS city_name,
+            order_count AS order_count
+        ORDER BY coalesce(c.name, c.email), c.courier_id
+        LIMIT $limit
+        """
+        params: dict[str, Any] = {"delivery_day": delivery_day, "limit": int(limit)}
+    else:
+        query = """
+        MATCH (c:Courier)<-[:ASSIGNED_TO]-(o:Order)
+        WHERE coalesce(c.is_active, true) = true
+        WITH c, count(DISTINCT o) AS order_count
+        WHERE order_count > 0
+        OPTIONAL MATCH (c)-[:OPERATES_IN]->(city:City)
+        RETURN
+            c.courier_id AS courier_id,
+            c.name AS name,
+            c.email AS email,
+            coalesce(city.city_name, c.city_name) AS city_name,
+            order_count AS order_count
+        ORDER BY coalesce(c.name, c.email), c.courier_id
+        LIMIT $limit
+        """
+        params = {"limit": int(limit)}
+
+    try:
+        rows = conn.execute_query(query, params)
+        return [dict(row) for row in (rows or [])]
+    finally:
+        conn.close()
+
+
 def list_active_couriers(limit: int = 200) -> list[dict[str, Any]]:
     """Return all active couriers with id, name, hub, and city for the manager dropdown."""
     conn = AuraConnection()

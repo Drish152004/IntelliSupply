@@ -49,8 +49,7 @@ def load_cities_to_aura():
         conn.close()
 
 def load_hubs_to_aura():
-    from aura_graphdb.hub_coordinates import hub_model_to_wgs84
-
+    """Load hubs from Supabase directly into Aura using lat/lng — no coordinate conversion."""
     engine = get_supabase_engine()
     conn = AuraConnection()
 
@@ -58,41 +57,24 @@ def load_hubs_to_aura():
         """
         SELECT
             h.hub_id,
-            h.name,
-            h.poi_lat,
-            h.poi_lng,
-            h.latitude,
-            h.longitude,
-            h.aoi_id,
-            h.typecode,
-            h.rep_dipan_id,
+            h.hub_name,
             h.city_id,
-            h.is_warehouse,
-            h.is_delivery_hub,
-            h.is_mixed_hub,
-            h.capacity,
+            h.lat,
+            h.lng,
+            h.representative_aoi_id,
+            h.representative_typecode,
+            h.hub_type,
             c.city_name
         FROM hubs h
         JOIN cities c
             ON h.city_id = c.city_id
         ORDER BY h.hub_id
         """,
-        engine
+        engine,
     )
 
     df = df.where(pd.notnull(df), None)
     rows = df.to_dict("records")
-
-    for row in rows:
-        if row["latitude"] is not None and row["longitude"] is not None:
-            lat_wgs84, lon_wgs84 = hub_model_to_wgs84(
-                float(row["latitude"]), float(row["longitude"])
-            )
-            row["lat_wgs84"] = lat_wgs84
-            row["lon_wgs84"] = lon_wgs84
-        else:
-            row["lat_wgs84"] = None
-            row["lon_wgs84"] = None
 
     query = """
     UNWIND $rows AS row
@@ -103,22 +85,15 @@ def load_hubs_to_aura():
     MERGE (hub:Hub {hub_id: toInteger(row.hub_id)})
     ON CREATE SET hub.created_at = datetime()
     SET
-        hub.name = row.name,
-        hub.poi_lat = toFloat(row.poi_lat),
-        hub.poi_lng = toFloat(row.poi_lng),
-        hub.latitude = toFloat(row.latitude),
-        hub.longitude = toFloat(row.longitude),
-        hub.lat_wgs84 = toFloat(row.lat_wgs84),
-        hub.lon_wgs84 = toFloat(row.lon_wgs84),
-        hub.aoi_id = row.aoi_id,
-        hub.typecode = row.typecode,
-        hub.rep_dipan_id = row.rep_dipan_id,
+        hub.hub_name = row.hub_name,
+        hub.name = row.hub_name,
+        hub.lat = toFloat(row.lat),
+        hub.lng = toFloat(row.lng),
+        hub.representative_aoi_id = row.representative_aoi_id,
+        hub.representative_typecode = row.representative_typecode,
+        hub.hub_type = row.hub_type,
         hub.city_id = toInteger(row.city_id),
         hub.city_name = row.city_name,
-        hub.is_warehouse = row.is_warehouse,
-        hub.is_delivery_hub = row.is_delivery_hub,
-        hub.is_mixed_hub = row.is_mixed_hub,
-        hub.capacity = row.capacity,
         hub.updated_at = datetime()
 
     MERGE (hub)-[:LOCATED_IN]->(city)
@@ -126,7 +101,54 @@ def load_hubs_to_aura():
 
     try:
         conn.execute_write(query, {"rows": rows})
-        print(f"Loaded {len(rows)} hubs into Aura (with lat_wgs84/lon_wgs84).")
+        print(f"Loaded {len(rows)} hubs into Aura (lat/lng direct from Supabase, no conversion).")
+    finally:
+        conn.close()
+
+
+def load_hub_distances_to_aura():
+    """Load hub_distances from Supabase as (:Hub)-[:CONNECTED_TO]->(:Hub) relationships."""
+    engine = get_supabase_engine()
+    conn = AuraConnection()
+
+    df = pd.read_sql(
+        """
+        SELECT
+            from_hub_id,
+            to_hub_id,
+            city_id,
+            raw_distance_km,
+            map_distance_km,
+            estimated_time_min,
+            created_at::text AS created_at
+        FROM hub_distances
+        ORDER BY from_hub_id, to_hub_id
+        """,
+        engine,
+    )
+
+    df = df.where(pd.notnull(df), None)
+    rows = df.to_dict("records")
+
+    query = """
+    UNWIND $rows AS row
+
+    MATCH (from_hub:Hub {hub_id: toInteger(row.from_hub_id)})
+    MATCH (to_hub:Hub {hub_id: toInteger(row.to_hub_id)})
+
+    MERGE (from_hub)-[rel:CONNECTED_TO]->(to_hub)
+    SET
+        rel.raw_distance_km = toFloat(row.raw_distance_km),
+        rel.map_distance_km = toFloat(row.map_distance_km),
+        rel.estimated_time_min = toFloat(row.estimated_time_min),
+        rel.city_id = toInteger(row.city_id),
+        rel.created_at = row.created_at,
+        rel.updated_at = datetime()
+    """
+
+    try:
+        conn.execute_write(query, {"rows": rows})
+        print(f"Loaded {len(rows)} hub distance relationships into Aura (CONNECTED_TO).")
     finally:
         conn.close()
 
@@ -161,8 +183,8 @@ def load_synthetic_couriers_to_aura(json_path="synthetic_couriers.json"):
         courier.city_name = row.city_name,
         courier.hub_id = hub.hub_id,
         courier.hub_name = hub.name,
-        courier.start_lat_wgs84 = hub.lat_wgs84,
-        courier.start_lon_wgs84 = hub.lon_wgs84,
+        courier.start_lat_wgs84 = hub.lat,
+        courier.start_lon_wgs84 = hub.lng,
         courier.is_active = true,
         courier.updated_at = datetime()
 
@@ -173,7 +195,7 @@ def load_synthetic_couriers_to_aura(json_path="synthetic_couriers.json"):
 
     try:
         conn.execute_write(query, {"rows": rows})
-        print(f"Loaded {len(rows)} synthetic couriers into Aura (coords from hub.lat_wgs84).")
+        print(f"Loaded {len(rows)} synthetic couriers into Aura (coords from hub.lat/hub.lng).")
     finally:
         conn.close()
 
@@ -257,6 +279,7 @@ def load_assigned_routes_to_aura(json_path=None):
 def seed_aura_logistics():
     load_cities_to_aura()
     load_hubs_to_aura()
+    load_hub_distances_to_aura()
 
     load_synthetic_couriers_to_aura(PIPELINE_DATA_DIR / "synthetic_couriers.json")
     load_synthetic_orders_to_aura(PIPELINE_DATA_DIR / "synthetic_orders.json")

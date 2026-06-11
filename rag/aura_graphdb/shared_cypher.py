@@ -25,6 +25,8 @@ SET
     rp.delivery_day = route.delivery_day,
     rp.city_name = coalesce(route.city_name, existing_city.city_name),
     rp.stop_count = size(route.stops),
+    rp.stops_json = route.stops_json,
+    rp.route_start_time = coalesce(route.route_start_time, rp.route_start_time),
     rp.updated_at = datetime()
 
 MERGE (rp)-[:FOR_COURIER]->(courier)

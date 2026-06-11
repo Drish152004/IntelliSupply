@@ -2,6 +2,7 @@
 
 On-demand: fetch a courier's orders for a delivery day, run the route sequence
 predictor, then estimate per-leg and cumulative ETA using the ETA model.
+Returns a saved RoutePrediction from GraphDB when one exists for that day.
 """
 
 from __future__ import annotations
@@ -14,11 +15,12 @@ import pandas as pd
 
 from aura_graphdb.aura_courier import get_courier_by_id
 from aura_graphdb.aura_route_prediction import persist_ml_courier_route
-from aura_graphdb.aura_route_queries import get_orders_for_courier_day
-from aura_graphdb.hub_coordinates import ML_DEFAULT_DS
+from aura_graphdb.aura_route_queries import get_orders_for_courier_day, get_saved_courier_route
 from ml_services.route_prediction.full_pipeline.coordinates import enrich_order_dict
 from services.eta_prediction import predict_eta
 from services.registry import get_route_predictor
+
+ML_DEFAULT_DS = 318
 
 
 def _orders_to_predictor_df(orders: list[dict[str, Any]]) -> pd.DataFrame:
@@ -51,20 +53,39 @@ def _mercator_from_wgs84(lat_wgs84: float, lon_wgs84: float) -> tuple[float, flo
     return float(enriched["poi_lat"]), float(enriched["poi_lng"])
 
 
+def _format_saved_route(saved: dict[str, Any]) -> dict[str, Any]:
+    """Normalize a GraphDB RoutePrediction into the API response shape."""
+    stops = saved.get("stops") or []
+    total_eta = saved.get("total_eta_minutes")
+    if total_eta is None and stops:
+        total_eta = sum(float(s.get("eta_minutes") or 0) for s in stops)
+
+    route_start_time = saved.get("route_start_time")
+    if not route_start_time:
+        route_start_time = datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%d %H:%M:%S")
+
+    return {
+        "success": True,
+        "courier_id": saved["courier_id"],
+        "courier_name": saved.get("courier_name"),
+        "delivery_day": saved["delivery_day"],
+        "route_start_time": route_start_time,
+        "predicted_sequence": saved.get("predicted_sequence") or [],
+        "stops": stops,
+        "total_eta_minutes": total_eta,
+        "source": "graphdb",
+    }
+
+
 def predict_courier_route(
     courier_id: str,
     delivery_day: str,
 ) -> dict[str, Any]:
-    """Predict delivery sequence and per-leg ETA for a courier on a given day.
+    """Return saved route from GraphDB, or predict + persist if none exists."""
+    saved = get_saved_courier_route(courier_id, delivery_day, ds=ML_DEFAULT_DS)
+    if saved and saved.get("stops"):
+        return _format_saved_route(saved)
 
-    Args:
-        courier_id: The courier's graph ID.
-        delivery_day: ISO date string (YYYY-MM-DD).
-
-    Returns:
-        Dict with courier_id, delivery_day, predicted_sequence, stops (ordered),
-        total_eta_minutes, and route_start_time.
-    """
     courier = get_courier_by_id(courier_id)
     if not courier:
         return {"success": False, "message": f"Courier {courier_id} not found."}
@@ -89,11 +110,9 @@ def predict_courier_route(
     route_df = _orders_to_predictor_df(prepared)
     predicted_sequence = predictor.predict_full_sequence(route_df)
 
-    # ETA chain — start at route_start_time (current IST), courier hub as first origin
     route_start = datetime.now(ZoneInfo("Asia/Kolkata"))
     route_start_iso = route_start.strftime("%Y-%m-%d %H:%M:%S")
 
-    # Courier hub WGS84 → Mercator for first-leg receipt
     start_lat = float(courier.get("start_lat_wgs84") or 0)
     start_lon = float(courier.get("start_lon_wgs84") or 0)
     prev_poi_lat, prev_poi_lng = _mercator_from_wgs84(start_lat, start_lon)
@@ -106,7 +125,6 @@ def predict_courier_route(
     for seq, order_id in enumerate(predicted_sequence, start=1):
         order = orders_by_id[order_id]
 
-        # from_hub_id stored on order as aoi_id (used as from_dipan_id in ETA model)
         eta_payload = {
             "delivery_user_id": courier_id,
             "from_dipan_id": str(order.get("aoi_id", "")),
@@ -149,13 +167,11 @@ def predict_courier_route(
             }
         )
 
-        # Next leg starts from this delivery point
         prev_poi_lat = float(order["poi_lat"])
         prev_poi_lng = float(order["poi_lng"])
 
     total_eta = round(cumulative_minutes, 1)
 
-    # Persist the prediction (fixes the missing predicted_eta_min bug)
     try:
         persist_ml_courier_route(
             courier_id=courier_id,
@@ -165,10 +181,11 @@ def predict_courier_route(
             order_ids=list(orders_by_id.keys()),
             predicted_sequence=predicted_sequence,
             stops=geo_stops,
+            display_stops=stops,
             predicted_eta_min=total_eta,
         )
     except Exception:
-        pass  # Persistence failure should not block the response
+        pass
 
     return {
         "success": True,
@@ -179,4 +196,5 @@ def predict_courier_route(
         "predicted_sequence": predicted_sequence,
         "stops": stops,
         "total_eta_minutes": total_eta,
+        "source": "ml_model",
     }

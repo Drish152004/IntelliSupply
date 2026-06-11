@@ -15,11 +15,13 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
+import { CitySelect, HubSelect } from '@/components/logistics/LocationSelect';
+import { useLogisticsLocations } from '@/hooks/useLogisticsLocations';
 import {
   createShipment,
   getShipment,
   listShipments,
-  listCouriers,
+  listCouriersWithOrders,
   predictCourierRoute,
   type CourierListItem,
   type CourierRouteResult,
@@ -52,8 +54,15 @@ function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+function formatRouteStartTime(routeStartTime?: string | null): string {
+  if (!routeStartTime) return '—';
+  if (routeStartTime.length >= 16) return routeStartTime.slice(11, 16);
+  if (routeStartTime.length >= 5) return routeStartTime.slice(0, 5);
+  return routeStartTime;
+}
+
 export default function LogisticsDashboard() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const isManager = user?.role === 'admin' || user?.role === 'logistics_manager';
   const isCourier = user?.role === 'courier';
 
@@ -61,8 +70,11 @@ export default function LogisticsDashboard() {
 
   // ── Add-shipment form (managers only) ────────────────────────────────────
   const [showShipmentForm, setShowShipmentForm] = useState(true);
+  const [shipmentCityName, setShipmentCityName] = useState('');
   const [fromHubName, setFromHubName] = useState('');
   const [toHubName, setToHubName] = useState('');
+  const { cities: shipmentCities, hubs: shipmentHubs, loadingHubs: shipmentHubsLoading } =
+    useLogisticsLocations(shipmentCityName);
   const [deliveryDate, setDeliveryDate] = useState('');
   const [receiptTime, setReceiptTime] = useState('');
   const [notes, setNotes] = useState('');
@@ -96,14 +108,26 @@ export default function LogisticsDashboard() {
   const [routeLoading, setRouteLoading] = useState(false);
   const [routeError, setRouteError] = useState<string | null>(null);
 
-  // ── Load couriers for manager dropdown ────────────────────────────────
+  // ── Load couriers with orders for the selected delivery day ───────────
   useEffect(() => {
     if (!isManager) return;
-    void listCouriers().then(setCouriers).catch(() => undefined);
-  }, [isManager]);
+    const day = filterDeliveryDay || todayISO();
+    void listCouriersWithOrders(day)
+      .then((rows) => {
+        setCouriers(rows);
+        setSelectedCourierId((prev) =>
+          prev && rows.some((c) => c.courier_id === prev) ? prev : '',
+        );
+      })
+      .catch(() => {
+        setCouriers([]);
+        setSelectedCourierId('');
+      });
+  }, [isManager, filterDeliveryDay]);
 
   // ── Load shipments (role-aware) ───────────────────────────────────────
   const loadShipments = () => {
+    if (authLoading || !user) return;
     setShipmentsLoading(true);
     void listShipments({
       limit: 50,
@@ -118,7 +142,7 @@ export default function LogisticsDashboard() {
   useEffect(() => {
     loadShipments();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterDeliveryDay, selectedCourierId]);
+  }, [authLoading, user, filterDeliveryDay, selectedCourierId]);
 
   const handleRouteSelect = (routeId: string) => {
     setSelectedRouteId((prev) => (prev === routeId ? null : routeId));
@@ -141,10 +165,33 @@ export default function LogisticsDashboard() {
   };
 
   // ── Create shipment ────────────────────────────────────────────────────
+  const handleShipmentCityChange = (city: string) => {
+    setShipmentCityName(city);
+    setFromHubName('');
+    setToHubName('');
+  };
+
+  const handleFromHubChange = (hub: string) => {
+    setFromHubName(hub);
+    if (toHubName === hub) {
+      setToHubName('');
+    }
+  };
+
   const handleCreateShipment = async () => {
     setSubmitting(true);
     setError(null);
     setSuccess(null);
+    if (!shipmentCityName || !fromHubName || !toHubName) {
+      setError('Please select a city, source hub, and destination hub.');
+      setSubmitting(false);
+      return;
+    }
+    if (fromHubName === toHubName) {
+      setError('Source and destination hubs must be different.');
+      setSubmitting(false);
+      return;
+    }
     try {
       let receiptTimeFormatted: string | undefined;
       if (receiptTime) {
@@ -216,10 +263,12 @@ export default function LogisticsDashboard() {
               onChange={(e) => setSelectedCourierId(e.target.value)}
               className="w-full appearance-none rounded-lg border border-border bg-slate-50 py-2 pl-3 pr-8 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-slate-400"
             >
-              <option value="">All couriers</option>
+              <option value="">All couriers with orders</option>
               {couriers.map((c) => (
                 <option key={c.courier_id} value={c.courier_id}>
-                  {c.name}{c.hub_name ? ` — ${c.hub_name}` : ''}
+                  {c.name || c.email}
+                  {c.email && c.name ? ` (${c.email})` : ''}
+                  {c.order_count != null ? ` — ${c.order_count} order${c.order_count === 1 ? '' : 's'}` : ''}
                 </option>
               ))}
             </select>
@@ -391,33 +440,34 @@ export default function LogisticsDashboard() {
                     <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar px-5 py-4">
                       <div className="space-y-3">
                         <div className="rounded-xl border border-border bg-slate-50/80 p-3.5">
-                          <Label className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
-                            From hub
-                          </Label>
-                          <div className="relative mt-2">
-                            <MapPin className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                            <Input
-                              placeholder="e.g. Hub_1"
-                              value={fromHubName}
-                              onChange={(e) => setFromHubName(e.target.value)}
-                              className="rounded-lg border-border bg-white pl-10 text-sm"
-                            />
-                          </div>
+                          <CitySelect
+                            label="City"
+                            value={shipmentCityName}
+                            onChange={handleShipmentCityChange}
+                            cities={shipmentCities}
+                          />
                         </div>
 
                         <div className="rounded-xl border border-border bg-slate-50/80 p-3.5">
-                          <Label className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
-                            To hub
-                          </Label>
-                          <div className="relative mt-2">
-                            <MapPin className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                            <Input
-                              placeholder="e.g. Hub_5"
-                              value={toHubName}
-                              onChange={(e) => setToHubName(e.target.value)}
-                              className="rounded-lg border-border bg-white pl-10 text-sm"
-                            />
-                          </div>
+                          <HubSelect
+                            label="From hub"
+                            value={fromHubName}
+                            onChange={handleFromHubChange}
+                            hubs={shipmentHubs}
+                            disabled={!shipmentCityName || shipmentHubsLoading}
+                            placeholder={shipmentCityName ? 'Select source hub' : 'Select city first'}
+                          />
+                        </div>
+
+                        <div className="rounded-xl border border-border bg-slate-50/80 p-3.5">
+                          <HubSelect
+                            label="To hub"
+                            value={toHubName}
+                            onChange={setToHubName}
+                            hubs={shipmentHubs.filter((h) => h.hub_name !== fromHubName)}
+                            disabled={!shipmentCityName || shipmentHubsLoading || !fromHubName}
+                            placeholder={fromHubName ? 'Select destination hub' : 'Select source hub first'}
+                          />
                         </div>
 
                         <div className="rounded-xl border border-border bg-slate-50/80 p-3.5">
@@ -735,16 +785,31 @@ export default function LogisticsDashboard() {
                 : 'Delivery route'}
             </DialogTitle>
             <DialogDescription>
-              {routeResult
-                ? `${routeResult.delivery_day} · Starting ${routeResult.route_start_time.slice(11, 16)} · ${routeResult.total_eta_minutes} min total`
-                : 'Predicted delivery sequence with ETA for each stop.'}
+              {routeResult ? (
+                <>
+                  {routeResult.delivery_day} · Starting {formatRouteStartTime(routeResult.route_start_time)} ·{' '}
+                  {routeResult.total_eta_minutes} min total
+                  {routeResult.source === 'graphdb' && (
+                    <span className="ml-2 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-800">
+                      Saved route
+                    </span>
+                  )}
+                  {routeResult.source === 'ml_model' && (
+                    <span className="ml-2 rounded-full bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-800">
+                      Predicted now
+                    </span>
+                  )}
+                </>
+              ) : (
+                'Delivery sequence with ETA for each stop.'
+              )}
             </DialogDescription>
           </DialogHeader>
 
           {routeLoading && (
             <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
-              Predicting route…
+              Loading route…
             </div>
           )}
 

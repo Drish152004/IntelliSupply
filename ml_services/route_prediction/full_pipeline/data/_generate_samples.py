@@ -1,7 +1,6 @@
 """One-off generator for synthetic_orders.json and synthetic_couriers.json.
 
-Sources hub WGS84 coordinates from Supabase (same as Aura seed).
-No cluster CSVs required.
+Sources hub coordinates directly from Supabase hubs.lat / hubs.lng — no conversion.
 
 Run from repo root:
     python ml_services/route_prediction/full_pipeline/data/_generate_samples.py
@@ -20,7 +19,6 @@ _REPO_ROOT = Path(__file__).resolve().parents[4]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from aura_graphdb.hub_coordinates import hub_model_to_wgs84  # noqa: E402
 from rag.supabase.supabase_connection import get_supabase_engine  # noqa: E402
 
 DATA_DIR = Path(__file__).parent
@@ -30,11 +28,16 @@ DS = 318
 
 
 def load_hubs() -> pd.DataFrame:
-    """Load hubs from Supabase and add WGS84 columns."""
+    """Load hubs from Supabase using the current schema (lat/lng, no conversion)."""
     engine = get_supabase_engine()
     df = pd.read_sql(
         """
-        SELECT h.hub_id, h.name, h.latitude, h.longitude, h.typecode, h.aoi_id,
+        SELECT h.hub_id,
+               h.hub_name AS name,
+               h.lat,
+               h.lng,
+               h.representative_typecode AS typecode,
+               h.representative_aoi_id   AS aoi_id,
                c.city_name
         FROM hubs h
         JOIN cities c ON h.city_id = c.city_id
@@ -43,17 +46,9 @@ def load_hubs() -> pd.DataFrame:
         engine,
     )
     df = df.where(pd.notnull(df), None)
-
-    lats, lons = [], []
-    for _, row in df.iterrows():
-        if row["latitude"] is not None and row["longitude"] is not None:
-            lat, lon = hub_model_to_wgs84(float(row["latitude"]), float(row["longitude"]))
-        else:
-            lat, lon = None, None
-        lats.append(lat)
-        lons.append(lon)
-    df["lat_wgs84"] = lats
-    df["lon_wgs84"] = lons
+    # Keep *_wgs84 aliases so _order/_courier output dicts are unchanged
+    df["lat_wgs84"] = df["lat"]
+    df["lon_wgs84"] = df["lng"]
     return df
 
 

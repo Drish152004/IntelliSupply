@@ -14,12 +14,22 @@ Assignment tiers (in priority order):
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
-from aura_graphdb.hub_coordinates import NEARBY_HUB_KM, haversine_distance_m
-
+NEARBY_HUB_KM = 5.0
 _KM_TO_M = 1000.0
 MAX_ORDERS_PER_DAY = 20
+_EARTH_RADIUS_M = 6_371_000.0
+
+
+def haversine_distance_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Return the great-circle distance in metres between two WGS84 points."""
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlambda = math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+    return 2 * _EARTH_RADIUS_M * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
 def _count_orders_per_courier(existing_orders: list[dict[str, Any]], delivery_day: str) -> dict[str, int]:
