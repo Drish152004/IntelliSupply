@@ -5,10 +5,11 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from aura_graphdb.hub_coordinates import ML_DEFAULT_DS
 from aura_graphdb.aura_connection import AuraConnection
 from rag.aura_graphdb.shared_cypher import PERSIST_ASSIGNED_ROUTE_QUERY
 from rag.supabase.supabase_notifications import create_notification
+
+DEFAULT_DS = 318
 
 
 def _safe_create_notification(**kwargs):
@@ -25,14 +26,16 @@ def persist_ml_courier_route(
     predicted_sequence: list[str],
     stops: list[dict[str, Any]],
     predicted_eta_min: float | None,
-    ds: int = ML_DEFAULT_DS,
+    ds: int = DEFAULT_DS,
     city_name: str | None = None,
     delivery_day: str | None = None,
 ) -> dict[str, Any]:
     """Persist route prediction output after the ML model runs."""
     conn = AuraConnection()
 
-    route_prediction_id = f"{courier_id}_{delivery_day}" if delivery_day else courier_id
+    route_prediction_id = f"{courier_id}_{ds}"
+    if delivery_day:
+        route_prediction_id = f"{courier_id}_{ds}_{delivery_day}"
 
     route = {
         "route_prediction_id": route_prediction_id,
@@ -66,26 +69,34 @@ def persist_ml_courier_route(
         for role in ["admin", "logistics_manager"]:
             _safe_create_notification(
                 title="Route prediction completed",
-                message=f"Route prediction completed for courier {courier_id} with {len(stops)} stops.",
+                message=(
+                    f"Route prediction completed for courier {courier_id} "
+                    f"with {len(stops)} stops."
+                ),
                 alert_type="route_prediction_completed",
                 severity="medium",
                 target_role=role,
                 related_entity_type="route_prediction",
                 related_entity_id=route_prediction_id,
                 source="graphdb",
+                dedupe_key=f"route_prediction_completed:{route_prediction_id}:{role}",
             )
 
         if predicted_eta_min is not None and predicted_eta_min >= 60:
             for role in ["admin", "logistics_manager"]:
                 _safe_create_notification(
                     title="High ETA predicted",
-                    message=f"Predicted ETA for courier {courier_id} is {predicted_eta_min:.1f} minutes.",
+                    message=(
+                        f"Predicted ETA for courier {courier_id} is "
+                        f"{predicted_eta_min:.1f} minutes."
+                    ),
                     alert_type="high_eta_prediction",
                     severity="high",
                     target_role=role,
                     related_entity_type="route_prediction",
                     related_entity_id=route_prediction_id,
                     source="ml_model",
+                    dedupe_key=f"high_eta_prediction:{route_prediction_id}:{role}",
                 )
 
         return {

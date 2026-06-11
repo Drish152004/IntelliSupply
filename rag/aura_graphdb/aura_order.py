@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import uuid
-from typing import Any, Optional
+from typing import Optional
 
 from aura_graphdb.aura_connection import AuraConnection
 from aura_graphdb.courier_assignment import select_courier_for_order
-from aura_graphdb.hub_coordinates import ML_DEFAULT_DS
 from rag.supabase.supabase_notifications import create_notification
+
+DEFAULT_DS = 318
 
 
 def _safe_create_notification(**kwargs):
@@ -23,6 +24,7 @@ def create_order_and_assign_nearest_courier(
     to_hub_name: str,
     delivery_day: str,
     receipt_time: str,
+    ds: int = DEFAULT_DS,
     typecode: Optional[str] = None,
     aoi_id: Optional[str] = None,
     extra_notes: Optional[str] = None,
@@ -47,14 +49,14 @@ def create_order_and_assign_nearest_courier(
         city.city_name AS city_name,
         from_hub.name AS from_hub_name,
         from_hub.hub_id AS from_hub_id,
-        from_hub.lat_wgs84 AS from_lat,
-        from_hub.lon_wgs84 AS from_lon,
+        from_hub.lat AS from_lat,
+        from_hub.lng AS from_lon,
         to_hub.name AS to_hub_name,
         to_hub.hub_id AS to_hub_id,
-        to_hub.lat_wgs84 AS to_lat,
-        to_hub.lon_wgs84 AS to_lon,
-        to_hub.typecode AS to_typecode,
-        to_hub.aoi_id AS to_aoi_id,
+        to_hub.lat AS to_lat,
+        to_hub.lng AS to_lon,
+        to_hub.representative_typecode AS to_typecode,
+        to_hub.representative_aoi_id AS to_aoi_id,
         courier.courier_id AS courier_id,
         courier.profile_id AS profile_id,
         courier.name AS courier_name,
@@ -89,8 +91,8 @@ def create_order_and_assign_nearest_courier(
         ds: toInteger($ds),
         delivery_day: $delivery_day,
         receipt_time: $receipt_time,
-        typecode: coalesce($typecode, to_hub.typecode),
-        aoi_id: coalesce($aoi_id, to_hub.aoi_id),
+        typecode: coalesce($typecode, to_hub.representative_typecode),
+        aoi_id: coalesce($aoi_id, to_hub.representative_aoi_id),
         receipt_lat_wgs84: toFloat($from_lat),
         receipt_lon_wgs84: toFloat($from_lon),
         from_hub_name: from_hub.name,
@@ -143,11 +145,12 @@ def create_order_and_assign_nearest_courier(
     params = {
         "from_hub_name": from_hub_name.strip(),
         "to_hub_name": to_hub_name.strip(),
-        "ds": ML_DEFAULT_DS,
+        "ds": int(ds),
     }
 
     try:
         candidates = conn.execute_query(lookup_query, params)
+
         if not candidates:
             return {
                 "success": False,
@@ -158,6 +161,19 @@ def create_order_and_assign_nearest_courier(
             }
 
         first = candidates[0]
+
+        if first["from_lat"] is None or first["from_lon"] is None:
+            return {
+                "success": False,
+                "message": f"Source hub {from_hub_name} does not have lat/lng in Aura.",
+            }
+
+        if first["to_lat"] is None or first["to_lon"] is None:
+            return {
+                "success": False,
+                "message": f"Destination hub {to_hub_name} does not have lat/lng in Aura.",
+            }
+
         from_lat = float(first["from_lat"])
         from_lon = float(first["from_lon"])
         to_lat = float(first["to_lat"])
@@ -166,23 +182,33 @@ def create_order_and_assign_nearest_courier(
 
         seen_courier_ids: set[str] = set()
         couriers = []
-        for c in candidates:
-            if c["courier_id"] in seen_courier_ids:
+
+        for candidate in candidates:
+            courier_id = candidate["courier_id"]
+
+            if courier_id in seen_courier_ids:
                 continue
-            seen_courier_ids.add(c["courier_id"])
-            couriers.append({
-                "courier_id": c["courier_id"],
-                "profile_id": c["profile_id"],
-                "name": c["courier_name"],
-                "start_lat_wgs84": float(c["courier_lat"]),
-                "start_lon_wgs84": float(c["courier_lon"]),
-                "city_name": city_name,
-                "hub_name": c.get("courier_hub_name"),
-            })
+
+            seen_courier_ids.add(courier_id)
+
+            couriers.append(
+                {
+                    "courier_id": courier_id,
+                    "profile_id": candidate["profile_id"],
+                    "name": candidate["courier_name"],
+                    "start_lat_wgs84": float(candidate["courier_lat"]),
+                    "start_lon_wgs84": float(candidate["courier_lon"]),
+                    "city_name": city_name,
+                    "hub_name": candidate.get("courier_hub_name"),
+                }
+            )
 
         existing_orders = conn.execute_query(
             existing_orders_query,
-            {"city_name": city_name, "delivery_day": delivery_day},
+            {
+                "city_name": city_name,
+                "delivery_day": delivery_day,
+            },
         )
 
         try:
@@ -191,11 +217,14 @@ def create_order_and_assign_nearest_courier(
                 pickup_lon=from_lon,
                 delivery_day=delivery_day,
                 couriers=couriers,
-                existing_orders=[dict(o) for o in (existing_orders or [])],
+                existing_orders=[dict(order) for order in (existing_orders or [])],
                 pickup_hub_name=from_hub_name.strip(),
             )
         except ValueError as exc:
-            return {"success": False, "message": str(exc)}
+            return {
+                "success": False,
+                "message": str(exc),
+            }
 
         result = conn.execute_write(
             write_query,
@@ -239,6 +268,7 @@ def create_order_and_assign_nearest_courier(
                 related_entity_type="order",
                 related_entity_id=order["order_id"],
                 source="graphdb",
+                dedupe_key=f"order_created:{order['order_id']}:{role}",
             )
 
         if order.get("assigned_courier_profile_id"):
@@ -254,6 +284,7 @@ def create_order_and_assign_nearest_courier(
                 related_entity_type="order",
                 related_entity_id=order["order_id"],
                 source="graphdb",
+                dedupe_key=f"order_assigned:{order['order_id']}:{order['assigned_courier_profile_id']}",
             )
 
         return {
@@ -261,5 +292,6 @@ def create_order_and_assign_nearest_courier(
             "message": "Order created and assigned successfully.",
             "order": order,
         }
+
     finally:
         conn.close()

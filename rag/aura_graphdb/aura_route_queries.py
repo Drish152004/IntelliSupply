@@ -1,5 +1,6 @@
 from aura_graphdb.aura_connection import AuraConnection
 
+
 def get_order_route(order_id: str):
     conn = AuraConnection()
 
@@ -19,12 +20,12 @@ def get_order_route(order_id: str):
         o.receipt_time AS receipt_time,
 
         fromHub.name AS from_hub_name,
-        fromHub.lat_wgs84 AS from_lat,
-        fromHub.lon_wgs84 AS from_lon,
+        fromHub.lat AS from_lat,
+        fromHub.lng AS from_lon,
 
         toHub.name AS to_hub_name,
-        toHub.lat_wgs84 AS to_lat,
-        toHub.lon_wgs84 AS to_lon,
+        toHub.lat AS to_lat,
+        toHub.lng AS to_lon,
 
         courier.courier_id AS assigned_courier_id,
         courier.name AS assigned_courier_name,
@@ -41,9 +42,9 @@ def get_order_route(order_id: str):
     try:
         result = conn.execute_query(query, {"order_id": order_id})
         return result[0] if result else None
-
     finally:
         conn.close()
+
 
 def get_recent_order_routes(
     limit: int = 20,
@@ -58,6 +59,7 @@ def get_recent_order_routes(
     if courier_id:
         where_clauses.append("courier.courier_id = $courier_id")
         params["courier_id"] = courier_id
+
     if delivery_day:
         where_clauses.append("o.delivery_day = $delivery_day")
         params["delivery_day"] = delivery_day
@@ -78,7 +80,12 @@ def get_recent_order_routes(
         o.receipt_time AS receipt_time,
 
         fromHub.name AS from_hub_name,
+        fromHub.lat AS from_lat,
+        fromHub.lng AS from_lon,
+
         toHub.name AS to_hub_name,
+        toHub.lat AS to_lat,
+        toHub.lng AS to_lon,
 
         courier.courier_id AS assigned_courier_id,
         courier.name AS assigned_courier_name,
@@ -90,16 +97,16 @@ def get_recent_order_routes(
 
     try:
         return conn.execute_query(query, params)
-
     finally:
         conn.close()
+
 
 def get_orders_for_courier_day(
     courier_id: str,
     city_name: str,
     delivery_day: str,
 ):
-    """Fetch all orders for a courier on a given delivery day (for ML route prediction)."""
+    """Fetch all orders for a courier on a given delivery day for ML route prediction."""
     conn = AuraConnection()
 
     query = """
@@ -108,6 +115,7 @@ def get_orders_for_courier_day(
       AND o.delivery_day = $delivery_day
     OPTIONAL MATCH (o)-[:FROM_HUB]->(fromHub:Hub)
     OPTIONAL MATCH (o)-[:TO_HUB]->(toHub:Hub)
+
     RETURN
         o.order_id AS order_id,
         o.lat_wgs84 AS lat_wgs84,
@@ -121,7 +129,11 @@ def get_orders_for_courier_day(
         o.receipt_lat_wgs84 AS receipt_lat_wgs84,
         o.receipt_lon_wgs84 AS receipt_lon_wgs84,
         fromHub.name AS from_hub_name,
-        toHub.name AS to_hub_name
+        fromHub.lat AS from_lat,
+        fromHub.lng AS from_lon,
+        toHub.name AS to_hub_name,
+        toHub.lat AS to_lat,
+        toHub.lng AS to_lon
     ORDER BY o.created_at
     """
 
@@ -136,6 +148,7 @@ def get_orders_for_courier_day(
         )
     finally:
         conn.close()
+
 
 def get_orders_for_courier(courier_id: str, limit: int = 20):
     conn = AuraConnection()
@@ -152,12 +165,12 @@ def get_orders_for_courier(courier_id: str, limit: int = 20):
         o.receipt_time AS receipt_time,
 
         fromHub.name AS from_hub_name,
-        fromHub.lat_wgs84 AS from_lat,
-        fromHub.lon_wgs84 AS from_lon,
+        fromHub.lat AS from_lat,
+        fromHub.lng AS from_lon,
 
         toHub.name AS to_hub_name,
-        toHub.lat_wgs84 AS to_lat,
-        toHub.lon_wgs84 AS to_lon,
+        toHub.lat AS to_lat,
+        toHub.lng AS to_lon,
 
         courier.courier_id AS assigned_courier_id,
         courier.name AS assigned_courier_name,
@@ -172,22 +185,19 @@ def get_orders_for_courier(courier_id: str, limit: int = 20):
             query,
             {
                 "courier_id": courier_id,
-                "limit": int(limit)
-            }
+                "limit": int(limit),
+            },
         )
-
     finally:
         conn.close()
+
 
 def answer_route_question(question: str):
     """
     Simple chatbot helper for route/order questions.
     Later this can be replaced with LLM-to-Cypher.
     """
-
     q = question.lower()
-
-    # Example: "show route for order ord-abc123"
     words = question.replace("?", "").replace(",", "").split()
 
     order_id = None
@@ -203,7 +213,7 @@ def answer_route_question(question: str):
             return {
                 "success": False,
                 "answer": f"No route found for order {order_id}.",
-                "data": None
+                "data": None,
             }
 
         answer = (
@@ -216,7 +226,7 @@ def answer_route_question(question: str):
         return {
             "success": True,
             "answer": answer,
-            "data": route
+            "data": route,
         }
 
     if "recent" in q or "latest" in q or "all orders" in q:
@@ -225,11 +235,11 @@ def answer_route_question(question: str):
         return {
             "success": True,
             "answer": f"Found {len(routes)} recent order routes.",
-            "data": routes
+            "data": routes,
         }
 
     return {
         "success": False,
         "answer": "Please provide an order ID, for example: show route for order ord-xxxx.",
-        "data": None
+        "data": None,
     }

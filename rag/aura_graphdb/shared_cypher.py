@@ -36,6 +36,7 @@ FOREACH (_ IN CASE WHEN existing_city IS NULL THEN [] ELSE [1] END |
 )
 
 WITH route, courier, rp
+
 UNWIND route.stops AS stop
 
 MATCH (order:Order {order_id: stop.order_id})

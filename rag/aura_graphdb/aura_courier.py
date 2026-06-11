@@ -1,13 +1,19 @@
 """Courier graph operations in Neo4j Aura."""
 
 from __future__ import annotations
+
 import uuid
 from typing import Any
+
 from aura_graphdb.aura_connection import AuraConnection
+from aura_graphdb.aura_profiles import sync_profile_to_aura
+from rag.supabase.supabase_auth import register_user_in_supabase
 from rag.supabase.supabase_notifications import create_notification
 
 COURIER_ROLE_ID = 2
 COURIER_ROLE_NAME = "courier"
+DEFAULT_DS = 318
+
 
 def _safe_create_notification(**kwargs):
     try:
@@ -15,9 +21,11 @@ def _safe_create_notification(**kwargs):
     except Exception as exc:
         print(f"Notification create failed: {exc}")
 
+
 def get_courier_by_email(email: str) -> dict[str, Any] | None:
     """Fetch a Courier node from Aura using email."""
     conn = AuraConnection()
+
     query = """
     MATCH (c:Courier {email: toLower(trim($email))})
     OPTIONAL MATCH (c)-[:HAS_ROLE]->(r:Role)
@@ -43,34 +51,44 @@ def get_courier_by_email(email: str) -> dict[str, Any] | None:
         c.is_active AS is_active
     LIMIT 1
     """
+
     try:
         result = conn.execute_query(query, {"email": email.lower().strip()})
         return result[0] if result else None
     finally:
         conn.close()
 
+
 def get_courier_by_id(courier_id: str) -> dict[str, Any] | None:
     """Fetch a Courier node by courier_id."""
     conn = AuraConnection()
+
     query = """
     MATCH (c:Courier {courier_id: $courier_id})
+    OPTIONAL MATCH (c)-[:HAS_ROLE]->(r:Role)
     OPTIONAL MATCH (c)-[:OPERATES_IN]->(city:City)
     OPTIONAL MATCH (c)-[:ASSIGNED_TO_HUB]->(hub:Hub)
+    OPTIONAL MATCH (c)-[:LINKED_TO_PROFILE]->(p:Profile)
 
     RETURN
         c.courier_id AS courier_id,
         c.profile_id AS profile_id,
+        p.id AS linked_profile_id,
         c.name AS name,
         c.email AS email,
         c.ds AS ds,
         c.start_lat_wgs84 AS start_lat_wgs84,
         c.start_lon_wgs84 AS start_lon_wgs84,
+        coalesce(city.city_id, c.city_id) AS city_id,
         coalesce(city.city_name, c.city_name) AS city_name,
         coalesce(hub.hub_id, c.hub_id) AS hub_id,
         coalesce(hub.name, c.hub_name) AS hub_name,
+        r.role_id AS role_id,
+        r.role_name AS role,
         c.is_active AS is_active
     LIMIT 1
     """
+
     try:
         result = conn.execute_query(query, {"courier_id": courier_id})
         return result[0] if result else None
@@ -86,6 +104,7 @@ def create_courier_node(
     hub_name: str,
     profile_id: str | None = None,
     courier_id: str | None = None,
+    ds: int = DEFAULT_DS,
 ) -> dict[str, Any]:
     """Create an operational Courier node in Aura."""
     existing = get_courier_by_email(email)
@@ -102,6 +121,8 @@ def create_courier_node(
 
     query = """
     MATCH (hub:Hub {name: $hub_name})-[:LOCATED_IN]->(city:City {city_name: $city_name})
+    WHERE hub.lat IS NOT NULL
+      AND hub.lng IS NOT NULL
 
     MERGE (role:Role {role_id: toInteger($role_id)})
     ON CREATE SET
@@ -121,8 +142,9 @@ def create_courier_node(
         courier.city_name = city.city_name,
         courier.hub_id = hub.hub_id,
         courier.hub_name = hub.name,
-        courier.start_lat_wgs84 = hub.lat_wgs84,
-        courier.start_lon_wgs84 = hub.lon_wgs84,
+        courier.ds = toInteger($ds),
+        courier.start_lat_wgs84 = toFloat(hub.lat),
+        courier.start_lon_wgs84 = toFloat(hub.lng),
         courier.is_active = true,
         courier.updated_at = datetime()
 
@@ -145,6 +167,7 @@ def create_courier_node(
         city.city_name AS city_name,
         hub.hub_id AS hub_id,
         hub.name AS hub_name,
+        courier.ds AS ds,
         courier.start_lat_wgs84 AS start_lat_wgs84,
         courier.start_lon_wgs84 AS start_lon_wgs84,
         role.role_id AS role_id,
@@ -162,6 +185,7 @@ def create_courier_node(
                 "email": email.lower().strip(),
                 "city_name": city_name.strip(),
                 "hub_name": hub_name.strip(),
+                "ds": int(ds),
                 "role_id": COURIER_ROLE_ID,
                 "role_name": COURIER_ROLE_NAME,
             },
@@ -170,7 +194,7 @@ def create_courier_node(
         if not result:
             return {
                 "success": False,
-                "message": "Hub and city combination not found in Aura. Seed hubs/cities first.",
+                "message": "Hub and city combination not found in Aura, or hub lat/lng is missing.",
             }
 
         courier = result[0]
@@ -185,6 +209,7 @@ def create_courier_node(
                 related_entity_type="courier",
                 related_entity_id=courier["courier_id"],
                 source="graphdb",
+                dedupe_key=f"courier_created:{courier['courier_id']}:{role}",
             )
 
         return {
@@ -203,29 +228,40 @@ def create_courier_user(
     password: str,
     city_name: str,
     hub_name: str,
+    ds: int = DEFAULT_DS,
 ) -> dict[str, Any]:
     """
     Register a courier in Supabase, sync profile to Aura, and create the Courier node.
     """
-    from aura_graphdb.aura_auth import register_user_with_password
-
-    reg = register_user_with_password(
+    reg = register_user_in_supabase(
         name=name,
         email=email,
         password=password,
         selected_role="courier",
     )
+
     if not reg["success"]:
         return reg
 
     user = reg["user"]
+
+    sync_profile_to_aura(
+        profile_id=user["id"],
+        name=user["name"],
+        email=user["email"],
+        role_id=user["role_id"],
+        role_name=user["role"],
+    )
+
     courier_result = create_courier_node(
         name=name,
         email=email,
         city_name=city_name,
         hub_name=hub_name,
         profile_id=user["id"],
+        ds=ds,
     )
+
     if not courier_result["success"]:
         return courier_result
 
@@ -240,6 +276,7 @@ def create_courier_user(
 def deactivate_courier(courier_id: str) -> dict[str, Any]:
     """Mark a courier inactive instead of deleting the node."""
     conn = AuraConnection()
+
     query = """
     MATCH (courier:Courier {courier_id: $courier_id})
     SET
@@ -273,6 +310,7 @@ def deactivate_courier(courier_id: str) -> dict[str, Any]:
                 related_entity_type="courier",
                 related_entity_id=courier["courier_id"],
                 source="graphdb",
+                dedupe_key=f"courier_deactivated:{courier['courier_id']}:{role}",
             )
 
         return {
@@ -287,6 +325,7 @@ def deactivate_courier(courier_id: str) -> dict[str, Any]:
 def list_active_couriers(limit: int = 200) -> list[dict[str, Any]]:
     """Return all active couriers with id, name, hub, and city for the manager dropdown."""
     conn = AuraConnection()
+
     query = """
     MATCH (c:Courier)
     WHERE coalesce(c.is_active, true) = true
@@ -301,14 +340,19 @@ def list_active_couriers(limit: int = 200) -> list[dict[str, Any]]:
     ORDER BY c.name
     LIMIT $limit
     """
+
     try:
         rows = conn.execute_query(query, {"limit": int(limit)})
-        return [dict(r) for r in (rows or [])]
+        return [dict(row) for row in (rows or [])]
     finally:
         conn.close()
 
 
-def get_orders_for_courier(courier_id: str, delivery_day: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
+def get_orders_for_courier(
+    courier_id: str,
+    delivery_day: str | None = None,
+    limit: int = 50,
+) -> list[dict[str, Any]]:
     """Return orders assigned to a courier, optionally filtered to a delivery day."""
     conn = AuraConnection()
 
@@ -330,7 +374,11 @@ def get_orders_for_courier(courier_id: str, delivery_day: str | None = None, lim
         ORDER BY o.created_at DESC
         LIMIT $limit
         """
-        params = {"courier_id": courier_id, "delivery_day": delivery_day, "limit": int(limit)}
+        params = {
+            "courier_id": courier_id,
+            "delivery_day": delivery_day,
+            "limit": int(limit),
+        }
     else:
         query = """
         MATCH (courier:Courier {courier_id: $courier_id})<-[:ASSIGNED_TO]-(o:Order)
@@ -348,10 +396,13 @@ def get_orders_for_courier(courier_id: str, delivery_day: str | None = None, lim
         ORDER BY o.created_at DESC
         LIMIT $limit
         """
-        params = {"courier_id": courier_id, "limit": int(limit)}
+        params = {
+            "courier_id": courier_id,
+            "limit": int(limit),
+        }
 
     try:
         rows = conn.execute_query(query, params)
-        return [dict(r) for r in (rows or [])]
+        return [dict(row) for row in (rows or [])]
     finally:
         conn.close()
