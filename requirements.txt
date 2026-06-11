@@ -43,3 +43,6 @@ pydantic>=2.0
 
 # HTTP requests
 requests
+
+google-auth
+google-auth-oauthlib

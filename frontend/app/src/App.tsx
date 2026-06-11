@@ -58,11 +58,11 @@ export default function App() {
           }
         />
 
-        {/* Logistics (admin + logistics_manager + courier) */}
+        {/* Logistics (admin + logistics_manager) */}
         <Route
           path="/logistics"
           element={
-            <ProtectedRoute allowedRoles={['admin', 'logistics_manager', 'courier']}>
+            <ProtectedRoute allowedRoles={['admin', 'logistics_manager']}>
               <LogisticsDashboard />
             </ProtectedRoute>
           }
@@ -70,7 +70,7 @@ export default function App() {
         <Route
           path="/logistics/intelligence"
           element={
-            <ProtectedRoute allowedRoles={['admin', 'logistics_manager', 'courier']}>
+            <ProtectedRoute allowedRoles={['admin', 'logistics_manager']}>
               <RouteIntelligence />
             </ProtectedRoute>
           }

@@ -17,6 +17,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from routers import auth, copilot, dashboard, demand_forecasting, inventory, notifications, orders, route_prediction, eta_prediction, users
+# from routers.auth import configure_auth
 from services.registry import init_all_services
 
 
@@ -32,14 +33,28 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+import os
+
+cors_origins_str = os.getenv("CORS_ALLOWED_ORIGINS", "")
+if cors_origins_str:
+    cors_origins = [o.strip() for o in cors_origins_str.split(",") if o.strip()]
+else:
+    cors_origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=cors_origins,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# configure_auth(app)
+
+# ✅ ✅ ADD THIS LINE (CRITICAL FIX)
 app.include_router(auth.router)
+
 app.include_router(copilot.router)
 app.include_router(route_prediction.router)
 app.include_router(demand_forecasting.router)
@@ -66,7 +81,7 @@ def root():
         "message": "IntelliSupply unified API",
         "docs": "/docs",
         "services": {
-            "auth": "/api/login",
+            "auth": "/login",
             "copilot": "/copilot",
             "orders": "/orders",
             "couriers": "/couriers",

@@ -1,4 +1,15 @@
-const API_BASE = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000';
+const getBaseUrl = () => {
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL;
+  }
+  if (import.meta.env.VITE_API_BASE_URL) {
+    return import.meta.env.VITE_API_BASE_URL;
+  }
+  const hostname = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
+  return `http://${hostname}:8000`;
+};
+
+const API_BASE = getBaseUrl();
 
 const TOKEN_KEY = 'intellisupply_token';
 
@@ -15,6 +26,13 @@ export function setAccessToken(token: string | null): void {
     localStorage.setItem(TOKEN_KEY, token);
   } else {
     localStorage.removeItem(TOKEN_KEY);
+  }
+}
+//  ADD THIS EXACT FUNCTION
+export function initializeAuth(): void {
+  const stored = localStorage.getItem(TOKEN_KEY);
+  if (stored) {
+    setAccessToken(stored);
   }
 }
 
@@ -52,6 +70,7 @@ export async function apiFetch<T = unknown>(
   const response = await fetch(`${API_BASE}${path}`, {
     ...rest,
     headers: requestHeaders,
+    credentials: 'include',
   });
 
   const data = await response.json().catch(() => ({}));
@@ -89,7 +108,26 @@ export interface LoginResponse {
   user: AuthUserResponse;
   message?: string;
 }
+//  ADD THIS (LOGIN FUNCTION)
+export async function login(email: string, password: string): Promise<LoginResponse> {
+  const data = await apiFetch<LoginResponse>('/api/login', {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
+    auth: false,
+  });
 
+  //  Store token for future requests
+  if (data.access_token) {
+    setAccessToken(data.access_token);
+  }
+
+  //  Store user for UI/session
+  if (data.user) {
+    localStorage.setItem('intellisupply_user', JSON.stringify(data.user));
+  }
+
+  return data;
+}
 export async function fetchCurrentUser(): Promise<AuthUserResponse> {
   const data = await apiFetch<{ success: boolean; user: AuthUserResponse }>('/api/me');
   return data.user;
@@ -102,6 +140,26 @@ export async function updateCurrentUser(payload: { name?: string }): Promise<Aut
   });
   return data.user;
 }
+
+export async function googleLogin(idToken: string): Promise<LoginResponse> {
+  const data = await apiFetch<LoginResponse>('/api/google-login', {
+    method: 'POST',
+    body: JSON.stringify({ id_token: idToken }),
+    auth: false,
+  });
+
+  // ✅ same logic as normal login
+  if (data.access_token) {
+    setAccessToken(data.access_token);
+  }
+
+  if (data.user) {
+    localStorage.setItem('intellisupply_user', JSON.stringify(data.user));
+  }
+
+  return data;
+}
+
 
 // ─── Shipments ────────────────────────────────────────────────────────────────
 

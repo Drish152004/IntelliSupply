@@ -149,7 +149,7 @@ const EMPTY_FORM = {
 
 export default function ProductManagement() {
   const [products, setProducts] = useState(initialProducts);
-  const [loading, setLoading] = useState(true);
+  const [_loading, setLoading] = useState(true);
 
   useEffect(() => {
     void listInventoryProducts()
