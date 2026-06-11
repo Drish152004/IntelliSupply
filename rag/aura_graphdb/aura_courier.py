@@ -49,6 +49,35 @@ def get_courier_by_email(email: str) -> dict[str, Any] | None:
     finally:
         conn.close()
 
+def get_courier_by_id(courier_id: str) -> dict[str, Any] | None:
+    """Fetch a Courier node by courier_id."""
+    conn = AuraConnection()
+    query = """
+    MATCH (c:Courier {courier_id: $courier_id})
+    OPTIONAL MATCH (c)-[:OPERATES_IN]->(city:City)
+    OPTIONAL MATCH (c)-[:ASSIGNED_TO_HUB]->(hub:Hub)
+
+    RETURN
+        c.courier_id AS courier_id,
+        c.profile_id AS profile_id,
+        c.name AS name,
+        c.email AS email,
+        c.ds AS ds,
+        c.start_lat_wgs84 AS start_lat_wgs84,
+        c.start_lon_wgs84 AS start_lon_wgs84,
+        coalesce(city.city_name, c.city_name) AS city_name,
+        coalesce(hub.hub_id, c.hub_id) AS hub_id,
+        coalesce(hub.name, c.hub_name) AS hub_name,
+        c.is_active AS is_active
+    LIMIT 1
+    """
+    try:
+        result = conn.execute_query(query, {"courier_id": courier_id})
+        return result[0] if result else None
+    finally:
+        conn.close()
+
+
 def create_courier_node(
     *,
     name: str,
@@ -251,5 +280,78 @@ def deactivate_courier(courier_id: str) -> dict[str, Any]:
             "message": "Courier deactivated successfully.",
             "courier": courier,
         }
+    finally:
+        conn.close()
+
+
+def list_active_couriers(limit: int = 200) -> list[dict[str, Any]]:
+    """Return all active couriers with id, name, hub, and city for the manager dropdown."""
+    conn = AuraConnection()
+    query = """
+    MATCH (c:Courier)
+    WHERE coalesce(c.is_active, true) = true
+    OPTIONAL MATCH (c)-[:OPERATES_IN]->(city:City)
+    OPTIONAL MATCH (c)-[:ASSIGNED_TO_HUB]->(hub:Hub)
+    RETURN
+        c.courier_id AS courier_id,
+        c.name AS name,
+        c.email AS email,
+        coalesce(hub.name, c.hub_name) AS hub_name,
+        coalesce(city.city_name, c.city_name) AS city_name
+    ORDER BY c.name
+    LIMIT $limit
+    """
+    try:
+        rows = conn.execute_query(query, {"limit": int(limit)})
+        return [dict(r) for r in (rows or [])]
+    finally:
+        conn.close()
+
+
+def get_orders_for_courier(courier_id: str, delivery_day: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
+    """Return orders assigned to a courier, optionally filtered to a delivery day."""
+    conn = AuraConnection()
+
+    if delivery_day:
+        query = """
+        MATCH (courier:Courier {courier_id: $courier_id})<-[:ASSIGNED_TO]-(o:Order)
+        WHERE o.delivery_day = $delivery_day
+        OPTIONAL MATCH (o)-[:FROM_HUB]->(fromHub:Hub)
+        OPTIONAL MATCH (o)-[:TO_HUB]->(toHub:Hub)
+        RETURN
+            o.order_id AS order_id,
+            o.city_name AS city_name,
+            o.delivery_day AS delivery_day,
+            o.receipt_time AS receipt_time,
+            fromHub.name AS from_hub_name,
+            toHub.name AS to_hub_name,
+            courier.courier_id AS assigned_courier_id,
+            courier.name AS assigned_courier_name
+        ORDER BY o.created_at DESC
+        LIMIT $limit
+        """
+        params = {"courier_id": courier_id, "delivery_day": delivery_day, "limit": int(limit)}
+    else:
+        query = """
+        MATCH (courier:Courier {courier_id: $courier_id})<-[:ASSIGNED_TO]-(o:Order)
+        OPTIONAL MATCH (o)-[:FROM_HUB]->(fromHub:Hub)
+        OPTIONAL MATCH (o)-[:TO_HUB]->(toHub:Hub)
+        RETURN
+            o.order_id AS order_id,
+            o.city_name AS city_name,
+            o.delivery_day AS delivery_day,
+            o.receipt_time AS receipt_time,
+            fromHub.name AS from_hub_name,
+            toHub.name AS to_hub_name,
+            courier.courier_id AS assigned_courier_id,
+            courier.name AS assigned_courier_name
+        ORDER BY o.created_at DESC
+        LIMIT $limit
+        """
+        params = {"courier_id": courier_id, "limit": int(limit)}
+
+    try:
+        rows = conn.execute_query(query, params)
+        return [dict(r) for r in (rows or [])]
     finally:
         conn.close()

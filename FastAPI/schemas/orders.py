@@ -67,29 +67,16 @@ class OrderResponse(BaseModel):
     notes: str | None = None
     assigned_courier_id: str | None = None
     assigned_courier_name: str | None = None
+    assigned_courier_hub_name: str | None = None
     nearest_courier_distance_m: float | None = None
     from_hub_name: str | None = None
     to_hub_name: str | None = None
-
-
-class RoutePredictionResponse(BaseModel):
-    route_prediction_id: str
-    courier_id: str
-    city_name: str | None = None
-    ds: int | None = None
-    delivery_day: str | None = None
-    order_ids: list[str] = []
-    predicted_sequence: list[str] = []
-    stops: list[dict[str, Any]] = []
-    stop_count: int | None = None
 
 
 class CreateShipmentResponse(BaseModel):
     success: bool
     message: str
     order: OrderResponse | None = None
-    route_prediction: RoutePredictionResponse | None = None
-    route_error: str | None = None
 
 
 class CreateCourierRequest(BaseModel):

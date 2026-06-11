@@ -41,6 +41,8 @@ def create_order_and_assign_nearest_courier(
       AND courier.start_lat_wgs84 IS NOT NULL
       AND courier.start_lon_wgs84 IS NOT NULL
 
+    OPTIONAL MATCH (courier)-[:ASSIGNED_TO_HUB]->(courierHub:Hub)
+
     RETURN
         city.city_name AS city_name,
         from_hub.name AS from_hub_name,
@@ -57,7 +59,8 @@ def create_order_and_assign_nearest_courier(
         courier.profile_id AS profile_id,
         courier.name AS courier_name,
         courier.start_lat_wgs84 AS courier_lat,
-        courier.start_lon_wgs84 AS courier_lon
+        courier.start_lon_wgs84 AS courier_lon,
+        coalesce(courierHub.name, courier.hub_name) AS courier_hub_name
     """
 
     existing_orders_query = """
@@ -69,7 +72,8 @@ def create_order_and_assign_nearest_courier(
         o.receipt_lat_wgs84 AS receipt_lat_wgs84,
         o.receipt_lon_wgs84 AS receipt_lon_wgs84,
         o.lat_wgs84 AS lat_wgs84,
-        o.lon_wgs84 AS lon_wgs84
+        o.lon_wgs84 AS lon_wgs84,
+        o.order_id AS order_id
     """
 
     write_query = """
@@ -132,7 +136,8 @@ def create_order_and_assign_nearest_courier(
         courier.name AS assigned_courier_name,
         $distance_m AS nearest_courier_distance_m,
         from_hub.name AS from_hub_name,
-        to_hub.name AS to_hub_name
+        to_hub.name AS to_hub_name,
+        $courier_hub_name AS assigned_courier_hub_name
     """
 
     params = {
@@ -172,6 +177,7 @@ def create_order_and_assign_nearest_courier(
                 "start_lat_wgs84": float(c["courier_lat"]),
                 "start_lon_wgs84": float(c["courier_lon"]),
                 "city_name": city_name,
+                "hub_name": c.get("courier_hub_name"),
             })
 
         existing_orders = conn.execute_query(
@@ -179,13 +185,17 @@ def create_order_and_assign_nearest_courier(
             {"city_name": city_name, "delivery_day": delivery_day},
         )
 
-        nearest_courier, distance_m = select_courier_for_order(
-            pickup_lat=from_lat,
-            pickup_lon=from_lon,
-            delivery_day=delivery_day,
-            couriers=couriers,
-            existing_orders=[dict(o) for o in (existing_orders or [])],
-        )
+        try:
+            nearest_courier, distance_m = select_courier_for_order(
+                pickup_lat=from_lat,
+                pickup_lon=from_lon,
+                delivery_day=delivery_day,
+                couriers=couriers,
+                existing_orders=[dict(o) for o in (existing_orders or [])],
+                pickup_hub_name=from_hub_name.strip(),
+            )
+        except ValueError as exc:
+            return {"success": False, "message": str(exc)}
 
         result = conn.execute_write(
             write_query,
@@ -199,6 +209,7 @@ def create_order_and_assign_nearest_courier(
                 "aoi_id": aoi_id,
                 "notes_text": extra_notes or "",
                 "courier_id": nearest_courier["courier_id"],
+                "courier_hub_name": nearest_courier.get("hub_name"),
                 "from_lat": from_lat,
                 "from_lon": from_lon,
                 "to_lat": to_lat,

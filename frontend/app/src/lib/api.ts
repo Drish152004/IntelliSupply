@@ -186,29 +186,11 @@ export interface OrderDetail {
   assigned_courier_id?: string;
   assigned_courier_name?: string;
   assigned_courier_email?: string;
+  assigned_courier_hub_name?: string;
   nearest_courier_distance_m?: number;
   typecode?: string;
   aoi_id?: string;
   notes?: string;
-}
-
-export interface RouteStop {
-  sequence: number;
-  order_id: string;
-  lat_wgs84: number;
-  lon_wgs84: number;
-}
-
-export interface RoutePrediction {
-  route_prediction_id: string;
-  courier_id: string;
-  city_name?: string;
-  ds?: number;
-  delivery_day?: string;
-  order_ids: string[];
-  predicted_sequence: string[];
-  stops: RouteStop[];
-  stop_count?: number;
 }
 
 export interface ShipmentListItem {
@@ -230,6 +212,7 @@ export interface CreateShipmentResult {
     order_id: string;
     assigned_courier_id?: string;
     assigned_courier_name?: string;
+    assigned_courier_hub_name?: string;
     city_name?: string;
     delivery_day?: string;
     receipt_time?: string;
@@ -237,8 +220,6 @@ export interface CreateShipmentResult {
     to_hub_name?: string;
     notes?: string;
   };
-  route_prediction?: RoutePrediction | null;
-  route_error?: string | null;
 }
 
 export async function createShipment(payload: CreateShipmentPayload): Promise<CreateShipmentResult> {
@@ -248,8 +229,22 @@ export async function createShipment(payload: CreateShipmentPayload): Promise<Cr
   });
 }
 
-export async function listShipments(limit = 20): Promise<ShipmentListItem[]> {
-  const data = await apiFetch<{ shipments: ShipmentListItem[] }>(`/orders/shipments?limit=${limit}`);
+export interface ListShipmentsOptions {
+  limit?: number;
+  courierId?: string;
+  deliveryDay?: string;
+}
+
+export async function listShipments(options: ListShipmentsOptions | number = {}): Promise<ShipmentListItem[]> {
+  // Accept a bare number for backwards-compat (legacy callers pass limit directly)
+  if (typeof options === 'number') {
+    options = { limit: options };
+  }
+  const { limit = 50, courierId, deliveryDay } = options;
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (courierId) params.set('courier_id', courierId);
+  if (deliveryDay) params.set('delivery_day', deliveryDay);
+  const data = await apiFetch<{ shipments: ShipmentListItem[] }>(`/orders/shipments?${params.toString()}`);
   return data.shipments;
 }
 
@@ -258,6 +253,55 @@ export async function getShipment(orderId: string): Promise<OrderDetail> {
     `/orders/${encodeURIComponent(orderId)}`,
   );
   return data.order;
+}
+
+// ─── Couriers list ────────────────────────────────────────────────────────────
+
+export interface CourierListItem {
+  courier_id: string;
+  name: string;
+  hub_name?: string;
+  city_name?: string;
+  email?: string;
+}
+
+export async function listCouriers(limit = 200): Promise<CourierListItem[]> {
+  const data = await apiFetch<{ couriers: CourierListItem[] }>(`/couriers?limit=${limit}`);
+  return data.couriers;
+}
+
+// ─── Courier route + ETA ──────────────────────────────────────────────────────
+
+export interface RouteStop {
+  sequence: number;
+  order_id: string;
+  from_hub_name?: string;
+  to_hub_name?: string;
+  city_name?: string;
+  delivery_day?: string;
+  eta_minutes: number;
+  eta_from_start_minutes: number;
+  estimated_arrival: string;
+}
+
+export interface CourierRouteResult {
+  courier_id: string;
+  courier_name?: string;
+  delivery_day: string;
+  route_start_time: string;
+  predicted_sequence: string[];
+  stops: RouteStop[];
+  total_eta_minutes: number;
+}
+
+export async function predictCourierRoute(
+  courierId: 'me' | string,
+  deliveryDay: string,
+): Promise<CourierRouteResult> {
+  return apiFetch<CourierRouteResult>(`/couriers/${courierId}/route`, {
+    method: 'POST',
+    body: JSON.stringify({ delivery_day: deliveryDay }),
+  });
 }
 
 // ─── Users ────────────────────────────────────────────────────────────────────

@@ -8,6 +8,7 @@ def get_order_route(order_id: str):
     OPTIONAL MATCH (o)-[:FROM_HUB]->(fromHub:Hub)
     OPTIONAL MATCH (o)-[:TO_HUB]->(toHub:Hub)
     OPTIONAL MATCH (o)-[:ASSIGNED_TO]->(courier:Courier)
+    OPTIONAL MATCH (courier)-[:ASSIGNED_TO_HUB]->(courierHub:Hub)
     OPTIONAL MATCH (o)-[:HAS_NOTES]->(notes:Notes)
 
     RETURN
@@ -28,6 +29,7 @@ def get_order_route(order_id: str):
         courier.courier_id AS assigned_courier_id,
         courier.name AS assigned_courier_name,
         courier.email AS assigned_courier_email,
+        coalesce(courierHub.name, courier.hub_name) AS assigned_courier_hub_name,
 
         o.nearest_courier_distance_m AS nearest_courier_distance_m,
         o.typecode AS typecode,
@@ -43,14 +45,31 @@ def get_order_route(order_id: str):
     finally:
         conn.close()
 
-def get_recent_order_routes(limit: int = 20):
+def get_recent_order_routes(
+    limit: int = 20,
+    courier_id: str | None = None,
+    delivery_day: str | None = None,
+):
     conn = AuraConnection()
 
-    query = """
+    where_clauses = []
+    params: dict = {"limit": int(limit)}
+
+    if courier_id:
+        where_clauses.append("courier.courier_id = $courier_id")
+        params["courier_id"] = courier_id
+    if delivery_day:
+        where_clauses.append("o.delivery_day = $delivery_day")
+        params["delivery_day"] = delivery_day
+
+    where_str = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+
+    query = f"""
     MATCH (o:Order)
     OPTIONAL MATCH (o)-[:FROM_HUB]->(fromHub:Hub)
     OPTIONAL MATCH (o)-[:TO_HUB]->(toHub:Hub)
     OPTIONAL MATCH (o)-[:ASSIGNED_TO]->(courier:Courier)
+    {where_str}
 
     RETURN
         o.order_id AS order_id,
@@ -59,12 +78,7 @@ def get_recent_order_routes(limit: int = 20):
         o.receipt_time AS receipt_time,
 
         fromHub.name AS from_hub_name,
-        fromHub.lat_wgs84 AS from_lat,
-        fromHub.lon_wgs84 AS from_lon,
-
         toHub.name AS to_hub_name,
-        toHub.lat_wgs84 AS to_lat,
-        toHub.lon_wgs84 AS to_lon,
 
         courier.courier_id AS assigned_courier_id,
         courier.name AS assigned_courier_name,
@@ -75,7 +89,7 @@ def get_recent_order_routes(limit: int = 20):
     """
 
     try:
-        return conn.execute_query(query, {"limit": int(limit)})
+        return conn.execute_query(query, params)
 
     finally:
         conn.close()
@@ -92,6 +106,8 @@ def get_orders_for_courier_day(
     MATCH (courier:Courier {courier_id: $courier_id})<-[:ASSIGNED_TO]-(o:Order)
     WHERE o.city_name = $city_name
       AND o.delivery_day = $delivery_day
+    OPTIONAL MATCH (o)-[:FROM_HUB]->(fromHub:Hub)
+    OPTIONAL MATCH (o)-[:TO_HUB]->(toHub:Hub)
     RETURN
         o.order_id AS order_id,
         o.lat_wgs84 AS lat_wgs84,
@@ -103,7 +119,9 @@ def get_orders_for_courier_day(
         o.typecode AS typecode,
         o.aoi_id AS aoi_id,
         o.receipt_lat_wgs84 AS receipt_lat_wgs84,
-        o.receipt_lon_wgs84 AS receipt_lon_wgs84
+        o.receipt_lon_wgs84 AS receipt_lon_wgs84,
+        fromHub.name AS from_hub_name,
+        toHub.name AS to_hub_name
     ORDER BY o.created_at
     """
 
