@@ -1,7 +1,7 @@
-import { Lock, ArrowRight, AlertCircle, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useNavigate, useParams } from 'react-router';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 import { useAuth, ROLE_HOME } from '@/lib/auth';
 
 const roleConfig: Record<
@@ -27,7 +27,7 @@ const defaultConfig = roleConfig.inventory;
 export default function Login() {
   const navigate = useNavigate();
   const { role } = useParams<{ role?: string }>();
-  const { login } = useAuth();
+  const { login, googleLogin } = useAuth();
 
   const config = useMemo(
     () => (role && roleConfig[role] ? roleConfig[role] : defaultConfig),
@@ -38,6 +38,48 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  //  Google button ref
+  const googleButtonRef = useRef<HTMLDivElement | null>(null);
+
+  //  Google init (NON-INTRUSIVE)
+  useEffect(() => {
+    if (!window.google || !googleButtonRef.current) return;
+
+    window.google.accounts.id.initialize({
+      client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
+      callback: async (response: any) => {
+        setSubmitting(true);
+        setError(null);
+
+        try {
+          const result = await googleLogin(response.credential);
+
+          if (result.success) {
+            const role = result.role;
+            const home = role ? ROLE_HOME[role] : '/';
+            navigate(home ?? '/', { replace: true });
+          } else {
+            setError(result.message ?? 'Google login failed');
+          }
+        } catch {
+          setError('Google login failed. Please try again.');
+        } finally {
+          setSubmitting(false);
+        }
+      },
+    });
+
+    window.google.accounts.id.renderButton(
+      googleButtonRef.current,
+      {
+        theme: 'outline',
+        size: 'large',
+        width: 360,
+        shape: 'pill',
+      }
+    );
+  }, [navigate]);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -109,6 +151,7 @@ export default function Login() {
           <p className="mt-3 text-base leading-7 text-slate-500">{config.description}</p>
 
           <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
+            {/* EMAIL */}
             <div>
               <label className="mb-2 block text-sm font-semibold text-slate-900">
                 Email address
@@ -119,68 +162,57 @@ export default function Login() {
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="name@intellisupply.ai"
                 required
-                className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-5 text-base outline-none transition focus:border-slate-400"
+                className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-5"
               />
             </div>
 
+            {/* PASSWORD */}
             <div>
-              <div className="mb-2 flex items-center justify-between">
-                <label className="text-sm font-semibold text-slate-900">Password</label>
-                <button type="button" className="text-sm text-slate-500 hover:text-slate-900">
-                  Forgot password
-                </button>
-              </div>
+              <label className="text-sm font-semibold text-slate-900">Password</label>
               <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Enter password"
                 required
-                className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-5 text-base outline-none transition focus:border-slate-400"
+                className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-5 mt-2"
               />
             </div>
 
+            {/* ERROR */}
             {error && (
-              <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-                <span>{error}</span>
-              </div>
+              <div className="text-red-600 text-sm">{error}</div>
             )}
 
-            <div className="flex items-center gap-3 rounded-2xl bg-slate-50 px-5 py-4">
-              <Lock className="h-4 w-4 text-slate-600" />
-              <span className="text-sm text-slate-700">Secure enterprise authentication</span>
-            </div>
-
+            {/* BUTTON */}
             <button
               type="submit"
               disabled={submitting}
-              className="flex h-12 w-full items-center justify-center gap-3 rounded-full bg-slate-950 text-base font-semibold text-white transition-all hover:scale-[1.01] disabled:opacity-60"
+              className="flex h-12 w-full items-center justify-center gap-3 rounded-full bg-slate-950 text-white"
             >
-              {submitting ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <>
-                  Sign in
-                  <ArrowRight className="h-4 w-4" />
-                </>
-              )}
+              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Sign in'}
             </button>
           </form>
 
-          <div className="mt-6 rounded-2xl bg-slate-50 px-4 py-3">
-            <p className="text-xs text-slate-500 font-medium">Demo credentials</p>
-            <div className="mt-1.5 space-y-0.5 text-xs text-slate-400">
-              <p>admin@demo.com / admin</p>
-              <p>logistics@demo.com / logistics</p>
-              <p>inventory@demo.com / inventory</p>
-            </div>
+          {/*  Google Divider */}
+          <div className="mt-6 flex items-center gap-3">
+            <div className="h-px flex-1 bg-slate-200" />
+            <span className="text-xs text-slate-400">OR</span>
+            <div className="h-px flex-1 bg-slate-200" />
+          </div>
+
+          {/*  Google Button */}
+          <div ref={googleButtonRef} className="mt-4 flex justify-center" />
+
+          {/*  Demo */}
+          <div className="mt-6 text-xs text-slate-400">
+            admin@demo.com / admin
           </div>
 
           <button
             type="button"
             onClick={() => navigate('/')}
-            className="mt-6 w-full text-center text-sm text-slate-500 hover:text-slate-900"
+            className="mt-6 w-full text-sm text-slate-500"
           >
             Return to landing page
           </button>
