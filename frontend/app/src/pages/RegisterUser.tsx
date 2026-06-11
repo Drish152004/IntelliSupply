@@ -257,7 +257,7 @@ export default function RegisterUser() {
                     {userType === 'logistics_manager'
                       ? 'Logistics, Notifications'
                       : userType === 'inventory_manager'
-                      ? 'Inventory, Products, Notifications'
+                      ? 'Inventory, Notifications'
                       : 'Field operations only (no dashboard)'}
                   </p>
                 </div>

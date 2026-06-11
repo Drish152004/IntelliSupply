@@ -1,7 +1,6 @@
 import { NavLink, useNavigate } from 'react-router';
 import {
   Bell,
-  ShieldCheck,
   Package,
   LayoutDashboard,
   Package2,
@@ -16,8 +15,7 @@ import { useAuth, type AppRole } from '@/lib/auth';
 const ALL_NAV_ITEMS = [
   { label: 'Dashboard', to: '/admin/dashboard', icon: LayoutDashboard, roles: ['admin'] as AppRole[] },
   { label: 'Logistics', to: '/logistics', icon: Package, roles: ['admin', 'logistics_manager', 'courier'] as AppRole[] },
-  { label: 'Products', to: '/product-management', icon: Package2, roles: ['admin', 'inventory_manager'] as AppRole[] },
-  { label: 'Inventory', to: '/inventory', icon: ShieldCheck, roles: ['admin', 'inventory_manager'] as AppRole[] },
+  { label: 'Inventory', to: '/inventory', icon: Package2, roles: ['admin', 'inventory_manager'] as AppRole[] },
   { label: 'Add Users', to: '/admin/users', icon: UserPlus, roles: ['admin'] as AppRole[] },
   { label: 'Notifications', to: '/notifications', icon: Bell, roles: ['admin', 'logistics_manager', 'inventory_manager'] as AppRole[] },
 ];

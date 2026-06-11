@@ -6,15 +6,12 @@ import Login from './pages/Login';
 import Profile from './pages/Profile';
 import Overview from './pages/Overview';
 import Inventory from './pages/Inventory';
-import InventoryAnalytics from './pages/InventoryAnalytics';
 import LogisticsDashboard from './pages/Home';
 import RouteIntelligence from './pages/RouteIntelligence';
 import AdminUsers from './pages/AdminUsers';
 import AdminAnalytics from './pages/AdminAnalytics';
 import Notifications from './pages/Notifications';
 import RegisterUser from './pages/RegisterUser';
-import ProductManagement from './pages/ProductManagement';
-
 export default function App() {
   return (
     <AuthProvider>
@@ -85,23 +82,6 @@ export default function App() {
             </ProtectedRoute>
           }
         />
-        <Route
-          path="/inventory/analytics"
-          element={
-            <ProtectedRoute allowedRoles={['admin', 'inventory_manager']}>
-              <InventoryAnalytics />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/product-management"
-          element={
-            <ProtectedRoute allowedRoles={['admin', 'inventory_manager']}>
-              <ProductManagement />
-            </ProtectedRoute>
-          }
-        />
-
         {/* All authenticated roles */}
         <Route
           path="/profile"
@@ -122,6 +102,7 @@ export default function App() {
 
         {/* Redirects */}
         <Route path="/routes" element={<Navigate to="/logistics" replace />} />
+        <Route path="/product-management" element={<Navigate to="/inventory" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AuthProvider>
