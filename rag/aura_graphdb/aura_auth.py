@@ -115,3 +115,46 @@ def list_all_users(limit: int = 100):
         for row in couriers
     ]
     return combined[:limit]
+
+def login_or_register_google_user(
+    name: str,
+    email: str,
+    google_sub: str,
+    selected_role: str = "courier",
+) -> dict:
+    """
+    Login or create a user using Google OAuth data.
+    """
+
+    # 1. Try to find existing user by email
+    existing = get_user_by_email(email)
+
+    if existing:
+        return {
+            "success": True,
+            "user": existing,
+            "message": "Login successful.",
+        }
+
+    # 2. If not found → register new user
+    try:
+        result = register_user_with_password(
+            name=name,
+            email=email,
+            password=google_sub,  # safe placeholder (not used for login)
+            selected_role=selected_role,
+        )
+
+        if result.get("success"):
+            return result
+
+        return {
+            "success": False,
+            "message": result.get("message", "Registration failed."),
+        }
+
+    except Exception as exc:
+        return {
+            "success": False,
+            "message": str(exc),
+        }

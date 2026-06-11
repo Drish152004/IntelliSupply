@@ -29,11 +29,11 @@ class TokenUser:
 
 
 def _jwt_secret() -> str:
-    return os.getenv("JWT_SECRET", "dev-secret-change-this")
+    return os.getenv("JWT_SECRET") or os.getenv("FASTAPI_SECRET_KEY", "dev-secret-change-this")
 
 
 def _jwt_expire_minutes() -> int:
-    return int(os.getenv("JWT_EXPIRE_MINUTES", "1440"))
+    return int(os.getenv("JWT_EXPIRE_MINUTES", "15"))
 
 
 def create_access_token(user: dict) -> str:
@@ -50,6 +50,65 @@ def create_access_token(user: dict) -> str:
         "exp": now + timedelta(minutes=_jwt_expire_minutes()),
     }
     return jwt.encode(payload, _jwt_secret(), algorithm="HS256")
+
+
+def create_refresh_token(user: dict) -> str:
+    """Issue a signed JWT for a long-lived refresh token."""
+    now = datetime.now(UTC)
+    payload = {
+        "sub": str(user["id"]),
+        "email": user["email"],
+        "name": user.get("name", ""),
+        "role": user["role"],
+        "role_id": user.get("role_id"),
+        "courier_id": user.get("courier_id"),
+        "iat": now,
+        "exp": now + timedelta(days=7),  # 7 days expiration for refresh tokens
+        "refresh": True,
+    }
+    return jwt.encode(payload, _jwt_secret(), algorithm="HS256")
+
+
+def decode_refresh_token(token: str) -> TokenUser:
+    try:
+        payload = jwt.decode(token, _jwt_secret(), algorithms=["HS256"])
+    except jwt.PyJWTError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired refresh token.",
+        ) from exc
+
+    if not payload.get("refresh"):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not a valid refresh token.",
+        )
+
+    role = str(payload.get("role") or "").strip().lower()
+    if role not in ALLOWED_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid role in token.",
+        )
+
+    sub = payload.get("sub")
+    email = payload.get("email")
+    if not sub or not email:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token claims.",
+        )
+
+    courier_id = payload.get("courier_id") #
+    return TokenUser(
+        id=str(sub),
+        name=str(payload.get("name") or ""),
+        email=str(email),
+        role=role,
+        role_id=payload.get("role_id"),
+        courier_id=str(courier_id).strip() if courier_id else None,
+    )
+
 
 
 def decode_access_token(token: str) -> TokenUser:
