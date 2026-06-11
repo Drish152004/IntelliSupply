@@ -103,7 +103,6 @@ def create_courier(body: CreateCourierRequest, current_user: LogisticsUser):
         password=body.password,
         city_name=body.city_name,
         hub_name=body.hub_name,
-        ds=body.ds,
     )
 
     if not result.get("success"):

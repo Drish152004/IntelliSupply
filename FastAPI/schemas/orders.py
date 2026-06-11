@@ -14,7 +14,6 @@ class CreateShipmentRequest(BaseModel):
     from_hub_name: str = Field(..., min_length=1)
     to_hub_name: str = Field(..., min_length=1)
     delivery_date: str = Field(..., description="YYYY-MM-DD")
-    ds: int = 318
     receipt_time: str | None = Field(None, description="HH:MM:SS; defaults to current IST")
     notes: str | None = None
 
@@ -71,30 +70,18 @@ class OrderResponse(BaseModel):
     nearest_courier_distance_m: float | None = None
     from_hub_name: str | None = None
     to_hub_name: str | None = None
-    cluster_id: int | None = None
-
-    @field_validator("cluster_id", mode="before")
-    @classmethod
-    def coerce_cluster_id(cls, value: Any) -> int | None:
-        if value is None or value == "":
-            return None
-        try:
-            return int(value)
-        except (TypeError, ValueError):
-            return None
 
 
 class RoutePredictionResponse(BaseModel):
     route_prediction_id: str
     courier_id: str
-    cluster_id: int
-    city_name: str
-    ds: int
-    delivery_day: str
-    order_ids: list[str]
-    predicted_sequence: list[str]
-    stops: list[dict[str, Any]]
-    stop_count: int
+    city_name: str | None = None
+    ds: int | None = None
+    delivery_day: str | None = None
+    order_ids: list[str] = []
+    predicted_sequence: list[str] = []
+    stops: list[dict[str, Any]] = []
+    stop_count: int | None = None
 
 
 class CreateShipmentResponse(BaseModel):
@@ -111,4 +98,3 @@ class CreateCourierRequest(BaseModel):
     password: str = Field(..., min_length=1)
     city_name: str = Field(..., min_length=1)
     hub_name: str = Field(..., min_length=1)
-    ds: int = 318

@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
+from aura_graphdb.hub_coordinates import ML_DEFAULT_DS
 from aura_graphdb.aura_order import create_order_and_assign_nearest_courier
 from aura_graphdb.aura_route_prediction import persist_ml_courier_route
 from aura_graphdb.aura_route_queries import get_orders_for_courier_day
@@ -58,21 +59,11 @@ def _build_stops(sequence: list[str], orders_by_id: dict[str, dict]) -> list[dic
 def _predict_and_persist_route(order: dict[str, Any]) -> tuple[dict | None, str | None]:
     courier_id = order["assigned_courier_id"]
     city_name = order["city_name"]
-    ds = int(order["ds"])
     delivery_day = order["delivery_day"]
-    cluster_id = order.get("cluster_id")
-    if cluster_id is None:
-        cluster_id = -1
-    else:
-        try:
-            cluster_id = int(cluster_id)
-        except (TypeError, ValueError):
-            cluster_id = -1
 
     raw_orders = get_orders_for_courier_day(
         courier_id=courier_id,
         city_name=city_name,
-        ds=ds,
         delivery_day=delivery_day,
     )
     if not raw_orders:
@@ -89,9 +80,8 @@ def _predict_and_persist_route(order: dict[str, Any]) -> tuple[dict | None, str 
 
     result = persist_ml_courier_route(
         courier_id=courier_id,
-        cluster_id=cluster_id,
         city_name=city_name,
-        ds=ds,
+        ds=ML_DEFAULT_DS,
         delivery_day=delivery_day,
         order_ids=order_ids,
         predicted_sequence=predicted_sequence,
@@ -104,21 +94,9 @@ def _predict_and_persist_route(order: dict[str, Any]) -> tuple[dict | None, str 
     return result["route_prediction"], None
 
 
-def _coerce_cluster_id(value: Any) -> int | None:
-    if value is None:
-        return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
-
-
 def _sanitize_record(record: dict[str, Any]) -> dict[str, Any]:
     out = {}
     for key, value in record.items():
-        if key == "cluster_id":
-            out[key] = _coerce_cluster_id(value)
-            continue
         if value is None:
             out[key] = None
         elif hasattr(value, "iso_format"):
@@ -138,7 +116,6 @@ def create_shipment(payload: dict[str, Any]) -> dict[str, Any]:
         to_hub_name=payload["to_hub_name"],
         delivery_day=payload["delivery_date"],
         receipt_time=receipt_time,
-        ds=payload["ds"],
         extra_notes=payload.get("notes"),
     )
 
