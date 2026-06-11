@@ -303,7 +303,7 @@ What it does:
 4. Ensures both hubs are in the same city.
 5. Gets pickup coordinates from source hub.
 6. Gets delivery coordinates from destination hub.
-7. Finds active couriers in the same city and ds.
+7. Finds active couriers in the same city.
 8. Calculates distance from courier start location to source hub.
 9. Picks the nearest courier.
 10. Creates Order node.
@@ -342,7 +342,7 @@ Main functions:
 ```python
 get_order_route(order_id)
 get_recent_order_routes(limit=20)
-get_orders_for_courier_day(courier_id, city_name, ds, delivery_day)
+get_orders_for_courier_day(courier_id, city_name, delivery_day)
 get_orders_for_courier(courier_id, limit=20)
 answer_route_question(question)
 ```
@@ -866,7 +866,7 @@ Aura logic:
 1. Find from_hub.
 2. Find to_hub.
 3. Ensure both hubs belong to the same city.
-4. Find active couriers in that city and ds.
+4. Find active couriers in that city.
 5. Calculate courier distance to source hub.
 6. Pick nearest courier.
 7. Create Order node.
@@ -896,7 +896,6 @@ Input can be fetched using:
 get_orders_for_courier_day(
     courier_id=courier_id,
     city_name=city_name,
-    ds=ds,
     delivery_day=delivery_day,
 )
 ```

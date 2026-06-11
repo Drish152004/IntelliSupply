@@ -39,7 +39,7 @@ def main() -> None:
     couriers = load_json(couriers_path) if couriers_path.is_file() else []
 
     print(f"Loading {len(orders)} synthetic orders …")
-    print("Pipeline: cluster -> courier assign -> sequence predict")
+    print("Pipeline: hub WGS84 -> courier assignment -> sequence predict")
 
     pipeline = DeliveryPipeline(
         route_model_path=ROUTE_MODEL_PATH,
@@ -53,7 +53,6 @@ def main() -> None:
 
     for route in result.courier_routes:
         print(f"Courier {route.courier_id[:12]}…")
-        print(f"  Cluster  : {route.cluster_id}")
         print(f"  City/day : {route.city_name} / {route.delivery_day}")
         print(f"  Stops    : {len(route.stops)}")
         print(f"  Sequence : {route.predicted_sequence}")

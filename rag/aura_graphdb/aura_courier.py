@@ -57,7 +57,6 @@ def create_courier_node(
     hub_name: str,
     profile_id: str | None = None,
     courier_id: str | None = None,
-    ds: int = 318,
 ) -> dict[str, Any]:
     """Create an operational Courier node in Aura."""
     existing = get_courier_by_email(email)
@@ -71,6 +70,7 @@ def create_courier_node(
 
     courier_id = courier_id or uuid.uuid4().hex
     conn = AuraConnection()
+
     query = """
     MATCH (hub:Hub {name: $hub_name})-[:LOCATED_IN]->(city:City {city_name: $city_name})
 
@@ -92,9 +92,8 @@ def create_courier_node(
         courier.city_name = city.city_name,
         courier.hub_id = hub.hub_id,
         courier.hub_name = hub.name,
-        courier.ds = toInteger($ds),
-        courier.start_lat_wgs84 = hub.latitude,
-        courier.start_lon_wgs84 = hub.longitude,
+        courier.start_lat_wgs84 = hub.lat_wgs84,
+        courier.start_lon_wgs84 = hub.lon_wgs84,
         courier.is_active = true,
         courier.updated_at = datetime()
 
@@ -117,7 +116,6 @@ def create_courier_node(
         city.city_name AS city_name,
         hub.hub_id AS hub_id,
         hub.name AS hub_name,
-        courier.ds AS ds,
         courier.start_lat_wgs84 AS start_lat_wgs84,
         courier.start_lon_wgs84 AS start_lon_wgs84,
         role.role_id AS role_id,
@@ -135,7 +133,6 @@ def create_courier_node(
                 "email": email.lower().strip(),
                 "city_name": city_name.strip(),
                 "hub_name": hub_name.strip(),
-                "ds": int(ds),
                 "role_id": COURIER_ROLE_ID,
                 "role_name": COURIER_ROLE_NAME,
             },
@@ -177,7 +174,6 @@ def create_courier_user(
     password: str,
     city_name: str,
     hub_name: str,
-    ds: int = 318,
 ) -> dict[str, Any]:
     """
     Register a courier in Supabase, sync profile to Aura, and create the Courier node.
@@ -200,7 +196,6 @@ def create_courier_user(
         city_name=city_name,
         hub_name=hub_name,
         profile_id=user["id"],
-        ds=ds,
     )
     if not courier_result["success"]:
         return courier_result

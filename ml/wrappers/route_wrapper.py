@@ -17,9 +17,7 @@ def _normalize_route_result(result: Any) -> dict[str, Any]:
         "courier_routes": [
             {
                 "courier_id": route.courier_id,
-                "cluster_id": route.cluster_id,
                 "city_name": route.city_name,
-                "ds": route.ds,
                 "delivery_day": route.delivery_day,
                 "order_ids": route.order_ids,
                 "predicted_sequence": route.predicted_sequence,
@@ -27,7 +25,6 @@ def _normalize_route_result(result: Any) -> dict[str, Any]:
             }
             for route in result.courier_routes
         ],
-        "cluster_assignments": [asdict(item) for item in result.cluster_assignments],
         "courier_assignments": [asdict(item) for item in result.courier_assignments],
     }
 

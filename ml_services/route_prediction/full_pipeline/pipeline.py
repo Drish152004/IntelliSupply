@@ -1,4 +1,4 @@
-"""End-to-end delivery pipeline: cluster → courier → sequence prediction."""
+"""End-to-end delivery pipeline: hub WGS84 → courier assignment → sequence prediction."""
 
 from __future__ import annotations
 
@@ -10,10 +10,6 @@ from typing import Any
 
 import pandas as pd
 
-from ml_services.route_prediction.full_pipeline.cluster_assigner import (
-    ClusterAssigner,
-    ClusterAssignment,
-)
 from ml_services.route_prediction.full_pipeline.coordinates import enrich_order_dict
 from ml_services.route_prediction.full_pipeline.courier_assigner import (
     CourierAssigner,
@@ -25,9 +21,7 @@ from ml_services.route_prediction.route_predictor import RoutePredictor
 @dataclass
 class CourierRoutePlan:
     courier_id: str
-    cluster_id: int
     city_name: str
-    ds: int
     delivery_day: str
     order_ids: list[str]
     predicted_sequence: list[str]
@@ -37,14 +31,13 @@ class CourierRoutePlan:
 @dataclass
 class PipelineResult:
     orders_processed: int
-    cluster_assignments: list[ClusterAssignment]
     courier_assignments: list[CourierAssignment]
     courier_routes: list[CourierRoutePlan] = field(default_factory=list)
     output_dir: str = ""
 
 
 class DeliveryPipeline:
-    """Real-world order → cluster → courier → predicted delivery sequence."""
+    """Hub-based order → courier assignment → predicted delivery sequence."""
 
     def __init__(
         self,
@@ -53,9 +46,9 @@ class DeliveryPipeline:
         couriers: list[dict] | None = None,
         output_dir: Path | None = None,
     ):
-        self.cluster_assigner = ClusterAssigner()
-        self.courier_assigner = CourierAssigner(couriers=couriers)
+        self.courier_assigner = CourierAssigner()
         self.predictor = RoutePredictor.load(route_model_path)
+        self._default_couriers = couriers or []
         self.output_dir = output_dir
 
     def _prepare_orders(self, orders: list[dict]) -> list[dict]:
@@ -102,33 +95,25 @@ class DeliveryPipeline:
         couriers: list[dict] | None = None,
         save_outputs: bool = True,
     ) -> PipelineResult:
+        effective_couriers = couriers if couriers is not None else self._default_couriers
         prepared = self._prepare_orders(orders)
         orders_by_id = {o["order_id"]: o for o in prepared}
 
-        cluster_results = self.cluster_assigner.assign_batch(prepared)
-        courier_results = self.courier_assigner.assign_batch(cluster_results, orders_by_id)
-        grouped = self.courier_assigner.group_by_courier_cluster(courier_results)
+        courier_results = self.courier_assigner.assign_batch(prepared, effective_couriers)
+        grouped = self.courier_assigner.group_by_courier_day(courier_results)
 
         courier_routes: list[CourierRoutePlan] = []
-        for (courier_id, cluster_id, city_name, ds), order_ids in grouped.items():
+        for (courier_id, city_name, delivery_day), order_ids in grouped.items():
             courier_orders = [orders_by_id[oid] for oid in order_ids]
             route_df = self._orders_for_predictor(courier_orders)
             sequence = self.predictor.predict_full_sequence(route_df)
             stops = self._build_stops(sequence, orders_by_id)
 
-            meta = next(
-                ca
-                for ca in courier_results
-                if ca.courier_id == courier_id and ca.order_id == order_ids[0]
-            )
-
             courier_routes.append(
                 CourierRoutePlan(
                     courier_id=courier_id,
-                    cluster_id=cluster_id,
                     city_name=city_name,
-                    ds=ds,
-                    delivery_day=meta.delivery_day,
+                    delivery_day=delivery_day,
                     order_ids=order_ids,
                     predicted_sequence=sequence,
                     stops=stops,
@@ -136,13 +121,10 @@ class DeliveryPipeline:
             )
 
         if save_outputs and self.output_dir:
-            self._save_outputs(
-                prepared, cluster_results, courier_results, courier_routes
-            )
+            self._save_outputs(prepared, courier_results, courier_routes)
 
         return PipelineResult(
             orders_processed=len(prepared),
-            cluster_assignments=cluster_results,
             courier_assignments=courier_results,
             courier_routes=courier_routes,
             output_dir=str(self.output_dir) if self.output_dir else "",
@@ -151,20 +133,17 @@ class DeliveryPipeline:
     def _save_outputs(
         self,
         orders: list[dict],
-        clusters: list[ClusterAssignment],
-        couriers_out: list[CourierAssignment],
+        courier_assignments: list[CourierAssignment],
         routes: list[CourierRoutePlan],
     ) -> None:
         assert self.output_dir is not None
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-        cluster_df = pd.DataFrame([asdict(c) for c in clusters])
-        courier_df = pd.DataFrame([asdict(c) for c in couriers_out])
+        assignment_df = pd.DataFrame([asdict(a) for a in courier_assignments])
         orders_df = pd.DataFrame(orders)
 
-        merged = orders_df.merge(cluster_df, on="order_id", how="left", suffixes=("", "_cluster"))
-        merged = merged.merge(
-            courier_df[["order_id", "courier_id", "delivery_day", "assignment_dist_km"]],
+        merged = orders_df.merge(
+            assignment_df[["order_id", "courier_id", "delivery_day", "assignment_dist_m", "from_hub_name"]],
             on="order_id",
             how="left",
         )
@@ -172,10 +151,9 @@ class DeliveryPipeline:
 
         route_payload = [
             {
+                "route_prediction_id": f"{plan.courier_id}_{plan.delivery_day}",
                 "courier_id": plan.courier_id,
-                "cluster_id": plan.cluster_id,
                 "city_name": plan.city_name,
-                "ds": plan.ds,
                 "delivery_day": plan.delivery_day,
                 "order_ids": plan.order_ids,
                 "predicted_sequence": plan.predicted_sequence,
@@ -194,7 +172,6 @@ class DeliveryPipeline:
             "routes": [
                 {
                     "courier_id": p.courier_id,
-                    "cluster_id": p.cluster_id,
                     "city_name": p.city_name,
                     "delivery_day": p.delivery_day,
                     "stops": len(p.stops),

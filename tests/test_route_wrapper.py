@@ -31,16 +31,23 @@ CONTEXT_PAYLOAD = {
 
 
 def _pipeline_result() -> SimpleNamespace:
+    from ml_services.route_prediction.full_pipeline.courier_assigner import CourierAssignment
     return SimpleNamespace(
         orders_processed=1,
-        cluster_assignments=[],
-        courier_assignments=[],
+        courier_assignments=[
+            CourierAssignment(
+                order_id="ord-abc123",
+                courier_id="courier-1",
+                city_name="Shanghai",
+                delivery_day="Monday",
+                from_hub_name="Hub_4",
+                assignment_dist_m=1200.0,
+            )
+        ],
         courier_routes=[
             SimpleNamespace(
                 courier_id="courier-1",
-                cluster_id=3,
                 city_name="Shanghai",
-                ds=318,
                 delivery_day="Monday",
                 order_ids=["ord-abc123"],
                 predicted_sequence=["ord-abc123"],
@@ -67,6 +74,8 @@ def test_route_wrapper_normalizes_prediction() -> None:
     assert result["model_name"] == "route_ranker"
     assert result["result"]["orders_processed"] == 1
     assert result["result"]["courier_routes"][0]["predicted_sequence"] == ["ord-abc123"]
+    assert "cluster_id" not in result["result"]["courier_routes"][0]
+    assert "cluster_assignments" not in result["result"]
     mock_pipeline.run.assert_called_once()
     orders_arg = mock_pipeline.run.call_args.args[0]
     assert orders_arg[0]["order_id"] == "ord-abc123"
@@ -75,7 +84,7 @@ def test_route_wrapper_normalizes_prediction() -> None:
 
 def test_route_wrapper_propagates_pipeline_errors() -> None:
     mock_pipeline = MagicMock()
-    mock_pipeline.run.side_effect = RuntimeError("cluster data missing")
+    mock_pipeline.run.side_effect = RuntimeError("route model missing")
 
-    with pytest.raises(RuntimeError, match="cluster data missing"):
+    with pytest.raises(RuntimeError, match="route model missing"):
         RouteWrapper(pipeline=mock_pipeline).run(CONTEXT_PAYLOAD)

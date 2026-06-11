@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from config.paths import (
-    CLUSTER_ASSIGNMENTS_PATH,
     ETA_MODEL_PATH,
     MODELS_ROOT,
     REPO_ROOT,
@@ -27,7 +26,3 @@ def test_route_model_path_location():
 def test_eta_model_path_location():
     assert ETA_MODEL_PATH == MODELS_ROOT / "eta_lightgbm_model.pkl"
     assert ETA_MODEL_PATH.is_file(), "eta_lightgbm_model.pkl should exist under models/"
-
-
-def test_cluster_assignments_path_under_models():
-    assert CLUSTER_ASSIGNMENTS_PATH.parent == MODELS_ROOT

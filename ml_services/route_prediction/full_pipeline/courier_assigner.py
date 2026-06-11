@@ -1,177 +1,94 @@
-"""Courier assignment — lookup pre-computed clusters or nearest available courier."""
+"""Courier assignment for the offline batch demo pipeline.
+
+Uses the same shared logic as live ops (courier_assignment.select_courier_for_order):
+  - Tier 1: consolidation — prefer courier with a same-day stop within NEARBY_HUB_KM
+  - Tier 2: nearest active courier to pickup hub
+
+No cluster CSVs or DBSCAN required.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-import numpy as np
-import pandas as pd
-from sklearn.neighbors import BallTree
-
-from ml_services.route_prediction.full_pipeline.cluster_assigner import ClusterAssignment
-from ml_services.route_prediction.full_pipeline.config import (
-    CLUSTER_ASSIGNMENTS_PATH,
-    COURIER_TIE_BREAK_KM,
-)
+from aura_graphdb.courier_assignment import select_courier_for_order
 
 
 @dataclass
 class CourierAssignment:
     order_id: str
-    cluster_id: int
     courier_id: str
     city_name: str
-    ds: int
-    assignment_dist_km: float
     delivery_day: str
+    from_hub_name: str
+    assignment_dist_m: float
 
 
 class CourierAssigner:
-    """Resolve courier for each cluster using saved assignments or live matching."""
-
-    def __init__(
-        self,
-        assignments_path=CLUSTER_ASSIGNMENTS_PATH,
-        couriers: list[dict] | None = None,
-    ):
-        self.assignments = pd.read_csv(assignments_path)
-        self.couriers = couriers or []
-        self._courier_trees: dict[tuple[str, int], BallTree] = {}
-        self._courier_meta: dict[tuple[str, int], pd.DataFrame] = {}
-        if self.couriers:
-            self._build_courier_trees()
-
-    def _build_courier_trees(self) -> None:
-        rows = []
-        for c in self.couriers:
-            rows.append(
-                {
-                    "courier_id": c["courier_id"],
-                    "city_name": c["city_name"],
-                    "ds": int(c["ds"]),
-                    "start_lat_wgs84": c["start_lat_wgs84"],
-                    "start_lon_wgs84": c["start_lon_wgs84"],
-                    "workload": 0,
-                }
-            )
-        cdf = pd.DataFrame(rows)
-        for (city, day), group in cdf.groupby(["city_name", "ds"]):
-            rad = np.radians(group[["start_lat_wgs84", "start_lon_wgs84"]].values)
-            self._courier_trees[(city, day)] = BallTree(rad, metric="haversine")
-            self._courier_meta[(city, day)] = group.reset_index(drop=True)
-
-    def lookup_cluster_courier(
-        self, cluster_id: int, city_name: str, ds: int
-    ) -> tuple[str | None, float | None]:
-        if cluster_id == -1:
-            return None, None
-        match = self.assignments[
-            (self.assignments["cluster_id"] == cluster_id)
-            & (self.assignments["city_name"] == city_name)
-            & (self.assignments["ds"] == ds)
-        ]
-        if match.empty:
-            return None, None
-        row = match.iloc[0]
-        return str(row["assigned_courier"]), float(row["assignment_dist_km"])
-
-    def nearest_courier(
-        self,
-        lat_wgs84: float,
-        lon_wgs84: float,
-        city_name: str,
-        ds: int,
-    ) -> tuple[str | None, float]:
-        key = (city_name, ds)
-        if key not in self._courier_trees:
-            return None, float("nan")
-
-        query = np.radians([[lat_wgs84, lon_wgs84]])
-        tree = self._courier_trees[key]
-        meta = self._courier_meta[key]
-        k = min(3, len(meta))
-        dist_rad, indices = tree.query(query, k=k)
-        best_idx = int(indices[0][0])
-        best_dist_km = float(dist_rad[0][0] * 6371.0)
-
-        tie_candidates = []
-        for rank in range(k):
-            idx = int(indices[0][rank])
-            dist_km = float(dist_rad[0][rank] * 6371.0)
-            if dist_km - best_dist_km <= COURIER_TIE_BREAK_KM:
-                tie_candidates.append(idx)
-
-        if len(tie_candidates) > 1:
-            workloads = meta.iloc[tie_candidates]["workload"]
-            best_idx = int(meta.iloc[tie_candidates].iloc[workloads.argmin()].name)
-
-        courier_id = str(meta.iloc[best_idx]["courier_id"])
-        meta.loc[best_idx, "workload"] += 1
-        self._courier_meta[key] = meta
-        return courier_id, best_dist_km
-
-    def assign_order(
-        self,
-        cluster: ClusterAssignment,
-        lat_wgs84: float,
-        lon_wgs84: float,
-        delivery_day: str,
-    ) -> CourierAssignment:
-        courier_id, dist_km = self.lookup_cluster_courier(
-            cluster.cluster_id, cluster.city_name, cluster.ds
-        )
-
-        if courier_id is None:
-            courier_id, dist_km = self.nearest_courier(
-                lat_wgs84, lon_wgs84, cluster.city_name, cluster.ds
-            )
-
-        if courier_id is None:
-            courier_id = "UNASSIGNED"
-            dist_km = float("nan")
-
-        return CourierAssignment(
-            order_id=cluster.order_id,
-            cluster_id=cluster.cluster_id,
-            courier_id=courier_id,
-            city_name=cluster.city_name,
-            ds=cluster.ds,
-            assignment_dist_km=dist_km if dist_km is not None else float("nan"),
-            delivery_day=delivery_day,
-        )
+    """Stateful batch assignment mirroring live FastAPI shipment create."""
 
     def assign_batch(
         self,
-        clusters: list[ClusterAssignment],
-        orders_by_id: dict[str, dict],
+        orders: list[dict],
+        couriers: list[dict],
     ) -> list[CourierAssignment]:
-        results = []
-        for cluster in clusters:
-            order = orders_by_id[cluster.order_id]
-            results.append(
-                self.assign_order(
-                    cluster,
-                    float(order["lat_wgs84"]),
-                    float(order["lon_wgs84"]),
-                    order.get("delivery_day", str(cluster.ds)),
-                )
+        """Assign couriers to all orders in arrival order.
+
+        Each order in `orders` must have:
+            order_id, receipt_lat_wgs84, receipt_lon_wgs84,
+            lat_wgs84, lon_wgs84, city_name, delivery_day,
+            from_hub_name (optional label for output)
+
+        Each courier in `couriers` must have:
+            courier_id, start_lat_wgs84, start_lon_wgs84, city_name
+        """
+        results: list[CourierAssignment] = []
+        assigned_so_far: list[dict] = []
+
+        for order in orders:
+            city_name = order.get("city_name", "")
+            delivery_day = str(order.get("delivery_day", ""))
+            pickup_lat = float(order.get("receipt_lat_wgs84") or order.get("lat_wgs84", 0))
+            pickup_lon = float(order.get("receipt_lon_wgs84") or order.get("lon_wgs84", 0))
+
+            city_couriers = [c for c in couriers if c.get("city_name") == city_name]
+            if not city_couriers:
+                city_couriers = couriers
+
+            chosen, dist_m = select_courier_for_order(
+                pickup_lat=pickup_lat,
+                pickup_lon=pickup_lon,
+                delivery_day=delivery_day,
+                couriers=city_couriers,
+                existing_orders=assigned_so_far,
             )
+
+            results.append(CourierAssignment(
+                order_id=order["order_id"],
+                courier_id=chosen["courier_id"],
+                city_name=city_name,
+                delivery_day=delivery_day,
+                from_hub_name=order.get("from_hub_name", ""),
+                assignment_dist_m=dist_m,
+            ))
+
+            assigned_so_far.append({
+                "assigned_courier_id": chosen["courier_id"],
+                "delivery_day": delivery_day,
+                "receipt_lat_wgs84": order.get("receipt_lat_wgs84"),
+                "receipt_lon_wgs84": order.get("receipt_lon_wgs84"),
+                "lat_wgs84": order.get("lat_wgs84"),
+                "lon_wgs84": order.get("lon_wgs84"),
+            })
+
         return results
 
-    def group_by_courier(
+    def group_by_courier_day(
         self, assignments: list[CourierAssignment]
-    ) -> dict[str, list[str]]:
-        grouped: dict[str, list[str]] = {}
+    ) -> dict[tuple[str, str, str], list[str]]:
+        """One route per (courier_id, city_name, delivery_day)."""
+        grouped: dict[tuple[str, str, str], list[str]] = {}
         for a in assignments:
-            grouped.setdefault(a.courier_id, []).append(a.order_id)
-        return grouped
-
-    def group_by_courier_cluster(
-        self, assignments: list[CourierAssignment]
-    ) -> dict[tuple[str, int, str, int], list[str]]:
-        """One route per courier + cluster + city + day (avoids cross-region mega-routes)."""
-        grouped: dict[tuple[str, int, str, int], list[str]] = {}
-        for a in assignments:
-            key = (a.courier_id, a.cluster_id, a.city_name, a.ds)
+            key = (a.courier_id, a.city_name, a.delivery_day)
             grouped.setdefault(key, []).append(a.order_id)
         return grouped

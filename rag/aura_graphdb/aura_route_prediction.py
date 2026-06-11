@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from aura_graphdb.hub_coordinates import ML_DEFAULT_DS
 from aura_graphdb.aura_connection import AuraConnection
 from rag.aura_graphdb.shared_cypher import PERSIST_ASSIGNED_ROUTE_QUERY
 from rag.supabase.supabase_notifications import create_notification
@@ -24,17 +25,14 @@ def persist_ml_courier_route(
     predicted_sequence: list[str],
     stops: list[dict[str, Any]],
     predicted_eta_min: float | None,
-    ds: int,
+    ds: int = ML_DEFAULT_DS,
     city_name: str | None = None,
     delivery_day: str | None = None,
-    cluster_id: int | None = None,
 ) -> dict[str, Any]:
     """Persist route prediction output after the ML model runs."""
     conn = AuraConnection()
 
-    route_prediction_id = f"{courier_id}_{ds}"
-    if delivery_day:
-        route_prediction_id = f"{courier_id}_{ds}_{delivery_day}"
+    route_prediction_id = f"{courier_id}_{delivery_day}" if delivery_day else courier_id
 
     route = {
         "route_prediction_id": route_prediction_id,
@@ -47,7 +45,6 @@ def persist_ml_courier_route(
         "ds": int(ds),
         "city_name": city_name,
         "delivery_day": delivery_day,
-        "cluster_id": cluster_id,
     }
 
     try:
@@ -63,7 +60,6 @@ def persist_ml_courier_route(
             "ds": int(ds),
             "city_name": city_name,
             "delivery_day": delivery_day,
-            "cluster_id": cluster_id,
             "stop_count": len(stops),
         }
 

@@ -24,10 +24,6 @@ SET
     rp.ds = toInteger(route.ds),
     rp.delivery_day = route.delivery_day,
     rp.city_name = coalesce(route.city_name, existing_city.city_name),
-    rp.cluster_id = CASE
-        WHEN route.cluster_id IS NULL THEN NULL
-        ELSE toInteger(route.cluster_id)
-    END,
     rp.stop_count = size(route.stops),
     rp.updated_at = datetime()
 

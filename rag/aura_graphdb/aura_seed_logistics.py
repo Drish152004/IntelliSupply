@@ -49,6 +49,8 @@ def load_cities_to_aura():
         conn.close()
 
 def load_hubs_to_aura():
+    from aura_graphdb.hub_coordinates import hub_model_to_wgs84
+
     engine = get_supabase_engine()
     conn = AuraConnection()
 
@@ -81,6 +83,17 @@ def load_hubs_to_aura():
     df = df.where(pd.notnull(df), None)
     rows = df.to_dict("records")
 
+    for row in rows:
+        if row["latitude"] is not None and row["longitude"] is not None:
+            lat_wgs84, lon_wgs84 = hub_model_to_wgs84(
+                float(row["latitude"]), float(row["longitude"])
+            )
+            row["lat_wgs84"] = lat_wgs84
+            row["lon_wgs84"] = lon_wgs84
+        else:
+            row["lat_wgs84"] = None
+            row["lon_wgs84"] = None
+
     query = """
     UNWIND $rows AS row
 
@@ -95,6 +108,8 @@ def load_hubs_to_aura():
         hub.poi_lng = toFloat(row.poi_lng),
         hub.latitude = toFloat(row.latitude),
         hub.longitude = toFloat(row.longitude),
+        hub.lat_wgs84 = toFloat(row.lat_wgs84),
+        hub.lon_wgs84 = toFloat(row.lon_wgs84),
         hub.aoi_id = row.aoi_id,
         hub.typecode = row.typecode,
         hub.rep_dipan_id = row.rep_dipan_id,
@@ -111,7 +126,7 @@ def load_hubs_to_aura():
 
     try:
         conn.execute_write(query, {"rows": rows})
-        print(f"Loaded {len(rows)} hubs into Aura.")
+        print(f"Loaded {len(rows)} hubs into Aura (with lat_wgs84/lon_wgs84).")
     finally:
         conn.close()
 
@@ -124,10 +139,17 @@ def load_synthetic_couriers_to_aura(json_path="synthetic_couriers.json"):
     query = """
     UNWIND $rows AS row
 
-    MATCH (city:City {city_name: row.city_name})<-[:LOCATED_IN]-(hub:Hub)
-    WITH row, city, hub
-    ORDER BY hub.hub_id
-    WITH row, city, collect(hub)[0] AS hub
+    MATCH (city:City {city_name: row.city_name})
+
+    OPTIONAL MATCH (namedHub:Hub {name: row.hub_name})-[:LOCATED_IN]->(city)
+    WITH row, city, namedHub
+    CALL (row, city, namedHub) {
+        MATCH (city)<-[:LOCATED_IN]-(anyHub:Hub)
+        WITH namedHub, anyHub
+        ORDER BY anyHub.hub_id
+        RETURN collect(anyHub)[0] AS fallbackHub
+    }
+    WITH row, city, coalesce(namedHub, fallbackHub) AS hub
 
     MERGE (role:Role {role_id: 2})
     SET role.role_name = "courier"
@@ -139,9 +161,8 @@ def load_synthetic_couriers_to_aura(json_path="synthetic_couriers.json"):
         courier.city_name = row.city_name,
         courier.hub_id = hub.hub_id,
         courier.hub_name = hub.name,
-        courier.ds = toInteger(row.ds),
-        courier.start_lat_wgs84 = toFloat(row.start_lat_wgs84),
-        courier.start_lon_wgs84 = toFloat(row.start_lon_wgs84),
+        courier.start_lat_wgs84 = hub.lat_wgs84,
+        courier.start_lon_wgs84 = hub.lon_wgs84,
         courier.is_active = true,
         courier.updated_at = datetime()
 
@@ -152,7 +173,7 @@ def load_synthetic_couriers_to_aura(json_path="synthetic_couriers.json"):
 
     try:
         conn.execute_write(query, {"rows": rows})
-        print(f"Loaded {len(rows)} synthetic couriers into Aura.")
+        print(f"Loaded {len(rows)} synthetic couriers into Aura (coords from hub.lat_wgs84).")
     finally:
         conn.close()
 
@@ -180,17 +201,29 @@ def load_synthetic_orders_to_aura(json_path="synthetic_orders.json"):
         order.aoi_id = row.aoi_id,
         order.receipt_lat_wgs84 = toFloat(row.receipt_lat_wgs84),
         order.receipt_lon_wgs84 = toFloat(row.receipt_lon_wgs84),
+        order.from_hub_name = row.from_hub_name,
+        order.to_hub_name = row.to_hub_name,
         order.notes_text = row.notes,
         order.updated_at = datetime()
 
     MERGE (notes:Notes {notes_id: "note_" + row.order_id})
     ON CREATE SET notes.created_at = datetime()
     SET
-        notes.text = row.notes,
+        notes.text = coalesce(row.notes, ""),
         notes.updated_at = datetime()
 
     MERGE (order)-[:BELONGS_TO_CITY]->(city)
     MERGE (order)-[:HAS_NOTES]->(notes)
+
+    WITH order, city, row
+    OPTIONAL MATCH (fromHub:Hub {name: row.from_hub_name})-[:LOCATED_IN]->(city)
+    OPTIONAL MATCH (toHub:Hub {name: row.to_hub_name})-[:LOCATED_IN]->(city)
+    FOREACH (_ IN CASE WHEN fromHub IS NOT NULL THEN [1] ELSE [] END |
+        MERGE (order)-[:FROM_HUB]->(fromHub)
+    )
+    FOREACH (_ IN CASE WHEN toHub IS NOT NULL THEN [1] ELSE [] END |
+        MERGE (order)-[:TO_HUB]->(toHub)
+    )
     """
 
     try:
@@ -208,6 +241,12 @@ def load_assigned_routes_to_aura(json_path=None):
 
     with open(json_path, "r", encoding="utf-8") as file:
         routes = json.load(file)
+
+    for route in routes:
+        if not route.get("route_prediction_id"):
+            delivery_day = route.get("delivery_day", "unknown")
+            route["route_prediction_id"] = f"{route['courier_id']}_{delivery_day}"
+        route.pop("cluster_id", None)
 
     try:
         conn.execute_write(PERSIST_ASSIGNED_ROUTE_QUERY, {"routes": routes})

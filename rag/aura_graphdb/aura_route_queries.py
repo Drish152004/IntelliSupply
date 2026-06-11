@@ -18,12 +18,12 @@ def get_order_route(order_id: str):
         o.receipt_time AS receipt_time,
 
         fromHub.name AS from_hub_name,
-        fromHub.latitude AS from_lat,
-        fromHub.longitude AS from_lon,
+        fromHub.lat_wgs84 AS from_lat,
+        fromHub.lon_wgs84 AS from_lon,
 
         toHub.name AS to_hub_name,
-        toHub.latitude AS to_lat,
-        toHub.longitude AS to_lon,
+        toHub.lat_wgs84 AS to_lat,
+        toHub.lon_wgs84 AS to_lon,
 
         courier.courier_id AS assigned_courier_id,
         courier.name AS assigned_courier_name,
@@ -59,12 +59,12 @@ def get_recent_order_routes(limit: int = 20):
         o.receipt_time AS receipt_time,
 
         fromHub.name AS from_hub_name,
-        fromHub.latitude AS from_lat,
-        fromHub.longitude AS from_lon,
+        fromHub.lat_wgs84 AS from_lat,
+        fromHub.lon_wgs84 AS from_lon,
 
         toHub.name AS to_hub_name,
-        toHub.latitude AS to_lat,
-        toHub.longitude AS to_lon,
+        toHub.lat_wgs84 AS to_lat,
+        toHub.lon_wgs84 AS to_lon,
 
         courier.courier_id AS assigned_courier_id,
         courier.name AS assigned_courier_name,
@@ -83,16 +83,14 @@ def get_recent_order_routes(limit: int = 20):
 def get_orders_for_courier_day(
     courier_id: str,
     city_name: str,
-    ds: int,
     delivery_day: str,
 ):
-    """Fetch all orders for a courier on a given day (for ML route prediction)."""
+    """Fetch all orders for a courier on a given delivery day (for ML route prediction)."""
     conn = AuraConnection()
 
     query = """
     MATCH (courier:Courier {courier_id: $courier_id})<-[:ASSIGNED_TO]-(o:Order)
     WHERE o.city_name = $city_name
-      AND o.ds = $ds
       AND o.delivery_day = $delivery_day
     RETURN
         o.order_id AS order_id,
@@ -115,7 +113,6 @@ def get_orders_for_courier_day(
             {
                 "courier_id": courier_id,
                 "city_name": city_name,
-                "ds": int(ds),
                 "delivery_day": delivery_day,
             },
         )
@@ -137,12 +134,12 @@ def get_orders_for_courier(courier_id: str, limit: int = 20):
         o.receipt_time AS receipt_time,
 
         fromHub.name AS from_hub_name,
-        fromHub.latitude AS from_lat,
-        fromHub.longitude AS from_lon,
+        fromHub.lat_wgs84 AS from_lat,
+        fromHub.lon_wgs84 AS from_lon,
 
         toHub.name AS to_hub_name,
-        toHub.latitude AS to_lat,
-        toHub.longitude AS to_lon,
+        toHub.lat_wgs84 AS to_lat,
+        toHub.lon_wgs84 AS to_lon,
 
         courier.courier_id AS assigned_courier_id,
         courier.name AS assigned_courier_name,

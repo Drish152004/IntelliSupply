@@ -109,7 +109,6 @@ export interface CreateShipmentPayload {
   from_hub_name: string;
   to_hub_name: string;
   delivery_date: string;
-  ds?: number;
   receipt_time?: string;
   notes?: string;
 }
@@ -145,14 +144,13 @@ export interface RouteStop {
 export interface RoutePrediction {
   route_prediction_id: string;
   courier_id: string;
-  cluster_id: number;
-  city_name: string;
-  ds: number;
-  delivery_day: string;
+  city_name?: string;
+  ds?: number;
+  delivery_day?: string;
   order_ids: string[];
   predicted_sequence: string[];
   stops: RouteStop[];
-  stop_count: number;
+  stop_count?: number;
 }
 
 export interface ShipmentListItem {
@@ -188,7 +186,7 @@ export interface CreateShipmentResult {
 export async function createShipment(payload: CreateShipmentPayload): Promise<CreateShipmentResult> {
   return apiFetch<CreateShipmentResult>('/orders/shipments', {
     method: 'POST',
-    body: JSON.stringify({ ...payload, ds: payload.ds ?? 318 }),
+    body: JSON.stringify(payload),
   });
 }
 
@@ -244,13 +242,12 @@ export interface CreateCourierPayload {
   password: string;
   city_name: string;
   hub_name: string;
-  ds?: number;
 }
 
 export async function createCourierFrontend(payload: CreateCourierPayload): Promise<{ success: boolean; message?: string; courier?: object }> {
   return apiFetch('/couriers', {
     method: 'POST',
-    body: JSON.stringify({ ...payload, ds: payload.ds ?? 318 }),
+    body: JSON.stringify(payload),
   });
 }
 
