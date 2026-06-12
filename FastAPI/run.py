@@ -18,7 +18,7 @@ if __name__ == "__main__":
     reload = os.environ.get("RELOAD", "").lower() in ("1", "true", "yes")
     uvicorn.run(
         "main:app",
-        host=os.environ.get("HOST", "127.0.0.1"),
+        host=os.environ.get("HOST", "localhost"),
         port=port,
         reload=reload,
         app_dir=str(ROOT),

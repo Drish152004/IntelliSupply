@@ -140,11 +140,16 @@ export async function updateCurrentUser(payload: { name?: string }): Promise<Aut
   });
   return data.user;
 }
-
-export async function googleLogin(idToken: string): Promise<LoginResponse> {
+export async function googleLogin(
+  idToken: string,
+  role: string,
+): Promise<LoginResponse> {
   const data = await apiFetch<LoginResponse>('/api/google-login', {
     method: 'POST',
-    body: JSON.stringify({ id_token: idToken }),
+    body: JSON.stringify({
+      id_token: idToken,
+      role, // ✅ PASS ROLE TO BACKEND
+    }),
     auth: false,
   });
 
@@ -159,6 +164,24 @@ export async function googleLogin(idToken: string): Promise<LoginResponse> {
 
   return data;
 }
+// export async function googleLogin(idToken: string): Promise<LoginResponse> {
+//   const data = await apiFetch<LoginResponse>('/api/google-login', {
+//     method: 'POST',
+//     body: JSON.stringify({ id_token: idToken }),
+//     auth: false,
+//   });
+
+//   // ✅ same logic as normal login
+//   if (data.access_token) {
+//     setAccessToken(data.access_token);
+//   }
+
+//   if (data.user) {
+//     localStorage.setItem('intellisupply_user', JSON.stringify(data.user));
+//   }
+
+//   return data;
+// }
 
 
 // ─── Shipments ────────────────────────────────────────────────────────────────

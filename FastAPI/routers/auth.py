@@ -89,7 +89,7 @@ def _build_auth_response(user: dict, courier_id: str | None = None):
         key="intellisupply_refresh_token",
         value=refresh_token,
         httponly=True,
-        secure=is_prod,
+        secure=False,
         samesite="lax",
         path="/",
         max_age=7 * 24 * 3600,
@@ -176,7 +176,7 @@ async def api_register(
 
 
 # ─────────────────────────────────────────────
-# Google OAuth (FIXED ✅)
+# Google OAuth (CORRECT FLOW ✅)
 # ─────────────────────────────────────────────
 
 @router.post("/api/google-login")
@@ -184,11 +184,17 @@ async def google_login(request: Request):
     try:
         body = await request.json()
         token = body.get("id_token")
+        requested_role = (body.get("role") or "").strip()
     except Exception:
         return JSONResponse({"success": False, "message": "Invalid request."}, status_code=400)
 
     if not token:
         return JSONResponse({"success": False, "message": "Missing Google token."}, status_code=400)
+
+    # ✅ STRICT ROLE VALIDATION (NO TRUSTING FRONTEND BLINDLY)
+    VALID_ROLES = ["admin", "logistics_manager", "inventory_manager", "courier"]
+
+    selected_role = requested_role if requested_role in VALID_ROLES else None
 
     try:
         idinfo = id_token.verify_oauth2_token(
@@ -207,7 +213,7 @@ async def google_login(request: Request):
     if not email:
         return JSONResponse({"success": False, "message": "Google email missing."}, status_code=400)
 
-    # ✅ CHECK USER IN POSTGRES
+    # ✅ EXISTING USER → NEVER CHANGE ROLE
     user = get_user_by_email(email)
 
     if user:
@@ -219,12 +225,18 @@ async def google_login(request: Request):
 
         return _build_auth_response(user, courier_id)
 
-    # ✅ REGISTER NEW USER (uses existing system)
+    # ✅ NEW USER → REQUIRE VALID ROLE
+    if not selected_role:
+        return JSONResponse(
+            {"success": False, "message": "Invalid role selection."},
+            status_code=400,
+        )
+
     result = register_user_with_password(
         name=name,
         email=email,
         password=google_sub,
-        selected_role="courier",
+        selected_role=selected_role,
     )
 
     if not result["success"]:
@@ -264,6 +276,7 @@ async def api_refresh(request: Request):
         "role_id": user.role_id,
         "role": user.role,
     }
+
     if user.courier_id:
         serialized["courier_id"] = user.courier_id
 

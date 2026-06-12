@@ -19,16 +19,21 @@ export default function ProtectedRoute({ children, allowedRoles }: ProtectedRout
     );
   }
 
+  // ✅ Not logged in → go to login
   if (!user) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
 
+  // ✅ Logged in but role not allowed
   if (!allowedRoles.includes(user.role)) {
     const home = ROLE_HOME[user.role] ?? '/';
-    if (home !== location.pathname) {
+
+    // ✅ Only redirect if NOT already on home page
+    if (location.pathname !== home) {
       return <Navigate to={home} replace />;
     }
 
+    // ✅ Show access message if already at home
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-6 text-center">
         <p className="text-lg font-semibold text-foreground">Access restricted</p>
@@ -46,5 +51,6 @@ export default function ProtectedRoute({ children, allowedRoles }: ProtectedRout
     );
   }
 
+  // ✅ Allowed
   return <>{children}</>;
 }

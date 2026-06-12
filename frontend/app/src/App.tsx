@@ -58,11 +58,11 @@ export default function App() {
           }
         />
 
-        {/* Logistics (admin + logistics_manager) */}
+        {/* Logistics (admin + logistics_manager + courier ✅ FIXED) */}
         <Route
           path="/logistics"
           element={
-            <ProtectedRoute allowedRoles={['admin', 'logistics_manager']}>
+            <ProtectedRoute allowedRoles={['admin', 'logistics_manager', 'courier']}>
               <LogisticsDashboard />
             </ProtectedRoute>
           }
@@ -70,7 +70,7 @@ export default function App() {
         <Route
           path="/logistics/intelligence"
           element={
-            <ProtectedRoute allowedRoles={['admin', 'logistics_manager']}>
+            <ProtectedRoute allowedRoles={['admin', 'logistics_manager', 'courier']}>
               <RouteIntelligence />
             </ProtectedRoute>
           }
@@ -114,7 +114,7 @@ export default function App() {
         <Route
           path="/notifications"
           element={
-            <ProtectedRoute allowedRoles={['admin', 'logistics_manager', 'inventory_manager']}>
+            <ProtectedRoute allowedRoles={['admin', 'logistics_manager', 'inventory_manager', 'courier']}>
               <Notifications />
             </ProtectedRoute>
           }

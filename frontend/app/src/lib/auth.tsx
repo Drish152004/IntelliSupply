@@ -23,7 +23,7 @@ interface AuthContextValue {
   user: AuthUser | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<{ success: boolean; message?: string; role?: AppRole }>;
-  googleLogin: (idToken: string) => Promise<{ success: boolean; message?: string; role?: AppRole }>;
+  googleLogin: (idToken: string, role: AppRole) => Promise<{ success: boolean; message?: string; role?: AppRole }>; // ✅ UPDATED
   logout: () => void;
   refreshUser: () => Promise<void>;
   updateProfile: (payload: { name: string }) => Promise<{ success: boolean; message?: string }>;
@@ -101,7 +101,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return false;
   }, [persistSession, clearSession]);
 
-  // App initialization: Attempt silent refresh to restore session
   useEffect(() => {
     let active = true;
     const initAuth = async () => {
@@ -117,7 +116,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [performSilentRefresh]);
 
-  // Periodic silent refresh cycle (every 14 minutes)
   useEffect(() => {
     if (!user) return;
     const interval = setInterval(() => {
@@ -149,14 +147,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // ✅ ✅ FIXED GOOGLE LOGIN (ONLY CHANGE)
   const googleLogin = async (
     idToken: string,
+    role: AppRole,
   ): Promise<{ success: boolean; message?: string; role?: AppRole }> => {
     try {
       const res = await fetch(`${getApiBase()}/api/google-login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id_token: idToken }),
+        body: JSON.stringify({
+          id_token: idToken,
+          role, // ✅ SEND ROLE
+        }),
         credentials: 'include',
       });
       const data = (await res.json()) as LoginResponse & { message?: string };

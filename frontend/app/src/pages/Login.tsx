@@ -20,6 +20,10 @@ const roleConfig: Record<
     badge: 'Administrator Access',
     description: 'Govern platform analytics, users, and enterprise controls.',
   },
+  courier: {
+    badge: 'Courier Access',
+    description: 'View assigned deliveries and route details.',
+  },
 };
 
 const defaultConfig = roleConfig.inventory;
@@ -34,15 +38,25 @@ export default function Login() {
     [role],
   );
 
+  // ✅ ROLE MAP
+  const ROLE_MAP: Record<string, string> = {
+    inventory: 'inventory_manager',
+    logistics: 'logistics_manager',
+    admin: 'admin',
+    courier: 'courier',
+  };
+
+  const backendRole = ROLE_MAP[role ?? 'courier'] || 'courier';
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  //  Google button ref
+  // ✅ Google button ref
   const googleButtonRef = useRef<HTMLDivElement | null>(null);
 
-  //  Google init (NON-INTRUSIVE)
+  // ✅ ✅ FIXED GOOGLE INIT
   useEffect(() => {
     if (!window.google || !googleButtonRef.current) return;
 
@@ -53,11 +67,13 @@ export default function Login() {
         setError(null);
 
         try {
-          const result = await googleLogin(response.credential);
+          const result = await googleLogin(
+            response.credential,
+            backendRole as any, // matches AppRole union
+          );
 
-          if (result.success) {
-            const role = result.role;
-            const home = role ? ROLE_HOME[role] : '/';
+          if (result.success && result.role) {
+            const home = ROLE_HOME[result.role];
             navigate(home ?? '/', { replace: true });
           } else {
             setError(result.message ?? 'Google login failed');
@@ -70,6 +86,7 @@ export default function Login() {
       },
     });
 
+    // ✅ ✅ IMPORTANT: renderButton must be OUTSIDE initialize
     window.google.accounts.id.renderButton(
       googleButtonRef.current,
       {
@@ -79,7 +96,7 @@ export default function Login() {
         shape: 'pill',
       }
     );
-  }, [navigate]);
+  }, [navigate, backendRole, googleLogin]);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -88,12 +105,16 @@ export default function Login() {
 
     try {
       const result = await login(email, password);
+
       if (!result.success) {
         setError(result.message ?? 'Login failed. Please try again.');
         return;
       }
-      const home = result.role ? ROLE_HOME[result.role] : '/';
-      navigate(home ?? '/', { replace: true });
+
+      if (result.role) {
+        const home = ROLE_HOME[result.role];
+        navigate(home ?? '/', { replace: true });
+      }
     } catch {
       setError('Unexpected error. Please try again.');
     } finally {
@@ -132,7 +153,7 @@ export default function Login() {
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(56,189,248,0.12),transparent_30%)]" />
       </section>
 
-      {/* Right panel — form */}
+      {/* Right panel */}
       <section className="flex items-center justify-center px-6 py-8">
         <motion.div
           initial={{ opacity: 0, y: 24 }}
@@ -151,7 +172,6 @@ export default function Login() {
           <p className="mt-3 text-base leading-7 text-slate-500">{config.description}</p>
 
           <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
-            {/* EMAIL */}
             <div>
               <label className="mb-2 block text-sm font-semibold text-slate-900">
                 Email address
@@ -160,31 +180,24 @@ export default function Login() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="name@intellisupply.ai"
                 required
                 className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-5"
               />
             </div>
 
-            {/* PASSWORD */}
             <div>
               <label className="text-sm font-semibold text-slate-900">Password</label>
               <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Enter password"
                 required
                 className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-5 mt-2"
               />
             </div>
 
-            {/* ERROR */}
-            {error && (
-              <div className="text-red-600 text-sm">{error}</div>
-            )}
+            {error && <div className="text-red-600 text-sm">{error}</div>}
 
-            {/* BUTTON */}
             <button
               type="submit"
               disabled={submitting}
@@ -194,17 +207,14 @@ export default function Login() {
             </button>
           </form>
 
-          {/*  Google Divider */}
           <div className="mt-6 flex items-center gap-3">
             <div className="h-px flex-1 bg-slate-200" />
             <span className="text-xs text-slate-400">OR</span>
             <div className="h-px flex-1 bg-slate-200" />
           </div>
 
-          {/*  Google Button */}
           <div ref={googleButtonRef} className="mt-4 flex justify-center" />
 
-          {/*  Demo */}
           <div className="mt-6 text-xs text-slate-400">
             admin@demo.com / admin
           </div>
