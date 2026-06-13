@@ -181,44 +181,15 @@ def _call_whisper_transcribe(audio_bytes: bytes, content_type: str) -> str:
 
 
 def _detect_language(text: str) -> str:
-    payload = _hf_json_post(_lang_detect_model(), {"inputs": text})
-    if not isinstance(payload, list) or not payload:
-        return "en"
-    top = payload[0]
-    if isinstance(top, list) and top:
-        top = top[0]
-    if isinstance(top, dict):
-        label = str(top.get("label", "en")).lower()
-        return label.split("_")[0]
-    return "en"
+    from integrations.language import detect_language
 
-
-def _mbart_src_lang(lang_code: str) -> str:
-    return MBART_SRC_LANG.get(lang_code, "en_XX")
+    return detect_language(text)
 
 
 def _translate_to_english(text: str, lang_code: str) -> str:
-    if not text.strip():
-        return text
-    if lang_code == "en":
-        return text
+    from integrations.language import translate_to_english
 
-    src_lang = _mbart_src_lang(lang_code)
-    payload = _hf_json_post(
-        _translation_model(),
-        {
-            "inputs": text,
-            "parameters": {"src_lang": src_lang, "tgt_lang": "en_XX"},
-        },
-        timeout=90.0,
-    )
-    if isinstance(payload, list) and payload:
-        first = payload[0]
-        if isinstance(first, dict) and first.get("translation_text"):
-            return str(first["translation_text"]).strip()
-    if isinstance(payload, dict) and payload.get("translation_text"):
-        return str(payload["translation_text"]).strip()
-    return text
+    return translate_to_english(text, lang_code)
 
 
 def transcribe_and_translate(

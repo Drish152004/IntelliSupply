@@ -1,17 +1,17 @@
 """Caching layer for orchestration."""
 
-from cache.cache_key_builder import CacheKeyBuilder
 from cache.cache_service import CacheBackend, CacheService
 from cache.memory_cache import MemoryCache
-from cache.ttl_config import CACHEABLE_TASKS, TASK_TTL_SECONDS, is_cacheable, ttl_for_task
+from cache.semantic_cache import SemanticCache, get_semantic_cache
+from cache.ttl_config import CACHEABLE_TASKS, CACHE_TTL_BY_TASK, ttl_for_task
 
 __all__ = [
     "CACHEABLE_TASKS",
-    "TASK_TTL_SECONDS",
+    "CACHE_TTL_BY_TASK",
     "CacheBackend",
-    "CacheKeyBuilder",
     "CacheService",
     "MemoryCache",
-    "is_cacheable",
+    "SemanticCache",
+    "get_semantic_cache",
     "ttl_for_task",
 ]

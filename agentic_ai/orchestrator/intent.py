@@ -1,20 +1,17 @@
-"""
-Domain and task detection for orchestration routing.
-
-Uses intent_task_classifier for LLM-based classification with session-aware
-short-circuits and low-confidence clarification handling.
-"""
+"""Domain and task detection for orchestration routing."""
 
 from __future__ import annotations
 
 import json
 import logging
 
+from context.clarification_manager import ClarificationType
 from orchestrator.intent_task_classifier import (
     build_clarification_question,
     classify_domain_task,
     needs_intent_clarification,
 )
+from orchestrator.resource_rbac import detect_self_scoped_task
 from orchestrator.state import AgentState
 
 logger = logging.getLogger(__name__)
@@ -29,22 +26,27 @@ def _apply_classification(state: AgentState, classification: dict) -> AgentState
     task = classification["task"]
     confidence = classification["confidence"]
 
-    logger.debug("Detected Domain: %s", domain)
-    logger.debug("Detected Task: %s", task)
-    logger.debug("Confidence: %s", confidence)
-
     updated: AgentState = {
         **state,
         "domain": domain,
         "task": task,
         "confidence": confidence,
-        "intent": domain,
+        "clarification_needed": False,
+        "clarification_type": None,
+        "clarification_question": None,
     }
 
     if needs_intent_clarification(task, confidence):
         question = build_clarification_question(state["user_query"], classification)
+        updated["clarification_needed"] = True
+        updated["clarification_type"] = ClarificationType.INTENT.value
+        updated["clarification_question"] = question
         updated["agent_response"] = json.dumps(
-            {"status": "awaiting_input", "question": question},
+            {
+                "status": "awaiting_input",
+                "clarification_type": ClarificationType.INTENT.value,
+                "question": question,
+            },
             indent=2,
         )
 
@@ -66,10 +68,24 @@ def detect_intent(state: AgentState) -> AgentState:
     if _session_collecting(logistics_session):
         classification = {
             "domain": "logistics",
-            "task": (logistics_session or {}).get("task") or state.get("task") or "",
+            "task": (logistics_session or {}).get("task") or state.get("task") or "shipment_lookup",
             "confidence": 1.0,
         }
         return _apply_classification(state, classification)
 
-    classification = classify_domain_task(state["user_query"])
+    coarse = state.get("coarse_domain")
+    classification = classify_domain_task(
+        state["user_query"],
+        domain_hint=coarse if coarse else None,
+    )
+
+    if state.get("user_role") == "COURIER":
+        self_task = detect_self_scoped_task(state["user_query"])
+        if self_task:
+            classification = {
+                "domain": "logistics",
+                "task": self_task,
+                "confidence": 0.95,
+            }
+
     return _apply_classification(state, classification)

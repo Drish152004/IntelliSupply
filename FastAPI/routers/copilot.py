@@ -61,12 +61,10 @@ def debug(
     try:
         result = _invoke_orchestrator(body, current_user)
         return {
-            "intent": result.get("intent"),
+            "domain": result.get("domain"),
             "task": result.get("task"),
+            "detected_language": result.get("detected_language"),
             "cache_hit": result.get("cache_hit", False),
-            "graph_hit": result.get("graph_hit", False),
-            "ready_for_ml": result.get("ready_for_ml", False),
-            "prediction_result": result.get("prediction_result"),
             "final_response": _parse_final_response(result.get("final_response", "")),
         }
     except Exception as exc:
