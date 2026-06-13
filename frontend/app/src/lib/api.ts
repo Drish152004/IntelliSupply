@@ -493,6 +493,53 @@ export async function queryCopilot(
   });
 }
 
+// ─── Voice (multilingual mic → English) ───────────────────────────────────────
+
+export interface VoiceTranscribeResponse {
+  success: boolean;
+  detected_language?: string | null;
+  original_text: string;
+  english_text: string;
+  message?: string | null;
+}
+
+export async function transcribeVoice(
+  audio: Blob,
+  languageHint: string = 'auto',
+): Promise<VoiceTranscribeResponse> {
+  const form = new FormData();
+  const ext = audio.type.includes('ogg') ? 'ogg' : audio.type.includes('wav') ? 'wav' : 'webm';
+  form.append('audio', audio, `recording.${ext}`);
+  form.append('language_hint', languageHint);
+
+  const headers = new Headers();
+  const token = getAccessToken();
+  if (token) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+
+  const response = await fetch(`${API_BASE}/voice/transcribe`, {
+    method: 'POST',
+    body: form,
+    headers,
+    credentials: 'include',
+  });
+
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    const detail =
+      typeof data.detail === 'string'
+        ? data.detail
+        : typeof data.message === 'string'
+          ? data.message
+          : 'Voice transcription failed';
+    throw new ApiError(detail, response.status);
+  }
+
+  return data as VoiceTranscribeResponse;
+}
+
 // ─── Dashboard / notifications ──────────────────────────────────────────────────
 
 export interface DashboardSummary {

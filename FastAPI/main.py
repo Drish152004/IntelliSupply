@@ -16,7 +16,7 @@ import bootstrap  # noqa: F401 — sets up sys.path before other imports
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routers import auth, copilot, dashboard, demand_forecasting, inventory, notifications, orders, route_prediction, eta_prediction, users
+from routers import auth, copilot, dashboard, demand_forecasting, inventory, notifications, orders, route_prediction, eta_prediction, users, voice
 # from routers.auth import configure_auth
 from services.registry import init_all_services
 
@@ -65,6 +65,7 @@ app.include_router(users.router)
 app.include_router(inventory.router)
 app.include_router(dashboard.router)
 app.include_router(notifications.router)
+app.include_router(voice.router)
 
 
 @app.get("/health")
@@ -83,6 +84,7 @@ def root():
         "services": {
             "auth": "/login",
             "copilot": "/copilot",
+            "voice": "/voice",
             "orders": "/orders",
             "couriers": "/couriers",
             "route": "/route",
