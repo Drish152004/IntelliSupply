@@ -1,5 +1,15 @@
 """Clear Aura and re-seed logistics + Supabase profile sync."""
+import sys
+from pathlib import Path
 
+CURRENT_FILE = Path(__file__).resolve()
+RAG_DIR = CURRENT_FILE.parents[1]
+PROJECT_ROOT = CURRENT_FILE.parents[2]
+
+for path in [str(RAG_DIR), str(PROJECT_ROOT)]:
+    if path not in sys.path:
+        sys.path.insert(0, path)
+        
 from aura_graphdb.aura_clear import clear_aura_graph
 from aura_graphdb.aura_constraints import create_aura_constraints
 from aura_graphdb.aura_seed_logistics import seed_aura_logistics
