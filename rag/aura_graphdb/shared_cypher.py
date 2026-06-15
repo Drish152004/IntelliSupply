@@ -62,3 +62,13 @@ SET
         ELSE toFloat(stop.lon_wgs84)
     END
 """
+
+DELETE_ROUTE_PREDICTION_QUERY = """
+MATCH (rp:RoutePrediction)-[:FOR_COURIER]->(c:Courier {courier_id: $courier_id})
+WHERE rp.delivery_day = $delivery_day
+    OR rp.route_prediction_id IN $route_prediction_ids
+WITH rp
+LIMIT 1
+DETACH DELETE rp
+RETURN count(rp) AS deleted_count
+"""

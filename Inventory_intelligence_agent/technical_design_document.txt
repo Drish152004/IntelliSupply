@@ -1,0 +1,362 @@
+# IntelliSupply Planning Agent – Technical Design Document
+
+## Overview
+
+The IntelliSupply Planning Agent is an AI-assisted inventory planning and scenario simulation platform. It combines historical demand analysis, inventory health monitoring, demand forecasting, replenishment planning, risk scoring, Monte Carlo simulation, and discrete event simulation (DES) to help supply chain teams evaluate inventory decisions before execution.
+
+The system uses precomputed analytics generated in an offline data pipeline and runtime simulations to answer "what-if" planning questions such as:
+
+* What happens if demand increases by 25% next week?
+* What if replenishment is delayed by 5 days?
+* Should inventory be transferred from another hub?
+* Will an emergency reorder prevent a stockout?
+
+---
+
+# Architecture Overview
+
+The solution is divided into two major layers:
+
+## Offline Analytics Pipeline
+
+The offline pipeline generates all foundational intelligence required by the planning engine.
+
+### Stage 0 – Dataset Preparation
+
+Produces:
+
+* planning_dataset.csv
+
+### Stage 1 – Demand Analysis
+
+Produces:
+
+* demand_daily.csv
+* demand_analysis_daily.csv
+
+Calculates:
+
+* Rolling demand averages
+* Demand growth trends
+* Demand volatility
+* Year-over-year comparisons
+
+### Stage 1.5 – Forecast Model Training
+
+Produces:
+
+* best_demand_forecasting_model.pkl
+
+Trains and selects the best forecasting model.
+
+### Stage 1.6 – Future Demand Forecasting
+
+Produces:
+
+* demand_forecast_daily.csv
+
+Provides:
+
+* 30-day forecasts
+* Prediction intervals
+* Confidence scores
+
+### Stage 2 – Inventory Health Analysis
+
+Produces:
+
+* inventory_daily_snapshot.csv
+* inventory_health_daily.csv
+
+Calculates:
+
+* Current inventory position
+* Safety stock
+* Coverage days
+* Velocity scores
+* Inventory status
+
+### Stage 2.5 – Replenishment Planning
+
+Produces:
+
+* replenishment_orders.csv
+
+Contains:
+
+* Open replenishment orders
+* Expected arrivals
+* Lead times
+* Delay information
+
+### Stage 3 – Risk Scoring
+
+Produces:
+
+* inventory_risk_daily.csv
+
+Computes:
+
+* Stock coverage risk
+* Demand volatility risk
+* Seasonality risk
+* Replenishment delay risk
+* Composite risk score
+
+---
+
+# Runtime Planning Agent
+
+The runtime system consumes the offline outputs and performs scenario simulation.
+
+## Stage 0 – Inventory State Construction
+
+Purpose:
+Create a unified InventoryState object by combining data from:
+
+* inventory_health_daily
+* demand_analysis_daily
+* demand_forecast_daily
+* replenishment_orders
+* inventory_risk_daily
+
+Outputs:
+
+* InventoryState
+
+Contains:
+
+* Inventory metrics
+* Demand metrics
+* Forecast metrics
+* Replenishment metrics
+* Risk metrics
+
+---
+
+## Stage 1 – Scenario Understanding
+
+Purpose:
+Convert natural language user requests into structured parameters.
+
+Example:
+
+Input:
+"What if demand increases by 25% next week?"
+
+Output:
+{
+"demand_multiplier": 1.25,
+"planning_window_days": 7
+}
+
+Extracted Parameters:
+
+* demand_multiplier
+* lead_time_delta_days
+* transfer_quantity
+* reorder_quantity
+* promotion_active
+* planning_window_days
+
+---
+
+## Stage 2 – Scenario State Construction
+
+Purpose:
+Apply user-defined scenario changes to the InventoryState.
+
+Examples:
+
+* Increase demand forecasts
+* Delay replenishment arrivals
+* Add transfer inventory
+* Create emergency orders
+
+Outputs:
+
+* ScenarioState
+
+---
+
+## Stage 3 – Monte Carlo World Generation
+
+Purpose:
+Generate thousands of realistic future worlds.
+
+Variables sampled:
+
+* Demand uncertainty
+* Forecast error
+* Replenishment delay variance
+
+Variables held fixed:
+
+* User scenario assumptions
+
+Outputs:
+
+* Simulated future worlds
+
+---
+
+## Stage 4 – Discrete Event Simulation (DES)
+
+Purpose:
+Simulate inventory movement day by day.
+
+Simulation events:
+
+* Inventory consumption
+* Order arrivals
+* Stockouts
+* Safety stock breaches
+
+Outputs:
+
+* Final inventory
+* Shortages
+* Stockout timing
+* Service performance
+
+---
+
+## Stage 5 – Outcome Discovery
+
+Purpose:
+Aggregate simulation results into understandable outcomes.
+
+Generated outcomes:
+
+* Most Likely Outcome
+* Best Case Outcome
+* Worst Case Outcome
+
+Metrics:
+
+* Stockout probability
+* Shortage volume
+* Remaining inventory
+
+---
+
+## Stage 6 – Decision Generation
+
+Purpose:
+Generate actionable interventions.
+
+Examples:
+
+* Transfer inventory
+* Emergency reorder
+* Increase safety stock
+* Do nothing
+
+Generated from:
+
+* Current inventory state
+* Hub availability
+* Risk conditions
+
+---
+
+## Stage 7 – Decision Simulation
+
+Purpose:
+Evaluate the effect of a selected intervention.
+
+Process:
+
+1. Apply decision
+2. Generate new worlds
+3. Run simulations again
+4. Compare before vs after
+
+Outputs:
+
+* Updated outcome probabilities
+* Inventory improvements
+* Risk reduction
+
+---
+
+## Stage 8 – Utility Scoring
+
+Purpose:
+Assign a single effectiveness score to a decision.
+
+Factors:
+
+* Stockout reduction
+* Shortage reduction
+* Coverage improvement
+* Cost penalty
+
+Output:
+
+* Utility Score (0–100)
+
+---
+
+## Stage 9 – LLM Explanation Layer
+
+Purpose:
+Translate simulation outputs into business language.
+
+Responsibilities:
+
+* Explain risks
+* Summarize outcomes
+* Describe intervention effects
+* Provide recommendations
+
+Constraints:
+
+* Must not invent numbers
+* Must use simulation outputs only
+
+---
+
+# Core Runtime Data Sources
+
+The planning agent relies on five operational tables:
+
+1. inventory_health_daily
+2. demand_analysis_daily
+3. demand_forecast_daily
+4. replenishment_orders
+5. inventory_risk_daily
+
+These tables provide all inventory, demand, forecast, replenishment, and risk information required to build runtime states.
+
+---
+
+# Key Design Principles
+
+1. Analytics are precomputed offline.
+2. Runtime operations are lightweight and fast.
+3. User scenarios remain deterministic.
+4. Uncertainty is modeled through Monte Carlo simulation.
+5. Business decisions are evaluated through DES.
+6. LLMs explain results rather than generate them.
+7. All recommendations are simulation-backed and auditable.
+
+---
+
+# Expected User Workflow
+
+1. User asks a planning question.
+2. Inventory state is assembled.
+3. Scenario parameters are extracted.
+4. Scenario state is created.
+5. Monte Carlo worlds are generated.
+6. DES simulations are executed.
+7. Outcomes are discovered.
+8. Decisions are generated.
+9. User selects a decision.
+10. Decision is re-simulated.
+11. Utility is calculated.
+12. LLM explains results.
+
+Result:
+A defensible, simulation-driven inventory planning recommendation.

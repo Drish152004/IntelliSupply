@@ -9,7 +9,7 @@ from neo4j.exceptions import Neo4jError, ServiceUnavailable
 from pydantic import BaseModel
 
 from aura_graphdb.aura_hubs import list_cities, list_hubs
-from aura_graphdb.aura_route_queries import get_order_route, get_recent_order_routes
+from aura_graphdb.aura_route_queries import get_order_route, get_recent_order_routes, list_delivery_days_with_orders
 from aura_graphdb.aura_courier import (
     create_courier_user,
     get_courier_by_email,
@@ -39,6 +39,17 @@ LogisticsUser = Annotated[
 ]
 
 AnyAuthUser = Annotated[TokenUser, Depends(get_current_user)]
+
+
+@router.get("/delivery-days")
+def list_delivery_days(current_user: AnyAuthUser):
+    """Distinct delivery days that have shipments (newest first)."""
+    del current_user
+    try:
+        days = list_delivery_days_with_orders()
+    except (ConnectionError, ServiceUnavailable, Neo4jError, OSError) as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {"success": True, "delivery_days": days, "count": len(days)}
 
 
 @router.get("/shipments")

@@ -707,10 +707,10 @@ export async function apiFetch<T = unknown>(
       typeof data.detail === 'string'
         ? data.detail
         : typeof data.message === 'string'
-        ? data.message
-        : Array.isArray(data.detail)
-        ? data.detail.map((item: any) => item.msg ?? '').join(', ')
-        : 'Request failed';
+          ? data.message
+          : Array.isArray(data.detail)
+            ? data.detail.map((item: any) => item.msg ?? '').join(', ')
+            : 'Request failed';
 
     throw new ApiError(detail, response.status);
   }
@@ -869,9 +869,26 @@ export async function listHubs(cityName: string) {
   return data.hubs;
 }
 
-export async function listShipments(options: any = {}) {
-  const params = new URLSearchParams(options);
-  const data = await apiFetch<{ shipments: any[] }>(`/orders/shipments?${params}`);
+export interface ListShipmentsOptions {
+  limit?: number;
+  courierId?: string;
+  deliveryDay?: string;
+}
+
+export async function listDeliveryDays(): Promise<string[]> {
+  const data = await apiFetch<{ delivery_days: string[] }>('/orders/delivery-days');
+  return data.delivery_days;
+}
+
+export async function listShipments(options: ListShipmentsOptions | number = {}): Promise<ShipmentListItem[]> {
+  if (typeof options === 'number') {
+    options = { limit: options };
+  }
+  const { limit = 50, courierId, deliveryDay } = options;
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (courierId) params.set('courier_id', courierId);
+  if (deliveryDay) params.set('delivery_day', deliveryDay);
+  const data = await apiFetch<{ shipments: ShipmentListItem[] }>(`/orders/shipments?${params.toString()}`);
   return data.shipments;
 }
 
@@ -895,8 +912,48 @@ export async function listCouriersWithOrders(day: string) {
   return data.couriers;
 }
 
-export async function predictCourierRoute(courierId: string, deliveryDay: string) {
-  return apiFetch(`/couriers/${courierId}/route`, {
+export interface RouteStop {
+  sequence: number;
+  order_id: string;
+  from_hub_name?: string;
+  to_hub_name?: string;
+  from_lat?: number;
+  from_lng?: number;
+  to_lat?: number;
+  to_lng?: number;
+  lat_wgs84?: number;
+  lon_wgs84?: number;
+  city_name?: string;
+  delivery_day?: string;
+  eta_minutes: number;
+  eta_from_start_minutes: number;
+  estimated_arrival: string;
+}
+
+export interface CourierStartPoint {
+  lat: number;
+  lng: number;
+  name?: string;
+}
+
+export interface CourierRouteResult {
+  courier_id: string;
+  courier_name?: string;
+  delivery_day: string;
+  route_start_time: string;
+  predicted_sequence: string[];
+  stops: RouteStop[];
+  total_eta_minutes: number;
+  source?: 'graphdb' | 'ml_model' | 'graph_built';
+  courier_start?: CourierStartPoint | null;
+  path?: [number, number][];
+}
+
+export async function predictCourierRoute(
+  courierId: 'me' | string,
+  deliveryDay: string,
+): Promise<CourierRouteResult> {
+  return apiFetch<CourierRouteResult>(`/couriers/${courierId}/route`, {
     method: 'POST',
     body: JSON.stringify({ delivery_day: deliveryDay }),
   });
