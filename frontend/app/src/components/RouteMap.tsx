@@ -23,6 +23,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { motion, AnimatePresence } from 'framer-motion';
 import { locations, routes, statsCards, aiInsights } from '@/data/mockData';
+import { predictCourierRoute, type CourierRouteResult } from '@/lib/api';
 import type { Route } from '@/data/mockData';
 
 // Fix Leaflet default icon
@@ -122,6 +123,22 @@ export default function RouteMap({ selectedRouteId, onRouteSelect }: RouteMapPro
     onRouteSelect?.(routeId);
   };
 
+  const [mlRoute, setMlRoute] = useState<CourierRouteResult | null>(null);
+
+  const handlePredictRoute = async (route: Route) => {
+    onRouteSelect?.(route.id);
+    const today = new Date().toISOString().slice(0, 10);
+    const courierId = (route.driver && String(route.driver)) || 'me';
+    try {
+      const res = await predictCourierRoute(courierId === 'me' ? 'me' : courierId, today);
+      setMlRoute(res);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('Route prediction failed', err);
+      setMlRoute(null);
+    }
+  };
+
   const [mapObject, setMapObject] = useState<L.Map | null>(null);
 
   useEffect(() => {
@@ -185,7 +202,7 @@ export default function RouteMap({ selectedRouteId, onRouteSelect }: RouteMapPro
               className: route.status === 'delayed' || route.status === 'critical' ? 'animate-dash' : '',
             }}
             eventHandlers={{
-              click: () => handleRouteClick(route.id),
+              click: () => handlePredictRoute(route),
             }}
           >
             <Popup>
@@ -214,6 +231,27 @@ export default function RouteMap({ selectedRouteId, onRouteSelect }: RouteMapPro
           </Polyline>
         ))}
       </MapContainer>
+
+        {/* ML Predicted Route Panel */}
+        {mlRoute && (
+          <div className="absolute top-20 right-3 z-[30] w-80 rounded-xl border border-border bg-white p-3 shadow-lg">
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <p className="text-xs text-muted-foreground">Predicted route</p>
+                <p className="font-semibold">{mlRoute.courier_name ?? mlRoute.courier_id} — {mlRoute.delivery_day}</p>
+              </div>
+              <button className="text-xs text-muted-foreground" onClick={() => setMlRoute(null)}>Close</button>
+            </div>
+            <div className="text-sm text-muted-foreground max-h-60 overflow-auto">
+              <p className="text-xs mb-1">Sequence</p>
+              <ol className="list-decimal list-inside space-y-1">
+                {mlRoute.predicted_sequence.map((oid) => (
+                  <li key={oid} className="text-[13px]">{oid}</li>
+                ))}
+              </ol>
+            </div>
+          </div>
+        )}
 
       {!mapReady && (
         <div className="absolute inset-0 z-[10] flex items-center justify-center bg-white/80">

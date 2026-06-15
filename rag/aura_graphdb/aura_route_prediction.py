@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 
 from aura_graphdb.aura_connection import AuraConnection
 from rag.aura_graphdb.shared_cypher import PERSIST_ASSIGNED_ROUTE_QUERY
+from rag.aura_graphdb.shared_cypher import DELETE_ROUTE_PREDICTION_QUERY
 from rag.supabase.supabase_notifications import create_notification
 
 DEFAULT_DS = 318
@@ -119,5 +120,38 @@ def persist_ml_courier_route(
             "route_prediction": None,
         }
 
+    finally:
+        conn.close()
+
+
+def delete_ml_courier_route(
+    *,
+    courier_id: str,
+    delivery_day: str | None = None,
+    ds: int = DEFAULT_DS,
+) -> dict[str, Any]:
+    """Delete a persisted RoutePrediction for a courier on a delivery day.
+
+    Returns a dict with success/message/deleted_count.
+    """
+    conn = AuraConnection()
+    route_prediction_ids = [f"{courier_id}_{ds}_{delivery_day}", f"{courier_id}_{delivery_day}"]
+    params = {
+        "courier_id": courier_id,
+        "delivery_day": delivery_day,
+        "route_prediction_ids": route_prediction_ids,
+    }
+    try:
+        rows = conn.execute_write(DELETE_ROUTE_PREDICTION_QUERY, params)
+        # execute_write may return summary; coerce to deleted count where possible
+        deleted = 0
+        try:
+            if isinstance(rows, list) and rows:
+                deleted = int(rows[0].get("deleted_count", 0) or 0)
+        except Exception:
+            deleted = 0
+        return {"success": True, "message": "Deleted persisted route prediction.", "deleted_count": deleted}
+    except Exception as exc:
+        return {"success": False, "message": str(exc), "deleted_count": 0}
     finally:
         conn.close()
