@@ -16,9 +16,10 @@ import uvicorn
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "8000"))
     reload = os.environ.get("RELOAD", "").lower() in ("1", "true", "yes")
+
     uvicorn.run(
         "main:app",
-        host=os.environ.get("HOST", "127.0.0.1"),
+        host="localhost",   # ✅ BEST PRACTICE
         port=port,
         reload=reload,
         app_dir=str(ROOT),

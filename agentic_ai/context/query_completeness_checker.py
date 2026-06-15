@@ -1,11 +1,11 @@
-"""Detect missing query entities before graph search (HITL #1)."""
+"""Detect missing query entities before RAG execution."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
+from orchestrator.task_registry import QUERY_ENTITY_REQUIREMENTS
 from context.clarification_manager import ClarificationManager, ClarificationType
-from context.task_requirements import QUERY_ENTITY_REQUIREMENTS, is_ml_task
 
 
 @dataclass
@@ -18,13 +18,10 @@ class QueryCompletenessResult:
 
 
 class QueryCompletenessChecker:
-    """Determine whether enough business entities exist to search the graph."""
+    """Determine whether enough business entities exist for logistics lookups."""
 
     @staticmethod
     def check(task: str, entities: dict[str, str]) -> QueryCompletenessResult:
-        if not is_ml_task(task):
-            return QueryCompletenessResult(complete=True)
-
         requirements = QUERY_ENTITY_REQUIREMENTS.get(task)
         if not requirements:
             return QueryCompletenessResult(complete=True)

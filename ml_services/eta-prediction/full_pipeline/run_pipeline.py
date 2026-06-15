@@ -349,7 +349,7 @@ def run():
 
     predictor.save(MODEL_PATH)
 
-    print("\n✅ MODEL SAVED AT:", MODEL_PATH)
+    print("\n[SUCCESS] MODEL SAVED AT:", MODEL_PATH)
 
 
 # =============================================================================

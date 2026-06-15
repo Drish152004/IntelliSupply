@@ -6,11 +6,12 @@ import json
 import logging
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from dependencies.auth import TokenUser, get_current_user, user_to_authenticated_payload
 from orchestrator.graph import run_orchestrator
 from schemas.copilot import CopilotRequest
+from security import check_prompt_injection, mask_pii, validate_llm_input, rate_limit
 
 logger = logging.getLogger(__name__)
 
@@ -40,35 +41,63 @@ def health() -> dict[str, str]:
     return {"status": "healthy"}
 
 
-@router.post("/query")
+@router.post("/query", dependencies=[Depends(rate_limit(20, 60))])
 def query(
     body: CopilotRequest,
     current_user: Annotated[TokenUser, Depends(get_current_user)],
 ) -> Any:
     try:
+        # 1. Payload validation
+        try:
+            validate_llm_input(body.query)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+
+        # 2. Prompt injection checks
+        if check_prompt_injection(body.query):
+            raise HTTPException(status_code=400, detail="Blocked unsafe query.")
+
+        # 3. PII Masking before orchestration
+        body.query = mask_pii(body.query)
+
         result = _invoke_orchestrator(body, current_user)
         return _parse_final_response(result["final_response"])
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.exception("Copilot query failed")
         return {"status": "error", "message": str(exc)}
 
 
-@router.post("/debug")
+@router.post("/debug", dependencies=[Depends(rate_limit(20, 60))])
 def debug(
     body: CopilotRequest,
     current_user: Annotated[TokenUser, Depends(get_current_user)],
 ) -> dict[str, Any]:
     try:
+        # 1. Payload validation
+        try:
+            validate_llm_input(body.query)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+
+        # 2. Prompt injection checks
+        if check_prompt_injection(body.query):
+            raise HTTPException(status_code=400, detail="Blocked unsafe query.")
+
+        # 3. PII Masking before orchestration
+        body.query = mask_pii(body.query)
+
         result = _invoke_orchestrator(body, current_user)
         return {
-            "intent": result.get("intent"),
+            "domain": result.get("domain"),
             "task": result.get("task"),
+            "detected_language": result.get("detected_language"),
             "cache_hit": result.get("cache_hit", False),
-            "graph_hit": result.get("graph_hit", False),
-            "ready_for_ml": result.get("ready_for_ml", False),
-            "prediction_result": result.get("prediction_result"),
             "final_response": _parse_final_response(result.get("final_response", "")),
         }
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.exception("Copilot debug failed")
         return {"status": "error", "message": str(exc)}

@@ -96,4 +96,7 @@ def build_session_for_response(state: AgentState) -> dict[str, Any] | None:
         if messages:
             persisted["messages"] = messages
 
+    if state.get("clarification_needed"):
+        persisted["collecting"] = True
+
     return persisted or None

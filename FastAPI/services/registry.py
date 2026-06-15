@@ -8,10 +8,12 @@ from typing import Any
 from config import (
     ETA_PREDICTION_ROOT,
     ROUTE_PREDICTION_ROOT,
+    eta_model_path,
     route_model_path,
 )
 
 _route_predictor: Any | None = None
+_eta_predictor: Any | None = None
 _eta_ready: bool = False
 
 
@@ -42,6 +44,21 @@ def get_route_predictor():
     return _route_predictor
 
 
+def get_eta_predictor():
+    global _eta_predictor
+    if _eta_predictor is None:
+        _ensure_eta_path()
+        from full_pipeline.inference import ETAPredictor
+
+        model_path = eta_model_path()
+        if not model_path.is_file():
+            raise FileNotFoundError(
+                f"ETA model not found: {model_path}. Set ETA_MODEL_PATH or train the model."
+            )
+        _eta_predictor = ETAPredictor.load(model_path)
+    return _eta_predictor
+
+
 def init_demand_service() -> None:
     from services import demand_forecasting as demand_svc
 
@@ -50,16 +67,12 @@ def init_demand_service() -> None:
 
 def init_eta_service() -> None:
     global _eta_ready
-    _ensure_eta_path()
-    from full_pipeline.inference import _load_artifacts
-
-    _load_artifacts()
+    get_eta_predictor()
     _eta_ready = True
 
 
 def ensure_eta_service() -> None:
-    if not _eta_ready:
-        init_eta_service()
+    get_eta_predictor()
 
 
 def init_all_services() -> dict[str, str]:

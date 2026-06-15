@@ -26,7 +26,7 @@ const roles = [
   },
     {
     title: 'Courier',
-    description: '.',
+    description: 'Route execution, assigned deliveries, and real-time shipment updates.',
     icon: Truck,
     color: 'from-emerald-50 to-emerald-100 border-emerald-100',
     route: '/login/courier',

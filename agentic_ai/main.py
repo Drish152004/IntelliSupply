@@ -1,14 +1,25 @@
 """
 CLI entrypoint for the agentic_ai orchestration system.
 
-Interactive session: inventory (NL-to-SQL, demand ML) and logistics (GraphRAG, ML) via an LLM.
-When a tool needs inputs, it asks for one field at a time.
+Interactive session for inventory (NL-to-SQL) and logistics (Aura GraphDB retrieval).
 """
 
 import json
 import os
+import sys
+from pathlib import Path
 
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+_AGENTIC_ROOT = _REPO_ROOT / "agentic_ai"
+if str(_AGENTIC_ROOT) not in sys.path:
+    sys.path.insert(0, str(_AGENTIC_ROOT))
+
+from config.env import load_env
 from orchestrator.graph import run_orchestrator
+
+load_env()
 
 _QUIT_WORDS = frozenset({"quit", "exit", "q"})
 
@@ -34,11 +45,7 @@ def _print_result(payload: dict | None, raw: str) -> None:
         source = payload.get("source", "")
         data = payload.get("data", {})
         if source == "cache":
-            print(f"\nAssistant (cached): {data}")
-        elif source == "graph":
-            print(f"\nAssistant (graph): {data}")
-        elif source == "ml":
-            print(f"\nAssistant (ml): {data}")
+            print(f"\nAssistant (cached): {data.get('answer', data)}")
         else:
             print(f"\nAssistant: {data.get('answer', payload.get('message', raw))}")
         return
@@ -65,7 +72,6 @@ def _authenticated_user_from_env() -> dict | None:
 
 
 def _run_query_turn(initial_query: str) -> None:
-    """One user question, including tool parameter follow-ups."""
     logistics_session = None
     inventory_session = None
     user_message = initial_query
@@ -79,10 +85,9 @@ def _run_query_turn(initial_query: str) -> None:
             authenticated_user=authenticated_user,
         )
 
-        print(f"\nDetected domain: {result['domain']}")
-        print(f"Detected task: {result['task']}")
-        print(f"Confidence: {result['confidence']}")
-        print(f"Selected agent: {result['selected_agent']}")
+        print(f"\nDetected domain: {result.get('domain', '')}")
+        print(f"Detected task: {result.get('task', '')}")
+        print(f"Confidence: {result.get('confidence', 0)}")
 
         payload = _parse_response(result["final_response"])
 
@@ -110,8 +115,8 @@ def _run_query_turn(initial_query: str) -> None:
 
 def main() -> None:
     print(
-        "IntelliSupply agent. Ask about inventory, demand forecasts, "
-        "shipments, routes, or the network."
+        "IntelliSupply agent. Ask about inventory stock or logistics "
+        "(shipments, routes, ETAs, couriers)."
     )
     print("Type 'quit' to exit.\n")
     while True:

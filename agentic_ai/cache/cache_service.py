@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Protocol
 
 from cache.memory_cache import MemoryCache
-from cache.ttl_config import ttl_for_task
+from orchestrator.task_registry import ttl_for_task
 
 
 class CacheBackend(Protocol):
