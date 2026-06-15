@@ -1,93 +1,168 @@
 from sqlalchemy import (
     Column,
+    BigInteger,
     Integer,
     String,
     Float,
-    ForeignKey,
+    Date,
     DateTime,
-    Boolean
+    Boolean,
+    UniqueConstraint,
+    ForeignKey,
+    Text,
+    func,
 )
 
 from sqlalchemy.orm import declarative_base
 
 Base = declarative_base()
 
-# PRODUCTS TABLE
-class Product(Base):
 
-    __tablename__ = "products"
+# ============================================================
+# PRODUCT CATALOG TABLE
+# Supabase table: product_catalog
+# One product_id can exist in multiple categories.
+# So product_id alone is NOT unique.
+# Unique identity = product_id + category
+# ============================================================
+
+class ProductCatalog(Base):
+    __tablename__ = "product_catalog"
+
+    id = Column(
+        BigInteger,
+        primary_key=True,
+        autoincrement=True,
+    )
 
     product_id = Column(
         String,
-        primary_key=True
+        nullable=False,
+    )
+
+    category = Column(
+        String,
+        nullable=False,
     )
 
     product_name = Column(String)
 
-    category = Column(String)
+    product_display_name = Column(String)
 
-    unit_price = Column(Float)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    supplier_name = Column(String)
-
-# WAREHOUSES / HUBS TABLE
-class Warehouse(Base):
-
-    __tablename__ = "warehouses"
-
-    hub_id = Column(
-        String,
-        primary_key=True
+    __table_args__ = (
+        UniqueConstraint(
+            "product_id",
+            "category",
+            name="product_catalog_product_id_category_key",
+        ),
     )
 
-    warehouse_name = Column(String)
 
-    city = Column(String)
+# ============================================================
+# HUBS TABLE
+# Supabase table: hubs
+# This replaces old warehouses table.
+# Use lat/lng only for actual coordinates.
+# Ignore poi_lat/poi_lng for route/map logic.
+# ============================================================
 
-    delivery_count = Column(Integer)
+class Hub(Base):
+    __tablename__ = "hubs"
 
-    total = Column(Integer)
+    hub_id = Column(
+        BigInteger,
+        primary_key=True,
+    )
 
-    pickup_ratio = Column(Float)
+    hub_name = Column(String)
 
-    delivery_ratio = Column(Float)
+    city_id = Column(BigInteger)
 
-    is_warehouse = Column(Boolean)
+    poi_lat = Column(Float)
+    poi_lng = Column(Float)
 
-    is_delivery_hub = Column(Boolean)
+    # Use these for actual hub coordinates
+    lat = Column(Float)
+    lng = Column(Float)
 
-    is_mixed_hub = Column(Boolean)
+    representative_aoi_id = Column(String)
+    representative_typecode = Column(String)
 
-    rep_dipan_id = Column(String)
+    hub_type = Column(String)
 
-    capacity = Column(Integer)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    total_products = Column(Integer)
 
-# INVENTORY TABLE
-class Inventory(Base):
+# ============================================================
+# PLANNING DATASET TABLE
+# Supabase table: planning_dataset
+# This replaces old inventory table.
+#
+# Stock value = inventory_level
+# Low stock condition = inventory_level < demand
+# Unique time-series identity:
+# date + hub_id + product_id + category
+# ============================================================
 
-    __tablename__ = "inventory"
+class PlanningDataset(Base):
+    __tablename__ = "planning_dataset"
 
-    inventory_id = Column(
-        String,
-        primary_key=True
+    id = Column(
+        BigInteger,
+        primary_key=True,
+        autoincrement=True,
+    )
+
+    date = Column(Date, nullable=False)
+
+    hub_id = Column(
+        BigInteger,
+        ForeignKey("hubs.hub_id"),
+        nullable=False,
     )
 
     product_id = Column(
         String,
-        ForeignKey("products.product_id")
+        nullable=False,
     )
 
-    hub_id = Column(
+    category = Column(
         String,
-        ForeignKey("warehouses.hub_id")
+        nullable=False,
     )
 
-    rep_dipan_id = Column(String)
+    inventory_level = Column(Integer)
 
-    quantity = Column(Integer)
+    units_sold = Column(Integer)
 
-    threshold_limit = Column(Integer)
+    units_ordered = Column(Integer)
 
-    last_updated = Column(DateTime)
+    price = Column(Float)
+
+    discount = Column(Float)
+
+    weather_condition = Column(String)
+
+    promotion = Column(Boolean)
+
+    competitor_pricing = Column(Float)
+
+    seasonality = Column(String)
+
+    epidemic = Column(Boolean)
+
+    demand = Column(Integer)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint(
+            "date",
+            "hub_id",
+            "product_id",
+            "category",
+            name="planning_dataset_date_hub_product_category_key",
+        ),
+    )

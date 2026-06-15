@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from dependencies.auth import TokenUser, require_roles
 from services import inventory as inventory_svc
+
 
 router = APIRouter(prefix="/inventory", tags=["inventory"])
 
@@ -19,73 +20,154 @@ InventoryUser = Annotated[
 
 
 class ProductCreateRequest(BaseModel):
+    # Optional because backend can generate one if not supplied
+    product_id: str | None = None
+
+    # Frontend sends name
     name: str = Field(..., min_length=1)
+
+    # product_catalog requires category
     category: str = Field(default="General")
-    unit_price: float = Field(default=0, ge=0)
+
+    # Kept for frontend compatibility.
+    # In the new schema, price comes mainly from planning_dataset.price.
+    unit_price: float | None = Field(default=None, ge=0)
+
+    # Kept for frontend compatibility.
+    # New schema does not have supplier_name.
     supplier_name: str | None = None
+
+    # Optional display name for product_catalog
+    product_display_name: str | None = None
 
 
 class ProductUpdateRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1)
     category: str | None = None
+
+    # Kept for frontend compatibility.
+    # These are ignored by the current service if not stored in schema.
     unit_price: float | None = Field(default=None, ge=0)
     supplier_name: str | None = None
+
+    product_display_name: str | None = None
 
 
 def _ensure_db():
     if not inventory_svc.inventory_db_available():
-        raise HTTPException(status_code=503, detail="Inventory database unavailable.")
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Inventory database unavailable. Check Supabase/Postgres connection "
+                "and required tables: product_catalog, planning_dataset, hubs."
+            ),
+        )
 
 
 @router.get("/products")
 def list_products(
     current_user: InventoryUser,
-    search: str = "",
-    category: str = "",
-    limit: int = 100,
+    search: str = Query(default=""),
+    category: str = Query(default=""),
+    limit: int = Query(default=100, ge=1, le=500),
 ):
     del current_user
+
     _ensure_db()
-    products = inventory_svc.list_products(search=search, category=category, limit=limit)
-    return {"success": True, "products": products, "count": len(products)}
+
+    products = inventory_svc.list_products(
+        search=search,
+        category=category,
+        limit=limit,
+    )
+
+    return {
+        "success": True,
+        "products": products,
+        "count": len(products),
+    }
 
 
 @router.post("/products", status_code=201)
-def create_product(body: ProductCreateRequest, current_user: InventoryUser):
+def create_product(
+    body: ProductCreateRequest,
+    current_user: InventoryUser,
+):
     del current_user
+
     _ensure_db()
+
     product = inventory_svc.create_product(body.model_dump())
-    return {"success": True, "product": product}
+
+    return {
+        "success": True,
+        "product": product,
+    }
 
 
 @router.patch("/products/{product_id}")
-def update_product(product_id: str, body: ProductUpdateRequest, current_user: InventoryUser):
+def update_product(
+    product_id: str,
+    body: ProductUpdateRequest,
+    current_user: InventoryUser,
+):
     del current_user
+
     _ensure_db()
-    updated = inventory_svc.update_product(product_id, body.model_dump(exclude_unset=True))
+
+    updated = inventory_svc.update_product(
+        product_id,
+        body.model_dump(exclude_unset=True),
+    )
+
     if not updated:
         raise HTTPException(status_code=404, detail="Product not found.")
-    return {"success": True, "product": updated}
+
+    return {
+        "success": True,
+        "product": updated,
+    }
 
 
 @router.delete("/products/{product_id}")
-def delete_product(product_id: str, current_user: InventoryUser):
+def delete_product(
+    product_id: str,
+    current_user: InventoryUser,
+):
     del current_user
+
     _ensure_db()
-    if not inventory_svc.delete_product(product_id):
+
+    deleted = inventory_svc.delete_product(product_id)
+
+    if not deleted:
         raise HTTPException(status_code=404, detail="Product not found.")
-    return {"success": True, "message": "Product deleted."}
+
+    return {
+        "success": True,
+        "message": "Product deleted.",
+    }
 
 
 @router.get("/summary")
 def inventory_summary(current_user: InventoryUser):
     del current_user
+
     _ensure_db()
-    return {"success": True, "summary": inventory_svc.get_summary()}
+
+    return {
+        "success": True,
+        "summary": inventory_svc.get_summary(),
+    }
 
 
 @router.get("/forecast-trend")
 def inventory_forecast_trend(current_user: InventoryUser):
     del current_user
+
     _ensure_db()
-    return {"success": True, "trend": inventory_svc.get_forecast_trend()}
+
+    return {
+        "success": True,
+        "trend": inventory_svc.get_forecast_trend(),
+    }

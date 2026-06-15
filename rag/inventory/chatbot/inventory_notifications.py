@@ -1,32 +1,84 @@
+"""Inventory notification service using inventory project database."""
+
 from __future__ import annotations
 
+import uuid
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import text
 
-from rag.supabase.supabase_connection import get_supabase_engine
-
 
 def _engine():
-    return get_supabase_engine()
+    """
+    Use the same DB connection as inventory products/summary.
+
+    This should point to the database that contains:
+    - planning_dataset
+    - product_catalog
+    - hubs
+    """
+    from chatbot.database import engine
+
+    return engine
 
 
-def create_notification(
+def ensure_inventory_notifications_table() -> None:
+    """
+    Create inventory_notifications table inside the inventory database.
+
+    This keeps inventory notifications separate from logistics notifications.
+    """
+    query = text(
+        """
+        CREATE TABLE IF NOT EXISTS inventory_notifications (
+            notification_id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            message TEXT NOT NULL,
+            alert_type TEXT NOT NULL,
+            severity TEXT NOT NULL DEFAULT 'medium',
+
+            target_role TEXT,
+            target_user_id TEXT,
+
+            related_entity_type TEXT,
+            related_entity_id TEXT,
+
+            source TEXT NOT NULL DEFAULT 'inventory_service',
+            dedupe_key TEXT UNIQUE,
+
+            is_read BOOLEAN NOT NULL DEFAULT FALSE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
+
+    with _engine().begin() as conn:
+        conn.execute(query)
+
+
+def create_inventory_notification(
     *,
     title: str,
     message: str,
     alert_type: str,
     severity: str = "medium",
-    target_role: str | None = None,
+    target_role: str | None = "inventory_manager",
     target_user_id: str | None = None,
     related_entity_type: str | None = None,
     related_entity_id: str | None = None,
-    source: str = "system",
+    source: str = "inventory_service",
     dedupe_key: str | None = None,
 ) -> dict[str, Any] | None:
+    ensure_inventory_notifications_table()
+
+    notification_id = str(uuid.uuid4())
+
     query = text(
         """
-        INSERT INTO notifications (
+        INSERT INTO inventory_notifications (
+            notification_id,
             title,
             message,
             alert_type,
@@ -39,6 +91,7 @@ def create_notification(
             dedupe_key
         )
         VALUES (
+            :notification_id,
             :title,
             :message,
             :alert_type,
@@ -51,7 +104,6 @@ def create_notification(
             :dedupe_key
         )
         ON CONFLICT (dedupe_key)
-        WHERE dedupe_key IS NOT NULL
         DO NOTHING
         RETURNING *
         """
@@ -61,6 +113,7 @@ def create_notification(
         row = conn.execute(
             query,
             {
+                "notification_id": notification_id,
                 "title": title,
                 "message": message,
                 "alert_type": alert_type,
@@ -79,15 +132,17 @@ def create_notification(
 
 def generate_inventory_notifications(limit: int = 10) -> int:
     """
-    Generate inventory notifications from latest planning_dataset data.
+    Generate hub-level inventory notifications from latest planning_dataset data.
 
     Creates alerts for:
-    - stockout: inventory_level <= 0
-    - low stock: inventory_level < demand
-    - low buffer: inventory_level < 20
+    - stockout: inventory_level <= 0 at a hub
+    - demand risk: inventory_level < demand at a hub
+    - low buffer: inventory_level < 20 at a hub
 
-    Uses dedupe_key so repeated page refreshes do not create duplicates.
+    Each notification mentions the hub.
     """
+    ensure_inventory_notifications_table()
+
     query = text(
         """
         WITH latest_date AS (
@@ -97,9 +152,15 @@ def generate_inventory_notifications(limit: int = 10) -> int:
         latest_inventory AS (
             SELECT
                 pd.date,
+                pd.hub_id,
+                h.hub_name,
                 pd.product_id,
                 pd.category,
-                COALESCE(pc.product_display_name, pc.product_name, pd.product_id) AS product_name,
+                COALESCE(
+                    pc.product_display_name,
+                    pc.product_name,
+                    pd.product_id
+                ) AS product_name,
                 COALESCE(SUM(pd.inventory_level), 0) AS total_stock,
                 COALESCE(SUM(pd.demand), 0) AS total_demand
             FROM planning_dataset pd
@@ -108,8 +169,12 @@ def generate_inventory_notifications(limit: int = 10) -> int:
             LEFT JOIN product_catalog pc
                 ON pc.product_id = pd.product_id
                AND pc.category = pd.category
+            LEFT JOIN hubs h
+                ON h.hub_id = pd.hub_id
             GROUP BY
                 pd.date,
+                pd.hub_id,
+                h.hub_name,
                 pd.product_id,
                 pd.category,
                 pc.product_display_name,
@@ -117,6 +182,8 @@ def generate_inventory_notifications(limit: int = 10) -> int:
         )
         SELECT
             date,
+            hub_id,
+            hub_name,
             product_id,
             category,
             product_name,
@@ -138,48 +205,57 @@ def generate_inventory_notifications(limit: int = 10) -> int:
         """
     )
 
+    with _engine().connect() as conn:
+        rows = conn.execute(query, {"limit": int(limit)}).mappings().all()
+
     created_count = 0
 
-    with _engine().connect() as conn:
-        rows = conn.execute(text(query.text), {"limit": int(limit)}).mappings().all()
-
     for row in rows:
+        latest_date = row["date"]
+        hub_id = row["hub_id"]
+        hub_name = row["hub_name"] or f"Hub {hub_id}"
         product_id = row["product_id"]
         category = row["category"]
         product_name = row["product_name"]
         stock = int(row["total_stock"] or 0)
         demand = int(row["total_demand"] or 0)
-        latest_date = row["date"]
+
+        product_label = f"{product_name} ({product_id})"
 
         if stock <= 0:
             title = "Stockout alert"
             severity = "critical"
-            message = f"{product_name} is out of stock across hubs."
+            message = (
+                f"{product_label} is out of stock at {hub_name}."
+            )
         elif demand > 0 and stock < demand:
             title = "Demand exceeds inventory"
             severity = "high"
             message = (
-                f"{product_name} has {stock} units available, "
+                f"{product_label} at {hub_name} has {stock} units available, "
                 f"below demand of {demand} units."
             )
         else:
             title = "Low stock alert"
             severity = "medium"
-            message = f"{product_name} has only {stock} units available."
+            message = (
+                f"{product_label} at {hub_name} has only {stock} units available."
+            )
 
         dedupe_key = (
-            f"inventory:{latest_date}:{product_id}:{category}:{title}"
+            f"inventory:{latest_date}:hub:{hub_id}:"
+            f"{product_id}:{category}:{title}"
         )
 
-        created = create_notification(
+        created = create_inventory_notification(
             title=title,
             message=message,
             alert_type="inventory",
             severity=severity,
             target_role="inventory_manager",
             target_user_id=None,
-            related_entity_type="product",
-            related_entity_id=f"{product_id}::{category}",
+            related_entity_type="product_hub",
+            related_entity_id=f"{product_id}::{category}::hub:{hub_id}",
             source="inventory_service",
             dedupe_key=dedupe_key,
         )
@@ -190,20 +266,23 @@ def generate_inventory_notifications(limit: int = 10) -> int:
     return created_count
 
 
-def list_notifications_for_user(
+def list_inventory_notifications_for_user(
     *,
     user_id: str,
     role: str,
     limit: int = 50,
 ) -> list[dict[str, Any]]:
+    ensure_inventory_notifications_table()
+
     query = text(
         """
         SELECT *
-        FROM notifications
+        FROM inventory_notifications
         WHERE
             target_user_id::text = :user_id
             OR target_role = :role
             OR target_role IS NULL
+            OR (:is_admin = true AND target_role = 'inventory_manager')
         ORDER BY created_at DESC
         LIMIT :limit
         """
@@ -215,6 +294,7 @@ def list_notifications_for_user(
             {
                 "user_id": str(user_id),
                 "role": role,
+                "is_admin": role == "admin",
                 "limit": int(limit),
             },
         ).mappings().all()
@@ -222,11 +302,51 @@ def list_notifications_for_user(
     return [dict(row) for row in rows]
 
 
-def mark_notification_read(notification_id: str) -> dict[str, Any] | None:
+def get_inventory_unread_count(
+    *,
+    user_id: str,
+    role: str,
+) -> int:
+    ensure_inventory_notifications_table()
+
     query = text(
         """
-        UPDATE notifications
-        SET is_read = true
+        SELECT COUNT(*)
+        FROM inventory_notifications
+        WHERE is_read = false
+          AND (
+              target_user_id::text = :user_id
+              OR target_role = :role
+              OR target_role IS NULL
+              OR (:is_admin = true AND target_role = 'inventory_manager')
+          )
+        """
+    )
+
+    with _engine().connect() as conn:
+        count = conn.execute(
+            query,
+            {
+                "user_id": str(user_id),
+                "role": role,
+                "is_admin": role == "admin",
+            },
+        ).scalar()
+
+    return int(count or 0)
+
+
+def mark_inventory_notification_read(
+    notification_id: str,
+) -> dict[str, Any] | None:
+    ensure_inventory_notifications_table()
+
+    query = text(
+        """
+        UPDATE inventory_notifications
+        SET
+            is_read = true,
+            updated_at = NOW()
         WHERE notification_id::text = :notification_id
         RETURNING *
         """
@@ -241,20 +361,25 @@ def mark_notification_read(notification_id: str) -> dict[str, Any] | None:
     return dict(row) if row else None
 
 
-def mark_all_notifications_read(
+def mark_all_inventory_notifications_read(
     *,
     user_id: str,
     role: str,
 ) -> int:
+    ensure_inventory_notifications_table()
+
     query = text(
         """
-        UPDATE notifications
-        SET is_read = true
+        UPDATE inventory_notifications
+        SET
+            is_read = true,
+            updated_at = NOW()
         WHERE is_read = false
           AND (
               target_user_id::text = :user_id
               OR target_role = :role
               OR target_role IS NULL
+              OR (:is_admin = true AND target_role = 'inventory_manager')
           )
         """
     )
@@ -265,54 +390,8 @@ def mark_all_notifications_read(
             {
                 "user_id": str(user_id),
                 "role": role,
+                "is_admin": role == "admin",
             },
         )
 
     return int(result.rowcount or 0)
-
-
-def get_unread_count(
-    *,
-    user_id: str,
-    role: str,
-) -> int:
-    query = text(
-        """
-        SELECT count(*)
-        FROM notifications
-        WHERE is_read = false
-          AND (
-              target_user_id::text = :user_id
-              OR target_role = :role
-              OR target_role IS NULL
-          )
-        """
-    )
-
-    with _engine().connect() as conn:
-        count = conn.execute(
-            query,
-            {
-                "user_id": str(user_id),
-                "role": role,
-            },
-        ).scalar()
-
-    return int(count or 0)
-
-
-def delete_notification(notification_id: str) -> bool:
-    query = text(
-        """
-        DELETE FROM notifications
-        WHERE notification_id::text = :notification_id
-        """
-    )
-
-    with _engine().begin() as conn:
-        result = conn.execute(
-            query,
-            {"notification_id": str(notification_id)},
-        )
-
-    return bool(result.rowcount)
