@@ -707,10 +707,10 @@ export async function apiFetch<T = unknown>(
       typeof data.detail === 'string'
         ? data.detail
         : typeof data.message === 'string'
-        ? data.message
-        : Array.isArray(data.detail)
-        ? data.detail.map((item: any) => item.msg ?? '').join(', ')
-        : 'Request failed';
+          ? data.message
+          : Array.isArray(data.detail)
+            ? data.detail.map((item: any) => item.msg ?? '').join(', ')
+            : 'Request failed';
 
     throw new ApiError(detail, response.status);
   }

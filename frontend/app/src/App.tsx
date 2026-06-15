@@ -13,6 +13,7 @@ import AdminUsers from './pages/AdminUsers';
 import AdminAnalytics from './pages/AdminAnalytics';
 import Notifications from './pages/Notifications';
 import RegisterUser from './pages/RegisterUser';
+import Planning from './pages/Planning';
 
 // ✅ NEW: Courier page
 import Courier from './pages/Courier';
@@ -89,6 +90,15 @@ export default function App() {
           element={
             <ProtectedRoute allowedRoles={['admin', 'inventory_manager']}>
               <Inventory />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/planning"
+          element={
+            <ProtectedRoute allowedRoles={['admin', 'inventory_manager']}>
+              <Planning />
             </ProtectedRoute>
           }
         />
