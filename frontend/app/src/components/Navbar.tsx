@@ -91,9 +91,7 @@ export default function Navbar() {
               </span>
             )}
 
-            <span className="rounded-full border border-border bg-slate-100 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-700">
-              V2.1
-            </span>
+
 
             <NavLink
               to="/profile"
