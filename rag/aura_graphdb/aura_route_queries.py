@@ -1,7 +1,123 @@
 import json
+import math
 from typing import Any
 
 from aura_graphdb.aura_connection import AuraConnection
+
+
+def _float_or_none(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    r = 6371.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dlon / 2) ** 2
+    return 2 * r * math.asin(math.sqrt(a))
+
+
+def _estimate_leg_minutes(order: dict[str, Any], default_minutes: float = 20.0) -> float:
+    from_lat = _float_or_none(order.get("from_lat"))
+    from_lon = _float_or_none(order.get("from_lon"))
+    to_lat = _float_or_none(order.get("to_lat"))
+    to_lon = _float_or_none(order.get("to_lon"))
+    if from_lat is None or from_lon is None:
+        from_lat = _float_or_none(order.get("receipt_lat_wgs84"))
+        from_lon = _float_or_none(order.get("receipt_lon_wgs84"))
+    if to_lat is None or to_lon is None:
+        to_lat = _float_or_none(order.get("lat_wgs84"))
+        to_lon = _float_or_none(order.get("lon_wgs84"))
+    if None in (from_lat, from_lon, to_lat, to_lon):
+        return default_minutes
+    km = _haversine_km(from_lat, from_lon, to_lat, to_lon)
+    return max(default_minutes, round(km * 3.0, 1))
+
+
+def build_route_stops_from_orders(
+    orders: list[dict[str, Any]],
+    courier: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build ordered route stops from assigned orders without ML."""
+    if not orders:
+        return {
+            "order_ids": [],
+            "predicted_sequence": [],
+            "stops": [],
+            "geo_stops": [],
+            "total_eta_minutes": 0.0,
+            "city_name": None,
+        }
+
+    def sort_key(order: dict[str, Any]) -> tuple:
+        seq = order.get("route_sequence")
+        if seq is not None:
+            try:
+                return (0, int(seq))
+            except (TypeError, ValueError):
+                pass
+        receipt = str(order.get("receipt_time") or "")
+        return (1, receipt, str(order.get("order_id") or ""))
+
+    ordered = sorted(orders, key=sort_key)
+    predicted_sequence = [o["order_id"] for o in ordered if o.get("order_id")]
+
+    cumulative = 0.0
+    stops: list[dict[str, Any]] = []
+    geo_stops: list[dict[str, Any]] = []
+
+    for seq, order in enumerate(ordered, start=1):
+        leg_minutes = _estimate_leg_minutes(order)
+        cumulative += leg_minutes
+        from_lat = _float_or_none(order.get("from_lat"))
+        from_lng = _float_or_none(order.get("from_lon")) or _float_or_none(order.get("from_lng"))
+        to_lat = _float_or_none(order.get("to_lat"))
+        to_lng = _float_or_none(order.get("to_lon")) or _float_or_none(order.get("to_lng"))
+        lat_wgs84 = _float_or_none(order.get("lat_wgs84")) or to_lat
+        lon_wgs84 = _float_or_none(order.get("lon_wgs84")) or to_lng
+
+        stops.append(
+            {
+                "sequence": seq,
+                "order_id": order["order_id"],
+                "from_hub_name": order.get("from_hub_name"),
+                "to_hub_name": order.get("to_hub_name"),
+                "from_lat": from_lat,
+                "from_lng": from_lng,
+                "to_lat": to_lat,
+                "to_lng": to_lng,
+                "lat_wgs84": lat_wgs84,
+                "lon_wgs84": lon_wgs84,
+                "city_name": order.get("city_name"),
+                "delivery_day": order.get("delivery_day"),
+                "eta_minutes": round(leg_minutes, 1),
+                "eta_from_start_minutes": round(cumulative, 1),
+                "estimated_arrival": f"{int(9 + cumulative // 60):02d}:{int(cumulative % 60):02d}",
+            }
+        )
+        geo_stops.append(
+            {
+                "sequence": seq,
+                "order_id": order["order_id"],
+                "lat_wgs84": lat_wgs84,
+                "lon_wgs84": lon_wgs84,
+            }
+        )
+
+    return {
+        "order_ids": predicted_sequence,
+        "predicted_sequence": predicted_sequence,
+        "stops": stops,
+        "geo_stops": geo_stops,
+        "total_eta_minutes": round(cumulative, 1),
+        "city_name": ordered[0].get("city_name"),
+    }
 
 
 def _format_datetime_value(value: Any) -> str:
@@ -66,28 +182,26 @@ def get_recent_order_routes(
     conn = AuraConnection()
 
     params: dict = {"limit": int(limit)}
+    match_parts = ["MATCH (o:Order)"]
+    where_clauses: list[str] = []
 
-    # Filter on Order/Courier before hub OPTIONAL MATCHes — WHERE after OPTIONAL MATCH
-    # does not reliably constrain o.delivery_day or courier.courier_id in Aura.
-    if courier_id:
-        courier_match = (
-            "MATCH (o)-[:ASSIGNED_TO]->(courier:Courier {courier_id: $courier_id})"
-        )
-        params["courier_id"] = courier_id
-    else:
-        courier_match = "OPTIONAL MATCH (o)-[:ASSIGNED_TO]->(courier:Courier)"
-
-    where_clauses = []
     if delivery_day:
         where_clauses.append("o.delivery_day = $delivery_day")
         params["delivery_day"] = delivery_day
 
-    where_str = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+    if where_clauses:
+        match_parts.append("WHERE " + " AND ".join(where_clauses))
+
+    if courier_id:
+        match_parts.append(
+            "MATCH (o)-[:ASSIGNED_TO]->(courier:Courier {courier_id: $courier_id})"
+        )
+        params["courier_id"] = courier_id
+    else:
+        match_parts.append("OPTIONAL MATCH (o)-[:ASSIGNED_TO]->(courier:Courier)")
 
     query = f"""
-    MATCH (o:Order)
-    {courier_match}
-    {where_str}
+    {' '.join(match_parts)}
     WITH o, courier
     OPTIONAL MATCH (o)-[:FROM_HUB]->(fromHub:Hub)
     OPTIONAL MATCH (o)-[:TO_HUB]->(toHub:Hub)
@@ -120,6 +234,25 @@ def get_recent_order_routes(
         conn.close()
 
 
+def list_delivery_days_with_orders(limit: int = 30) -> list[str]:
+    """Return distinct delivery days that have orders, newest first."""
+    conn = AuraConnection()
+
+    query = """
+    MATCH (o:Order)
+    WHERE o.delivery_day IS NOT NULL
+    RETURN DISTINCT o.delivery_day AS delivery_day
+    ORDER BY delivery_day DESC
+    LIMIT $limit
+    """
+
+    try:
+        rows = conn.execute_query(query, {"limit": int(limit)})
+        return [str(row["delivery_day"]) for row in (rows or []) if row.get("delivery_day")]
+    finally:
+        conn.close()
+
+
 def get_orders_for_courier_day(
     courier_id: str,
     city_name: str,
@@ -130,13 +263,14 @@ def get_orders_for_courier_day(
 
     query = """
     MATCH (courier:Courier {courier_id: $courier_id})<-[:ASSIGNED_TO]-(o:Order)
-    WHERE o.city_name = $city_name
-      AND o.delivery_day = $delivery_day
+    WHERE o.delivery_day = $delivery_day
+      AND ($city_name = '' OR o.city_name = $city_name)
     OPTIONAL MATCH (o)-[:FROM_HUB]->(fromHub:Hub)
     OPTIONAL MATCH (o)-[:TO_HUB]->(toHub:Hub)
 
     RETURN
         o.order_id AS order_id,
+        o.route_sequence AS route_sequence,
         o.lat_wgs84 AS lat_wgs84,
         o.lon_wgs84 AS lon_wgs84,
         o.city_name AS city_name,
@@ -161,7 +295,7 @@ def get_orders_for_courier_day(
             query,
             {
                 "courier_id": courier_id,
-                "city_name": city_name,
+                "city_name": city_name or "",
                 "delivery_day": delivery_day,
             },
         )
@@ -226,7 +360,7 @@ def get_saved_courier_route(
     query = """
     MATCH (rp:RoutePrediction)-[:FOR_COURIER]->(courier:Courier {courier_id: $courier_id})
     WHERE rp.route_prediction_id IN $route_prediction_ids
-       OR rp.delivery_day = $delivery_day
+       OR (rp.delivery_day = $delivery_day AND rp.courier_id = $courier_id)
     WITH rp, courier
     ORDER BY rp.updated_at DESC
     LIMIT 1
@@ -242,6 +376,12 @@ def get_saved_courier_route(
             order_id: order.order_id,
             from_hub_name: coalesce(order.from_hub_name, fromHub.name),
             to_hub_name: coalesce(order.to_hub_name, toHub.name),
+            from_lat: fromHub.lat,
+            from_lng: fromHub.lng,
+            to_lat: toHub.lat,
+            to_lng: toHub.lng,
+            lat_wgs84: coalesce(rel.lat_wgs84, order.lat_wgs84),
+            lon_wgs84: coalesce(rel.lon_wgs84, order.lon_wgs84),
             city_name: order.city_name,
             delivery_day: order.delivery_day
          }) AS graph_stops
@@ -272,17 +412,33 @@ def get_saved_courier_route(
             return None
 
         row = rows[0]
+        graph_stops = [
+            s for s in (row.get("graph_stops") or [])
+            if s.get("order_id")
+        ]
         stops_json = row.get("stops_json")
+        display_stops: list[dict] = []
         if stops_json:
             try:
-                stops = json.loads(stops_json)
+                display_stops = json.loads(stops_json)
             except json.JSONDecodeError:
-                stops = []
+                display_stops = []
+
+        if display_stops:
+            geo_by_order = {s["order_id"]: s for s in graph_stops if s.get("order_id")}
+            stops = []
+            for stop in display_stops:
+                merged = dict(stop)
+                geo = geo_by_order.get(stop.get("order_id"), {})
+                for key in (
+                    "from_lat", "from_lng", "to_lat", "to_lng",
+                    "lat_wgs84", "lon_wgs84", "from_hub_name", "to_hub_name",
+                ):
+                    if merged.get(key) in (None, "", 0) and geo.get(key) not in (None, ""):
+                        merged[key] = geo.get(key)
+                stops.append(merged)
         else:
-            stops = [
-                s for s in (row.get("graph_stops") or [])
-                if s.get("order_id")
-            ]
+            stops = graph_stops
 
         if not stops:
             return None
@@ -297,6 +453,24 @@ def get_saved_courier_route(
         if not route_start_time and row.get("updated_at"):
             route_start_time = _format_datetime_value(row["updated_at"])
 
+        courier = None
+        try:
+            from aura_graphdb.aura_courier import get_courier_by_id
+
+            courier = get_courier_by_id(courier_id)
+        except Exception:
+            courier = None
+        courier_start = None
+        if courier:
+            start_lat = courier.get("start_lat_wgs84")
+            start_lng = courier.get("start_lon_wgs84")
+            if start_lat is not None and start_lng is not None:
+                courier_start = {
+                    "lat": float(start_lat),
+                    "lng": float(start_lng),
+                    "name": courier.get("name") or courier_id,
+                }
+
         return {
             "route_prediction_id": row.get("route_prediction_id"),
             "courier_id": courier_id,
@@ -306,6 +480,7 @@ def get_saved_courier_route(
             "stops": stops,
             "total_eta_minutes": float(row["predicted_eta_min"]) if row.get("predicted_eta_min") is not None else None,
             "route_start_time": route_start_time,
+            "courier_start": courier_start,
             "source": "graphdb",
         }
     finally:
