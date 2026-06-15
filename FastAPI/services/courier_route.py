@@ -134,6 +134,8 @@ def predict_courier_route(
             "receipt_lng": prev_poi_lng,
             "poi_lat": float(order["poi_lat"]),
             "poi_lng": float(order["poi_lng"]),
+            "city_name": order.get("city_name", ""),
+            "typecode": order.get("typecode", ""),
         }
 
         try:
