@@ -8,7 +8,9 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from aura_graphdb.aura_connection import AuraConnection
+from aura_graphdb.aura_route_queries import build_route_stops_from_orders, get_orders_for_courier_day
 from rag.aura_graphdb.shared_cypher import PERSIST_ASSIGNED_ROUTE_QUERY
+from rag.aura_graphdb.shared_cypher import DELETE_ROUTE_PREDICTION_QUERY
 from rag.supabase.supabase_notifications import create_notification
 
 DEFAULT_DS = 318
@@ -121,3 +123,108 @@ def persist_ml_courier_route(
 
     finally:
         conn.close()
+
+
+def delete_ml_courier_route(
+    *,
+    courier_id: str,
+    delivery_day: str | None = None,
+    ds: int = DEFAULT_DS,
+) -> dict[str, Any]:
+    """Delete a persisted RoutePrediction for a courier on a delivery day.
+
+    Returns a dict with success/message/deleted_count.
+    """
+    conn = AuraConnection()
+    route_prediction_ids = [f"{courier_id}_{ds}_{delivery_day}", f"{courier_id}_{delivery_day}"]
+    params = {
+        "courier_id": courier_id,
+        "delivery_day": delivery_day,
+        "route_prediction_ids": route_prediction_ids,
+    }
+    try:
+        rows = conn.execute_write(DELETE_ROUTE_PREDICTION_QUERY, params)
+        deleted = 0
+        try:
+            if isinstance(rows, list) and rows:
+                deleted = int(rows[0].get("deleted_count", 0) or 0)
+        except Exception:
+            deleted = 0
+        return {"success": True, "message": "Deleted persisted route prediction.", "deleted_count": deleted}
+    except Exception as exc:
+        return {"success": False, "message": str(exc), "deleted_count": 0}
+    finally:
+        conn.close()
+
+
+def ensure_graph_courier_route(
+    *,
+    courier_id: str,
+    delivery_day: str,
+    city_name: str | None = None,
+    ds: int = DEFAULT_DS,
+) -> dict[str, Any]:
+    """Build a courier route from assigned Aura orders (no ML) and persist it."""
+    from aura_graphdb.aura_courier import get_courier_by_id
+    from aura_graphdb.aura_route_queries import get_saved_courier_route
+
+    saved = get_saved_courier_route(courier_id, delivery_day, ds=ds)
+    if saved and saved.get("stops"):
+        return {"success": True, "source": "graphdb", "route": saved}
+
+    courier = get_courier_by_id(courier_id)
+    if not courier:
+        return {"success": False, "message": f"Courier {courier_id} not found."}
+
+    resolved_city = (city_name or courier.get("city_name") or "").strip()
+    raw_orders = get_orders_for_courier_day(
+        courier_id=courier_id,
+        city_name=resolved_city,
+        delivery_day=delivery_day,
+    )
+    if not raw_orders and resolved_city:
+        raw_orders = get_orders_for_courier_day(
+            courier_id=courier_id,
+            city_name="",
+            delivery_day=delivery_day,
+        )
+
+    if not raw_orders:
+        return {
+            "success": False,
+            "message": f"No orders found for courier {courier_id} on {delivery_day}.",
+        }
+
+    built = build_route_stops_from_orders([dict(o) for o in raw_orders], courier)
+    persist_result = persist_ml_courier_route(
+        courier_id=courier_id,
+        order_ids=built["order_ids"],
+        predicted_sequence=built["predicted_sequence"],
+        stops=built["geo_stops"],
+        display_stops=built["stops"],
+        predicted_eta_min=built["total_eta_minutes"],
+        ds=ds,
+        city_name=resolved_city or built.get("city_name"),
+        delivery_day=delivery_day,
+    )
+    if not persist_result.get("success"):
+        return persist_result
+
+    saved = get_saved_courier_route(courier_id, delivery_day, ds=ds)
+    if saved and saved.get("stops"):
+        return {"success": True, "source": "graphdb", "route": saved}
+
+    return {
+        "success": True,
+        "source": "graph_built",
+        "route": {
+            "courier_id": courier_id,
+            "courier_name": courier.get("name"),
+            "delivery_day": delivery_day,
+            "predicted_sequence": built["predicted_sequence"],
+            "stops": built["stops"],
+            "total_eta_minutes": built["total_eta_minutes"],
+            "route_start_time": datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%d %H:%M:%S"),
+            "source": "graph_built",
+        },
+    }

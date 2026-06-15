@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 
 from aura_graphdb.aura_courier import get_courier_by_id
-from aura_graphdb.aura_route_prediction import persist_ml_courier_route
+from aura_graphdb.aura_route_prediction import ensure_graph_courier_route, persist_ml_courier_route
 from aura_graphdb.aura_route_queries import get_orders_for_courier_day, get_saved_courier_route
 from ml_services.route_prediction.full_pipeline.coordinates import enrich_order_dict
 from services.eta_prediction import predict_eta
@@ -53,6 +53,122 @@ def _mercator_from_wgs84(lat_wgs84: float, lon_wgs84: float) -> tuple[float, flo
     return float(enriched["poi_lat"]), float(enriched["poi_lng"])
 
 
+def _float_or_none(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _stop_point(stop: dict[str, Any], prefix: str) -> list[float] | None:
+    lat = _float_or_none(stop.get(f"{prefix}_lat"))
+    lng = _float_or_none(stop.get(f"{prefix}_lng"))
+    if lat is None or lng is None:
+        return None
+    return [lat, lng]
+
+
+def _courier_start_from_record(courier: dict[str, Any] | None, courier_id: str) -> dict[str, Any] | None:
+    if not courier:
+        return None
+    lat = _float_or_none(courier.get("start_lat_wgs84"))
+    lng = _float_or_none(courier.get("start_lon_wgs84"))
+    if lat is None or lng is None:
+        return None
+    return {
+        "lat": lat,
+        "lng": lng,
+        "name": courier.get("name") or courier_id,
+    }
+
+
+def build_route_path(
+    stops: list[dict[str, Any]],
+    courier_start: dict[str, Any] | None = None,
+) -> list[list[float]]:
+    """Build a map polyline from courier start through ordered hub legs."""
+    path: list[list[float]] = []
+    last: list[float] | None = None
+
+    if courier_start and courier_start.get("lat") is not None and courier_start.get("lng") is not None:
+        last = [float(courier_start["lat"]), float(courier_start["lng"])]
+        path.append(last)
+
+    for stop in sorted(stops, key=lambda s: int(s.get("sequence") or 0)):
+        from_pt = _stop_point(stop, "from")
+        to_pt = _stop_point(stop, "to")
+
+        if not from_pt:
+            lat = _float_or_none(stop.get("lat_wgs84"))
+            lng = _float_or_none(stop.get("lon_wgs84"))
+            if lat is not None and lng is not None:
+                from_pt = [lat, lng]
+
+        if not to_pt:
+            to_pt = from_pt
+
+        if from_pt and from_pt != last:
+            path.append(from_pt)
+            last = from_pt
+        if to_pt and to_pt != last:
+            path.append(to_pt)
+            last = to_pt
+
+    return path
+
+
+def enrich_stops_with_geo(stops: list[dict[str, Any]], orders_by_id: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    enriched: list[dict[str, Any]] = []
+    for stop in stops:
+        order = orders_by_id.get(stop.get("order_id", ""), {})
+        merged = dict(stop)
+        merged.setdefault("from_hub_name", order.get("from_hub_name"))
+        merged.setdefault("to_hub_name", order.get("to_hub_name"))
+        merged["from_lat"] = _float_or_none(merged.get("from_lat")) or _float_or_none(order.get("from_lat"))
+        merged["from_lng"] = (
+            _float_or_none(merged.get("from_lng"))
+            or _float_or_none(order.get("from_lon"))
+            or _float_or_none(order.get("from_lng"))
+        )
+        merged["to_lat"] = _float_or_none(merged.get("to_lat")) or _float_or_none(order.get("to_lat"))
+        merged["to_lng"] = (
+            _float_or_none(merged.get("to_lng"))
+            or _float_or_none(order.get("to_lon"))
+            or _float_or_none(order.get("to_lng"))
+        )
+        merged["lat_wgs84"] = _float_or_none(merged.get("lat_wgs84")) or _float_or_none(order.get("lat_wgs84"))
+        merged["lon_wgs84"] = _float_or_none(merged.get("lon_wgs84")) or _float_or_none(order.get("lon_wgs84"))
+        enriched.append(merged)
+    return enriched
+
+
+def attach_map_geometry(
+    payload: dict[str, Any],
+    *,
+    courier: dict[str, Any] | None = None,
+    orders_by_id: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Add courier_start and path arrays for frontend map rendering."""
+    courier_id = payload.get("courier_id", "")
+    stops = list(payload.get("stops") or [])
+    if orders_by_id:
+        stops = enrich_stops_with_geo(stops, orders_by_id)
+
+    courier_start = payload.get("courier_start")
+    if not courier_start:
+        if courier is None:
+            courier = get_courier_by_id(courier_id)
+        courier_start = _courier_start_from_record(courier, courier_id)
+
+    path = build_route_path(stops, courier_start)
+    payload["stops"] = stops
+    payload["courier_start"] = courier_start
+    payload["path"] = path
+    return payload
+
+
 def _format_saved_route(saved: dict[str, Any]) -> dict[str, Any]:
     """Normalize a GraphDB RoutePrediction into the API response shape."""
     stops = saved.get("stops") or []
@@ -64,7 +180,7 @@ def _format_saved_route(saved: dict[str, Any]) -> dict[str, Any]:
     if not route_start_time:
         route_start_time = datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%d %H:%M:%S")
 
-    return {
+    payload = {
         "success": True,
         "courier_id": saved["courier_id"],
         "courier_name": saved.get("courier_name"),
@@ -73,18 +189,47 @@ def _format_saved_route(saved: dict[str, Any]) -> dict[str, Any]:
         "predicted_sequence": saved.get("predicted_sequence") or [],
         "stops": stops,
         "total_eta_minutes": total_eta,
-        "source": "graphdb",
+        "source": saved.get("source", "graphdb"),
+        "courier_start": saved.get("courier_start"),
     }
+    return attach_map_geometry(payload)
 
 
 def predict_courier_route(
     courier_id: str,
     delivery_day: str,
 ) -> dict[str, Any]:
-    """Return saved route from GraphDB, or predict + persist if none exists."""
+    """Return saved route from GraphDB, build from orders, or predict via ML."""
     saved = get_saved_courier_route(courier_id, delivery_day, ds=ML_DEFAULT_DS)
     if saved and saved.get("stops"):
         return _format_saved_route(saved)
+
+    graph_result = ensure_graph_courier_route(
+        courier_id=courier_id,
+        delivery_day=delivery_day,
+        ds=ML_DEFAULT_DS,
+    )
+    if graph_result.get("success") and graph_result.get("route"):
+        route = graph_result["route"]
+        if route.get("stops"):
+            if graph_result.get("source") == "graphdb":
+                return _format_saved_route(route)
+            payload = {
+                "success": True,
+                "courier_id": courier_id,
+                "courier_name": route.get("courier_name"),
+                "delivery_day": delivery_day,
+                "route_start_time": route.get("route_start_time"),
+                "predicted_sequence": route.get("predicted_sequence") or [],
+                "stops": route.get("stops") or [],
+                "total_eta_minutes": route.get("total_eta_minutes"),
+                "source": route.get("source", "graph_built"),
+            }
+            courier = get_courier_by_id(courier_id)
+            return attach_map_geometry(payload, courier=courier)
+
+    if not graph_result.get("success"):
+        return graph_result
 
     courier = get_courier_by_id(courier_id)
     if not courier:
@@ -103,10 +248,20 @@ def predict_courier_route(
             "message": f"No orders found for courier {courier_id} on {delivery_day}.",
         }
 
+    try:
+        predictor = get_route_predictor()
+    except FileNotFoundError:
+        return {
+            "success": False,
+            "message": (
+                f"No saved route for courier {courier_id} on {delivery_day}, "
+                "and the ML route model is not available."
+            ),
+        }
+
     prepared = [enrich_order_dict(dict(o)) for o in raw_orders]
     orders_by_id = {o["order_id"]: o for o in prepared}
 
-    predictor = get_route_predictor()
     route_df = _orders_to_predictor_df(prepared)
     predicted_sequence = predictor.predict_full_sequence(route_df)
 
@@ -153,6 +308,12 @@ def predict_courier_route(
                 "order_id": order_id,
                 "from_hub_name": order.get("from_hub_name"),
                 "to_hub_name": order.get("to_hub_name"),
+                "from_lat": _float_or_none(order.get("from_lat")),
+                "from_lng": _float_or_none(order.get("from_lon")),
+                "to_lat": _float_or_none(order.get("to_lat")),
+                "to_lng": _float_or_none(order.get("to_lon")),
+                "lat_wgs84": _float_or_none(order.get("lat_wgs84")),
+                "lon_wgs84": _float_or_none(order.get("lon_wgs84")),
                 "city_name": order.get("city_name"),
                 "delivery_day": order.get("delivery_day"),
                 "eta_minutes": round(leg_minutes, 1),
@@ -189,7 +350,7 @@ def predict_courier_route(
     except Exception:
         pass
 
-    return {
+    payload = {
         "success": True,
         "courier_id": courier_id,
         "courier_name": courier.get("name"),
@@ -200,3 +361,4 @@ def predict_courier_route(
         "total_eta_minutes": total_eta,
         "source": "ml_model",
     }
+    return attach_map_geometry(payload, courier=courier, orders_by_id=orders_by_id)

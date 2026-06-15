@@ -21,6 +21,7 @@ import {
   createShipment,
   getShipment,
   listShipments,
+  listDeliveryDays,
   listCouriersWithOrders,
   predictCourierRoute,
   type CourierListItem,
@@ -31,7 +32,6 @@ import {
 import { useAuth } from '@/lib/auth';
 import {
   Plus,
-  MapPin,
   Sparkles,
   ArrowRight,
   Calendar,
@@ -42,6 +42,7 @@ import {
   ShieldCheck,
   Route,
   ChevronDown,
+  MapPin,
 } from 'lucide-react';
 
 const dispatchChecklist = [
@@ -67,6 +68,8 @@ export default function LogisticsDashboard() {
   const isCourier = user?.role === 'courier';
 
   const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
+  const [highlightedOrderId, setHighlightedOrderId] = useState<string | null>(null);
+  const [mapRouteLoading, setMapRouteLoading] = useState(false);
 
   // ── Add-shipment form (managers only) ────────────────────────────────────
   const [showShipmentForm, setShowShipmentForm] = useState(true);
@@ -91,6 +94,8 @@ export default function LogisticsDashboard() {
   const [currentShipments, setCurrentShipments] = useState<ShipmentListItem[]>([]);
   const [shipmentsLoading, setShipmentsLoading] = useState(false);
   const [filterDeliveryDay, setFilterDeliveryDay] = useState(todayISO());
+  const [deliveryDaysLoaded, setDeliveryDaysLoaded] = useState(false);
+  const [mapMessage, setMapMessage] = useState<string | null>(null);
 
   // Manager courier dropdown
   const [couriers, setCouriers] = useState<CourierListItem[]>([]);
@@ -108,9 +113,33 @@ export default function LogisticsDashboard() {
   const [routeLoading, setRouteLoading] = useState(false);
   const [routeError, setRouteError] = useState<string | null>(null);
 
+  useEffect(() => {
+    setRouteResult(null);
+    setHighlightedOrderId(null);
+  }, [selectedCourierId, filterDeliveryDay]);
+
+  // Pick a delivery day that actually has shipments (today if available, else latest).
+  useEffect(() => {
+    if (authLoading || !user) return;
+    void listDeliveryDays()
+      .then((days) => {
+        if (!days.length) return;
+        const today = todayISO();
+        setFilterDeliveryDay((prev) => {
+          if (prev && days.includes(prev)) return prev;
+          if (days.includes(today)) return today;
+          return days[0];
+        });
+      })
+      .catch(() => {
+        // Keep today as fallback.
+      })
+      .finally(() => setDeliveryDaysLoaded(true));
+  }, [authLoading, user]);
+
   // ── Load couriers with orders for the selected delivery day ───────────
   useEffect(() => {
-    if (!isManager) return;
+    if (!isManager || !deliveryDaysLoaded) return;
     const day = filterDeliveryDay || todayISO();
     void listCouriersWithOrders(day)
       .then((rows) => {
@@ -123,11 +152,11 @@ export default function LogisticsDashboard() {
         setCouriers([]);
         setSelectedCourierId('');
       });
-  }, [isManager, filterDeliveryDay]);
+  }, [isManager, filterDeliveryDay, deliveryDaysLoaded]);
 
   // ── Load shipments (role-aware) ───────────────────────────────────────
   const loadShipments = () => {
-    if (authLoading || !user) return;
+    if (authLoading || !user || !deliveryDaysLoaded) return;
     setShipmentsLoading(true);
     void listShipments({
       limit: 50,
@@ -142,7 +171,7 @@ export default function LogisticsDashboard() {
   useEffect(() => {
     loadShipments();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authLoading, user, filterDeliveryDay, selectedCourierId]);
+  }, [authLoading, user, filterDeliveryDay, selectedCourierId, deliveryDaysLoaded]);
 
   const handleRouteSelect = (routeId: string) => {
     setSelectedRouteId((prev) => (prev === routeId ? null : routeId));
@@ -218,19 +247,70 @@ export default function LogisticsDashboard() {
     }
   };
 
-  // ── Predict route ──────────────────────────────────────────────────────
-  const handlePredictRoute = async (courierId: 'me' | string) => {
-    setRouteOpen(true);
-    setRouteLoading(true);
-    setRouteError(null);
-    setRouteResult(null);
+  const loadCourierRoute = async (
+    courierId: 'me' | string,
+    options: { openDialog?: boolean; highlightOrderId?: string | null } = {},
+  ) => {
+    const { openDialog = true, highlightOrderId = null } = options;
+    if (openDialog) {
+      setRouteOpen(true);
+      setRouteLoading(true);
+      setRouteError(null);
+      setRouteResult(null);
+    } else {
+      setMapRouteLoading(true);
+    }
+
     try {
       const result = await predictCourierRoute(courierId, filterDeliveryDay || todayISO());
       setRouteResult(result);
+      setHighlightedOrderId(highlightOrderId);
+      return result;
     } catch (err) {
-      setRouteError(err instanceof Error ? err.message : 'Route prediction failed.');
+      const message = err instanceof Error ? err.message : 'Route prediction failed.';
+      if (openDialog) {
+        setRouteError(message);
+      }
+      throw err;
     } finally {
-      setRouteLoading(false);
+      if (openDialog) {
+        setRouteLoading(false);
+      } else {
+        setMapRouteLoading(false);
+      }
+    }
+  };
+
+  // ── Predict route ──────────────────────────────────────────────────────
+  const handlePredictRoute = async (courierId: 'me' | string) => {
+    await loadCourierRoute(courierId, { openDialog: true });
+  };
+
+  const handleShowShipmentOnMap = async (shipment: ShipmentListItem) => {
+    setMapMessage(null);
+    const courierId = isCourier ? 'me' : shipment.assigned_courier_id;
+    if (!courierId) {
+      setMapMessage('This shipment has no assigned courier yet — assign a courier to show it on the map.');
+      return;
+    }
+
+    const activeCourierId =
+      courierId === 'me' ? user?.courier_id ?? 'me' : courierId;
+
+    if (!routeResult || routeResult.courier_id !== activeCourierId) {
+      try {
+        await loadCourierRoute(courierId, {
+          openDialog: false,
+          highlightOrderId: shipment.order_id,
+        });
+      } catch (err) {
+        setMapMessage(
+          err instanceof Error ? err.message : 'Could not load courier route for this shipment.',
+        );
+        setHighlightedOrderId(shipment.order_id);
+      }
+    } else {
+      setHighlightedOrderId(shipment.order_id);
     }
   };
 
@@ -302,7 +382,15 @@ export default function LogisticsDashboard() {
         )}
         {!shipmentsLoading &&
           currentShipments.map((shipment) => (
-            <div key={shipment.order_id} className="rounded-2xl border border-border bg-slate-50 p-4">
+            <div
+              key={shipment.order_id}
+              className={cn(
+                'rounded-2xl border p-4 transition-all duration-200',
+                highlightedOrderId === shipment.order_id
+                  ? 'border-amber-300 bg-gradient-to-br from-amber-50/80 to-sky-50/50 shadow-md shadow-amber-100/60 ring-2 ring-amber-200/80'
+                  : 'border-border bg-slate-50/80 hover:border-sky-200 hover:shadow-sm',
+              )}
+            >
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-sm font-semibold">{shipment.order_id}</p>
@@ -315,20 +403,30 @@ export default function LogisticsDashboard() {
                 </span>
               </div>
 
-              <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
+              <div className="mt-4 flex items-center justify-between gap-2 text-xs text-muted-foreground">
                 <span>
                   Courier:{' '}
                   {shipment.assigned_courier_name ?? shipment.assigned_courier_id ?? 'Unassigned'}
                 </span>
-                {isManager && (
+                <div className="flex items-center gap-3">
                   <button
                     type="button"
-                    onClick={() => void handleViewDetails(shipment.order_id)}
-                    className="font-medium text-slate-900 hover:underline"
+                    onClick={() => void handleShowShipmentOnMap(shipment)}
+                    className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-700 transition-colors hover:bg-sky-100"
                   >
-                    View details
+                    <MapPin className="h-3 w-3" />
+                    Show on map
                   </button>
-                )}
+                  {isManager && (
+                    <button
+                      type="button"
+                      onClick={() => void handleViewDetails(shipment.order_id)}
+                      className="font-medium text-slate-900 hover:underline"
+                    >
+                      View details
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           ))}
@@ -611,8 +709,31 @@ export default function LogisticsDashboard() {
               ))}
             </div>
 
-            <div className="relative z-0 isolate mt-4 min-h-0 flex-1 overflow-hidden rounded-xl border border-border bg-white">
-              <RouteMap selectedRouteId={selectedRouteId} onRouteSelect={handleRouteSelect} />
+            <div className="relative z-0 isolate mt-4 min-h-0 flex-1 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-inner shadow-slate-100">
+              {mapMessage && (
+                <div className="absolute inset-x-3 top-3 z-[30] flex justify-center">
+                  <span className="inline-flex max-w-md items-center gap-2 rounded-xl border border-amber-200 bg-amber-50/95 px-3 py-2 text-xs font-medium text-amber-900 shadow-sm">
+                    <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                    {mapMessage}
+                  </span>
+                </div>
+              )}
+              {mapRouteLoading && (
+                <div className="absolute inset-x-0 top-3 z-[30] flex justify-center">
+                  <span className="inline-flex items-center gap-2 rounded-full border border-sky-200/80 bg-white/95 px-4 py-2 text-xs font-medium text-sky-800 shadow-lg shadow-sky-100/50 backdrop-blur-sm">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-sky-600" />
+                    Plotting courier route…
+                  </span>
+                </div>
+              )}
+              <RouteMap
+                selectedRouteId={selectedRouteId}
+                onRouteSelect={handleRouteSelect}
+                activeCourierRoute={routeResult}
+                highlightedOrderId={highlightedOrderId}
+                onStopSelect={setHighlightedOrderId}
+                showDemoRoutes={!routeResult}
+              />
             </div>
           </section>
 

@@ -7,6 +7,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from aura_graphdb.aura_order import create_order_and_assign_nearest_courier
+from rag.aura_graphdb.aura_route_prediction import delete_ml_courier_route
 
 
 def _resolve_receipt_time(delivery_date: str, receipt_time: str | None) -> str:
@@ -48,6 +49,18 @@ def create_shipment(payload: dict[str, Any]) -> dict[str, Any]:
         }
 
     order = _sanitize_record(order_result["order"])
+
+    # Invalidate any persisted route prediction for the assigned courier/day
+    try:
+        assigned_cid = order.get("assigned_courier_id")
+        if assigned_cid and order.get("delivery_day"):
+            try:
+                delete_ml_courier_route(courier_id=assigned_cid, delivery_day=order.get("delivery_day"))
+            except Exception:
+                # best-effort invalidation; don't block order creation
+                pass
+    except Exception:
+        pass
 
     return {
         "success": True,
