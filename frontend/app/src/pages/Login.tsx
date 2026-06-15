@@ -35,7 +35,13 @@ const defaultConfig = roleConfig.inventory;
 export default function Login() {
   const navigate = useNavigate();
   const { role } = useParams<{ role?: string }>();
-  const { login, googleLogin } = useAuth();
+  const { login, googleLogin, user, loading } = useAuth();
+
+  useEffect(() => {
+    if (!loading && user) {
+      navigate(ROLE_HOME[user.role], { replace: true });
+    }
+  }, [loading, user, navigate]);
 
   const config = useMemo(
     () => (role && roleConfig[role] ? roleConfig[role] : defaultConfig),

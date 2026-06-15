@@ -25,6 +25,7 @@ import { Button } from '@/components/ui/button';
 import { motion, AnimatePresence } from 'framer-motion';
 import { locations, routes, statsCards, aiInsights } from '@/data/mockData';
 import { predictCourierRoute, type CourierRouteResult } from '@/lib/api';
+import { fetchRoadLegs, fetchRoadRoute } from '@/lib/roadRouting';
 import type { Route } from '@/data/mockData';
 
 import icon from 'leaflet/dist/images/marker-icon.png';
@@ -201,12 +202,81 @@ export default function RouteMap({
       .filter((leg) => leg.points.length >= 2);
   }, [activeCourierRoute]);
 
+  const [mlRoute, setMlRoute] = useState<CourierRouteResult | null>(null);
+  const [roadLegPaths, setRoadLegPaths] = useState<Record<string, [number, number][]>>({});
+  const [roadLivePath, setRoadLivePath] = useState<[number, number][]>([]);
+  const [roadRouting, setRoadRouting] = useState(false);
+
+  const displayLegPoints = useCallback(
+    (orderId: string, fallback: [number, number][]) =>
+      roadLegPaths[orderId]?.length ? roadLegPaths[orderId] : fallback,
+    [roadLegPaths],
+  );
+
+  const displayLivePath = useMemo(
+    () => (roadLivePath.length >= 2 ? roadLivePath : livePath),
+    [roadLivePath, livePath],
+  );
+
+  const displayHighlightLeg = useMemo(() => {
+    if (!highlightedOrderId) return highlightLeg;
+    const detailed = roadLegPaths[highlightedOrderId];
+    return detailed?.length ? detailed : highlightLeg;
+  }, [highlightedOrderId, highlightLeg, roadLegPaths]);
+
   const fitPoints = useMemo<[number, number][]>(() => {
-    if (highlightLeg.length >= 2) return highlightLeg;
-    if (livePath.length) return livePath;
+    if (displayHighlightLeg.length >= 2) return displayHighlightLeg;
+    if (displayLivePath.length) return displayLivePath;
     if (!demoMode) return [];
     return locations.map((l) => [l.lat, l.lng] as [number, number]);
-  }, [highlightLeg, livePath, demoMode]);
+  }, [displayHighlightLeg, displayLivePath, demoMode]);
+
+  useEffect(() => {
+    if (!activeCourierRoute) {
+      setRoadLegPaths({});
+      setRoadLivePath([]);
+      setRoadRouting(false);
+      return;
+    }
+
+    let cancelled = false;
+    setRoadRouting(true);
+
+    void (async () => {
+      try {
+        if (routeLegs.length > 0) {
+          const result = await fetchRoadLegs(routeLegs, livePath);
+          if (!cancelled) {
+            setRoadLegPaths(result.legs);
+            setRoadLivePath(result.fullPath);
+          }
+          return;
+        }
+
+        if (livePath.length >= 2) {
+          const detailed = await fetchRoadRoute(livePath);
+          if (!cancelled) {
+            setRoadLegPaths({});
+            setRoadLivePath(detailed);
+          }
+          return;
+        }
+
+        if (!cancelled) {
+          setRoadLegPaths({});
+          setRoadLivePath([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setRoadRouting(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeCourierRoute, routeLegs, livePath]);
 
   const visibleStats = useMemo(
     () => statsCards.filter((stat) => stat.label !== 'Avg ETA' && stat.label !== 'Fuel Efficiency'),
@@ -244,8 +314,6 @@ export default function RouteMap({
     }
     return result;
   }, [showDelays]);
-
-  const [mlRoute, setMlRoute] = useState<CourierRouteResult | null>(null);
 
   const handlePredictRoute = async (route: Route) => {
     onRouteSelect?.(route.id);
@@ -335,10 +403,11 @@ export default function RouteMap({
             {routeLegs.map((leg) => {
               const isHighlighted = leg.orderId === highlightedOrderId;
               const dimmed = Boolean(highlightedOrderId) && !isHighlighted;
+              const positions = displayLegPoints(leg.orderId, leg.points);
               return (
                 <Polyline
                   key={`leg-shadow-${leg.orderId}`}
-                  positions={leg.points}
+                  positions={positions}
                   pathOptions={{
                     color: '#ffffff',
                     weight: isHighlighted ? 12 : 8,
@@ -352,10 +421,11 @@ export default function RouteMap({
             {routeLegs.map((leg) => {
               const isHighlighted = leg.orderId === highlightedOrderId;
               const dimmed = Boolean(highlightedOrderId) && !isHighlighted;
+              const positions = displayLegPoints(leg.orderId, leg.points);
               return (
                 <Polyline
                   key={`leg-${leg.orderId}`}
-                  positions={leg.points}
+                  positions={positions}
                   pathOptions={{
                     color: isHighlighted ? '#f59e0b' : '#0ea5e9',
                     weight: isHighlighted ? 7 : 5,
@@ -371,10 +441,10 @@ export default function RouteMap({
           </>
         )}
 
-        {activeCourierRoute && routeLegs.length === 0 && livePath.length > 1 && (
+        {activeCourierRoute && routeLegs.length === 0 && displayLivePath.length > 1 && (
           <>
             <Polyline
-              positions={livePath}
+              positions={displayLivePath}
               pathOptions={{
                 color: '#ffffff',
                 weight: 10,
@@ -384,7 +454,7 @@ export default function RouteMap({
               }}
             />
             <Polyline
-              positions={livePath}
+              positions={displayLivePath}
               pathOptions={{
                 color: '#0ea5e9',
                 weight: 6,
@@ -496,11 +566,26 @@ export default function RouteMap({
                 className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${
                   activeCourierRoute.source === 'graphdb'
                     ? 'bg-emerald-50 text-emerald-700'
-                    : 'bg-amber-50 text-amber-700'
+                    : activeCourierRoute.source === 'graph_built'
+                      ? 'bg-teal-50 text-teal-700'
+                      : 'bg-amber-50 text-amber-700'
                 }`}
               >
-                {activeCourierRoute.source === 'graphdb' ? 'Aura route' : 'ML predicted'}
+                {activeCourierRoute.source === 'graphdb'
+                  ? 'Aura route'
+                  : activeCourierRoute.source === 'graph_built'
+                    ? 'Graph route'
+                    : 'ML predicted'}
               </span>
+              {roadRouting ? (
+                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-600">
+                  Snapping to roads…
+                </span>
+              ) : (
+                <span className="rounded-full bg-indigo-50 px-2.5 py-1 text-[10px] font-semibold text-indigo-700">
+                  Road path
+                </span>
+              )}
             </div>
 
             <div className="mt-3 flex items-center gap-1">
@@ -539,8 +624,8 @@ export default function RouteMap({
           <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Map legend</p>
           <div className="mt-2 space-y-1.5">
             <div className="flex items-center gap-2">
-              <span className="h-1 w-5 rounded-full bg-sky-500" />
-              <span className="text-[10px] text-slate-600">Route leg</span>
+              <span className="h-1 w-5 rounded-full bg-sky-500" style={{ borderRadius: 9999 }} />
+              <span className="text-[10px] text-slate-600">Road-following route</span>
             </div>
             <div className="flex items-center gap-2">
               <span className="h-1 w-5 rounded-full bg-amber-500" />

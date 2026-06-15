@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, useCallback, type React
 import {
   ApiError,
   getApiBase,
+  getAccessToken,
   setAccessToken,
   fetchCurrentUser,
   updateCurrentUser,
@@ -62,6 +63,19 @@ function toAuthUser(user: AuthUserResponse): AuthUser {
   };
 }
 
+function readStoredUser(): AuthUser | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as AuthUser;
+    const role = normalizeRole(parsed.role);
+    if (!role || !parsed.email) return null;
+    return { ...parsed, role };
+  } catch {
+    return null;
+  }
+}
+
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -85,8 +99,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAccessToken(null);
   }, []);
 
-  /* ✅ Silent refresh (OAuth session restore) */
-  const performSilentRefresh = useCallback(async () => {
+  /* Restore session from refresh cookie (OAuth / cookie-based sessions). */
+  const performSilentRefresh = useCallback(async (): Promise<boolean> => {
     try {
       const res = await fetch(`${getApiBase()}/api/refresh`, {
         method: 'POST',
@@ -106,26 +120,58 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.error('Silent refresh failed:', err);
     }
 
-    clearSession();
     return false;
-  }, [persistSession, clearSession]);
+  }, [persistSession]);
 
-  /* ✅ App init */
+  const restoreSessionFromToken = useCallback(async (): Promise<boolean> => {
+    const token = getAccessToken();
+    if (!token) return false;
+
+    const cached = readStoredUser();
+    if (cached) {
+      setUser(cached);
+    }
+
+    try {
+      const userData = await fetchCurrentUser();
+      persistSession(toAuthUser(userData));
+      return true;
+    } catch {
+      return false;
+    }
+  }, [persistSession]);
+
+  /* App init: JWT in localStorage first, then cookie refresh fallback. */
   useEffect(() => {
     let active = true;
 
     const initAuth = async () => {
       setLoading(true);
-      await performSilentRefresh();
-      if (active) setLoading(false);
+
+      const restoredFromToken = await restoreSessionFromToken();
+      if (!active) return;
+
+      if (restoredFromToken) {
+        setLoading(false);
+        return;
+      }
+
+      const refreshed = await performSilentRefresh();
+      if (!active) return;
+
+      if (!refreshed) {
+        clearSession();
+      }
+
+      setLoading(false);
     };
 
-    initAuth();
+    void initAuth();
 
     return () => {
       active = false;
     };
-  }, [performSilentRefresh]);
+  }, [restoreSessionFromToken, performSilentRefresh, clearSession]);
 
   /* ✅ Auto refresh every 14 mins */
   useEffect(() => {
@@ -213,23 +259,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refreshUser = useCallback(async () => {
     try {
       const userData = await fetchCurrentUser();
-      setUser(toAuthUser(userData));
+      persistSession(toAuthUser(userData));
     } catch {
       // ignore
     }
-  }, []);
+  }, [persistSession]);
 
   const updateProfile = useCallback(async (payload: { name: string }) => {
     try {
       const userData = await updateCurrentUser(payload);
-      setUser(toAuthUser(userData));
+      persistSession(toAuthUser(userData));
 
       return { success: true };
     } catch (error) {
       const message = error instanceof ApiError ? error.message : 'Profile update failed.';
       return { success: false, message };
     }
-  }, []);
+  }, [persistSession]);
 
   return (
     <AuthContext.Provider value={{ user, loading, login, googleLogin, logout, refreshUser, updateProfile }}>
