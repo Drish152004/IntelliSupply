@@ -7,17 +7,49 @@ import {
   UserCircle2,
   LogOut,
   UserPlus,
+  Brain,
 } from 'lucide-react';
 import { useAuth, type AppRole } from '@/lib/auth';
 
 // ─── Nav items per role ───────────────────────────────────────────────────────
 
 const ALL_NAV_ITEMS = [
-  { label: 'Dashboard', to: '/admin/dashboard', icon: LayoutDashboard, roles: ['admin'] as AppRole[] },
-  { label: 'Logistics', to: '/logistics', icon: Package, roles: ['admin', 'logistics_manager', 'courier'] as AppRole[] },
-  { label: 'Inventory', to: '/inventory', icon: Package2, roles: ['admin', 'inventory_manager'] as AppRole[] },
-  { label: 'Add Users', to: '/admin/users', icon: UserPlus, roles: ['admin'] as AppRole[] },
-  { label: 'Notifications', to: '/notifications', icon: Bell, roles: ['admin', 'logistics_manager', 'inventory_manager'] as AppRole[] },
+  {
+    label: 'Dashboard',
+    to: '/admin/dashboard',
+    icon: LayoutDashboard,
+    roles: ['admin'] as AppRole[],
+  },
+  {
+    label: 'Logistics',
+    to: '/logistics',
+    icon: Package,
+    roles: ['admin', 'logistics_manager', 'courier'] as AppRole[],
+  },
+  {
+    label: 'Inventory',
+    to: '/inventory',
+    icon: Package2,
+    roles: ['admin', 'inventory_manager'] as AppRole[],
+  },
+  {
+    label: 'Planning',
+    to: '/planning',
+    icon: Brain,
+    roles: ['admin', 'inventory_manager'] as AppRole[],
+  },
+  {
+    label: 'Add Users',
+    to: '/admin/users',
+    icon: UserPlus,
+    roles: ['admin'] as AppRole[],
+  },
+  {
+    label: 'Notifications',
+    to: '/notifications',
+    icon: Bell,
+    roles: ['admin', 'logistics_manager', 'inventory_manager'] as AppRole[],
+  },
 ];
 
 const ROLE_LABELS: Record<AppRole, string> = {
@@ -58,22 +90,24 @@ export default function Navbar() {
                 {ROLE_LABELS[user.role]}
               </span>
             )}
+
             <span className="rounded-full border border-border bg-slate-100 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-700">
               V2.1
             </span>
+
             <NavLink
               to="/profile"
               className={({ isActive }) =>
-                `inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.22em] transition ${
-                  isActive
-                    ? 'bg-slate-950 text-white'
-                    : 'bg-slate-900 text-white hover:bg-slate-800'
+                `inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.22em] transition ${isActive
+                  ? 'bg-slate-950 text-white'
+                  : 'bg-slate-900 text-white hover:bg-slate-800'
                 }`
               }
             >
               <UserCircle2 className="h-3.5 w-3.5" />
               {user ? user.name.split(' ')[0] : 'Profile'}
             </NavLink>
+
             {user && (
               <button
                 onClick={handleLogout}
@@ -89,15 +123,15 @@ export default function Navbar() {
         <nav className="flex w-full flex-wrap items-center gap-1.5 overflow-x-auto pb-0.5">
           {navItems.map((item) => {
             const Icon = item.icon;
+
             return (
               <NavLink
                 key={item.to}
                 to={item.to}
                 className={({ isActive }) =>
-                  `inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium transition whitespace-nowrap ${
-                    isActive
-                      ? 'bg-slate-950 text-white shadow-sm'
-                      : 'text-slate-700 hover:bg-slate-100 hover:text-slate-950'
+                  `inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium transition whitespace-nowrap ${isActive
+                    ? 'bg-slate-950 text-white shadow-sm'
+                    : 'text-slate-700 hover:bg-slate-100 hover:text-slate-950'
                   }`
                 }
               >

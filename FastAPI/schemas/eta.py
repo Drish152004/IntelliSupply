@@ -12,3 +12,5 @@ class ETARequest(BaseModel):
     receipt_lng: float
     poi_lat: float
     poi_lng: float
+    city_name: str | None = ""
+    typecode: str | None = ""
