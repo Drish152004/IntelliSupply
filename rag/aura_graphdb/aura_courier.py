@@ -95,7 +95,79 @@ def get_courier_by_id(courier_id: str) -> dict[str, Any] | None:
     finally:
         conn.close()
 
+def resolve_courier(
+    *,
+    courier_id: str | None = None,
+    courier_name: str | None = None,
+    email: str | None = None,
+) -> dict[str, Any] | None:
+    """
+    Resolve courier by courier_id, courier name, or email.
 
+    Examples:
+    - resolve_courier(courier_id="5cd356...")
+    - resolve_courier(courier_name="Courier 4")
+    - resolve_courier(courier_name="Aarushi")
+    - resolve_courier(email="courier@example.com")
+    """
+    clean_id = (courier_id or "").strip()
+    clean_name = (courier_name or "").strip()
+    clean_email = (email or "").lower().strip()
+
+    conn = AuraConnection()
+
+    query = """
+    MATCH (c:Courier)
+    OPTIONAL MATCH (c)-[:HAS_ROLE]->(r:Role)
+    OPTIONAL MATCH (c)-[:OPERATES_IN]->(city:City)
+    OPTIONAL MATCH (c)-[:ASSIGNED_TO_HUB]->(hub:Hub)
+    OPTIONAL MATCH (c)-[:LINKED_TO_PROFILE]->(p:Profile)
+
+    WHERE
+        ($courier_id <> '' AND c.courier_id = $courier_id)
+        OR ($email <> '' AND toLower(c.email) = toLower($email))
+        OR ($courier_name <> '' AND toLower(c.name) = toLower($courier_name))
+        OR ($courier_name <> '' AND toLower(c.name) CONTAINS toLower($courier_name))
+
+    RETURN
+        c.courier_id AS courier_id,
+        c.profile_id AS profile_id,
+        p.id AS linked_profile_id,
+        c.name AS name,
+        c.email AS email,
+        c.ds AS ds,
+        c.start_lat_wgs84 AS start_lat_wgs84,
+        c.start_lon_wgs84 AS start_lon_wgs84,
+        coalesce(city.city_id, c.city_id) AS city_id,
+        coalesce(city.city_name, c.city_name) AS city_name,
+        coalesce(hub.hub_id, c.hub_id) AS hub_id,
+        coalesce(hub.name, c.hub_name) AS hub_name,
+        r.role_id AS role_id,
+        r.role_name AS role,
+        c.is_active AS is_active
+    ORDER BY
+        CASE
+            WHEN $courier_id <> '' AND c.courier_id = $courier_id THEN 0
+            WHEN $email <> '' AND toLower(c.email) = toLower($email) THEN 1
+            WHEN $courier_name <> '' AND toLower(c.name) = toLower($courier_name) THEN 2
+            ELSE 3
+        END,
+        c.name
+    LIMIT 1
+    """
+
+    try:
+        rows = conn.execute_query(
+            query,
+            {
+                "courier_id": clean_id,
+                "courier_name": clean_name,
+                "email": clean_email,
+            },
+        )
+        return rows[0] if rows else None
+    finally:
+        conn.close()
 def create_courier_node(
     *,
     name: str,

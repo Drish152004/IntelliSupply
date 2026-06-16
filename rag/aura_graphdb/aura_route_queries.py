@@ -3,7 +3,8 @@ import math
 from typing import Any
 
 from aura_graphdb.aura_connection import AuraConnection
-
+from aura_graphdb.aura_courier import resolve_courier
+from aura_graphdb.aura_hubs import resolve_hub
 
 def _float_or_none(value: Any) -> float | None:
     if value is None or value == "":
@@ -39,7 +40,55 @@ def _estimate_leg_minutes(order: dict[str, Any], default_minutes: float = 20.0) 
     km = _haversine_km(from_lat, from_lon, to_lat, to_lon)
     return max(default_minutes, round(km * 3.0, 1))
 
+def get_orders_for_courier_name_day(
+    courier_name: str,
+    delivery_day: str,
+) -> dict:
+    courier = resolve_courier(courier_name=courier_name)
 
+    if not courier:
+        return {
+            "success": False,
+            "message": f"No courier found with name {courier_name}.",
+            "courier": None,
+            "orders": [],
+        }
+
+    orders = get_orders_for_courier_day(
+        courier_id=courier["courier_id"],
+        city_name=courier.get("city_name") or "",
+        delivery_day=delivery_day,
+    )
+
+    return {
+        "success": True,
+        "courier": courier,
+        "orders": orders,
+    }
+def resolve_route_hubs(
+    from_hub_name: str,
+    to_hub_name: str,
+) -> dict:
+    from_hub = resolve_hub(hub_name=from_hub_name)
+    to_hub = resolve_hub(hub_name=to_hub_name)
+
+    if not from_hub:
+        return {
+            "success": False,
+            "message": f"From hub not found: {from_hub_name}",
+        }
+
+    if not to_hub:
+        return {
+            "success": False,
+            "message": f"To hub not found: {to_hub_name}",
+        }
+
+    return {
+        "success": True,
+        "from_hub": from_hub,
+        "to_hub": to_hub,
+    }
 def build_route_stops_from_orders(
     orders: list[dict[str, Any]],
     courier: dict[str, Any] | None = None,
@@ -486,55 +535,3 @@ def get_saved_courier_route(
     finally:
         conn.close()
 
-
-def answer_route_question(question: str):
-    """
-    Simple chatbot helper for route/order questions.
-    Later this can be replaced with LLM-to-Cypher.
-    """
-    q = question.lower()
-    words = question.replace("?", "").replace(",", "").split()
-
-    order_id = None
-    for word in words:
-        if word.startswith("ord-"):
-            order_id = word
-            break
-
-    if order_id:
-        route = get_order_route(order_id)
-
-        if not route:
-            return {
-                "success": False,
-                "answer": f"No route found for order {order_id}.",
-                "data": None,
-            }
-
-        answer = (
-            f"Order {route['order_id']} goes from {route['from_hub_name']} "
-            f"to {route['to_hub_name']} in {route['city_name']}. "
-            f"It is assigned to courier {route['assigned_courier_name']} "
-            f"({route['assigned_courier_id']})."
-        )
-
-        return {
-            "success": True,
-            "answer": answer,
-            "data": route,
-        }
-
-    if "recent" in q or "latest" in q or "all orders" in q:
-        routes = get_recent_order_routes(limit=10)
-
-        return {
-            "success": True,
-            "answer": f"Found {len(routes)} recent order routes.",
-            "data": routes,
-        }
-
-    return {
-        "success": False,
-        "answer": "Please provide an order ID, for example: show route for order ord-xxxx.",
-        "data": None,
-    }
