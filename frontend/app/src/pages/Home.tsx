@@ -23,9 +23,11 @@ import {
   listShipments,
   listDeliveryDays,
   listCouriersWithOrders,
+  listHubLocations,
   predictCourierRoute,
   type CourierListItem,
   type CourierRouteResult,
+  type HubMapLocation,
   type OrderDetail,
   type ShipmentListItem,
 } from '@/lib/api';
@@ -43,6 +45,8 @@ import {
   Route,
   ChevronDown,
   MapPin,
+  List,
+  Search,
 } from 'lucide-react';
 
 const dispatchChecklist = [
@@ -113,10 +117,25 @@ export default function LogisticsDashboard() {
   const [routeLoading, setRouteLoading] = useState(false);
   const [routeError, setRouteError] = useState<string | null>(null);
 
+  // ── Hub map + all shipments ────────────────────────────────────────────
+  const [hubLocations, setHubLocations] = useState<HubMapLocation[]>([]);
+  const [allShipmentsOpen, setAllShipmentsOpen] = useState(false);
+  const [allShipments, setAllShipments] = useState<ShipmentListItem[]>([]);
+  const [allShipmentsLoading, setAllShipmentsLoading] = useState(false);
+  const [allShipmentsSearch, setAllShipmentsSearch] = useState('');
+  const [showAllDates, setShowAllDates] = useState(false);
+
   useEffect(() => {
     setRouteResult(null);
     setHighlightedOrderId(null);
-  }, [selectedCourierId, filterDeliveryDay]);
+  }, [selectedCourierId, filterDeliveryDay, showAllDates]);
+
+  useEffect(() => {
+    if (authLoading || !user) return;
+    void listHubLocations()
+      .then(setHubLocations)
+      .catch(() => setHubLocations([]));
+  }, [authLoading, user]);
 
   // Pick a delivery day that actually has shipments (today if available, else latest).
   useEffect(() => {
@@ -139,7 +158,7 @@ export default function LogisticsDashboard() {
 
   // ── Load couriers with orders for the selected delivery day ───────────
   useEffect(() => {
-    if (!isManager || !deliveryDaysLoaded) return;
+    if (!isManager || !deliveryDaysLoaded || showAllDates) return;
     const day = filterDeliveryDay || todayISO();
     void listCouriersWithOrders(day)
       .then((rows) => {
@@ -152,16 +171,43 @@ export default function LogisticsDashboard() {
         setCouriers([]);
         setSelectedCourierId('');
       });
-  }, [isManager, filterDeliveryDay, deliveryDaysLoaded]);
+  }, [isManager, filterDeliveryDay, deliveryDaysLoaded, showAllDates]);
+
+  const loadAllShipments = () => {
+    setAllShipmentsLoading(true);
+    void listShipments({ limit: 200 })
+      .then(setAllShipments)
+      .catch(() => setAllShipments([]))
+      .finally(() => setAllShipmentsLoading(false));
+  };
+
+  const openAllShipmentsDialog = () => {
+    setAllShipmentsOpen(true);
+    setAllShipmentsSearch('');
+    loadAllShipments();
+  };
+
+  const filteredAllShipments = allShipments.filter((shipment) => {
+    if (!allShipmentsSearch.trim()) return true;
+    const q = allShipmentsSearch.trim().toLowerCase();
+    return (
+      shipment.order_id.toLowerCase().includes(q) ||
+      (shipment.from_hub_name ?? '').toLowerCase().includes(q) ||
+      (shipment.to_hub_name ?? '').toLowerCase().includes(q) ||
+      (shipment.city_name ?? '').toLowerCase().includes(q) ||
+      (shipment.assigned_courier_name ?? '').toLowerCase().includes(q) ||
+      (shipment.delivery_day ?? '').includes(q)
+    );
+  });
 
   // ── Load shipments (role-aware) ───────────────────────────────────────
   const loadShipments = () => {
     if (authLoading || !user || !deliveryDaysLoaded) return;
     setShipmentsLoading(true);
     void listShipments({
-      limit: 50,
+      limit: showAllDates ? 200 : 50,
       courierId: isManager && selectedCourierId ? selectedCourierId : undefined,
-      deliveryDay: filterDeliveryDay || undefined,
+      deliveryDay: showAllDates ? undefined : filterDeliveryDay || undefined,
     })
       .then(setCurrentShipments)
       .catch(() => setCurrentShipments([]))
@@ -171,7 +217,7 @@ export default function LogisticsDashboard() {
   useEffect(() => {
     loadShipments();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authLoading, user, filterDeliveryDay, selectedCourierId, deliveryDaysLoaded]);
+  }, [authLoading, user, filterDeliveryDay, selectedCourierId, deliveryDaysLoaded, showAllDates]);
 
   const handleRouteSelect = (routeId: string) => {
     setSelectedRouteId((prev) => (prev === routeId ? null : routeId));
@@ -249,9 +295,17 @@ export default function LogisticsDashboard() {
 
   const loadCourierRoute = async (
     courierId: 'me' | string,
-    options: { openDialog?: boolean; highlightOrderId?: string | null } = {},
+    options: {
+      openDialog?: boolean;
+      highlightOrderId?: string | null;
+      deliveryDay?: string;
+    } = {},
   ) => {
-    const { openDialog = true, highlightOrderId = null } = options;
+    const {
+      openDialog = true,
+      highlightOrderId = null,
+      deliveryDay = filterDeliveryDay || todayISO(),
+    } = options;
     if (openDialog) {
       setRouteOpen(true);
       setRouteLoading(true);
@@ -262,7 +316,7 @@ export default function LogisticsDashboard() {
     }
 
     try {
-      const result = await predictCourierRoute(courierId, filterDeliveryDay || todayISO());
+      const result = await predictCourierRoute(courierId, deliveryDay);
       setRouteResult(result);
       setHighlightedOrderId(highlightOrderId);
       return result;
@@ -302,6 +356,7 @@ export default function LogisticsDashboard() {
         await loadCourierRoute(courierId, {
           openDialog: false,
           highlightOrderId: shipment.order_id,
+          deliveryDay: shipment.delivery_day || filterDeliveryDay || todayISO(),
         });
       } catch (err) {
         setMapMessage(
@@ -356,14 +411,40 @@ export default function LogisticsDashboard() {
         )}
 
         {/* Delivery day picker */}
-        <div className="relative">
-          <Calendar className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            type="date"
-            value={filterDeliveryDay}
-            onChange={(e) => setFilterDeliveryDay(e.target.value)}
-            className="rounded-lg border-border bg-white pl-10 text-sm"
-          />
+        <div className="space-y-2">
+          <div className="relative">
+            <Calendar className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              type="date"
+              value={filterDeliveryDay}
+              onChange={(e) => {
+                setShowAllDates(false);
+                setFilterDeliveryDay(e.target.value);
+              }}
+              disabled={showAllDates}
+              className="rounded-lg border-border bg-white pl-10 text-sm disabled:opacity-50"
+            />
+          </div>
+
+          <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-slate-50 px-3 py-2 text-sm">
+            <input
+              type="checkbox"
+              checked={showAllDates}
+              onChange={(e) => setShowAllDates(e.target.checked)}
+              className="h-4 w-4 rounded border-border text-sky-600 focus:ring-sky-500"
+            />
+            <span className="text-foreground">Show all dates in list</span>
+          </label>
+
+          <Button
+            type="button"
+            variant="outline"
+            onClick={openAllShipmentsDialog}
+            className="w-full justify-start gap-2 rounded-lg border-border bg-white text-sm font-medium"
+          >
+            <List className="h-4 w-4 shrink-0" />
+            View all orders (history)
+          </Button>
         </div>
       </div>
 
@@ -377,7 +458,9 @@ export default function LogisticsDashboard() {
         )}
         {!shipmentsLoading && currentShipments.length === 0 && (
           <p className="py-8 text-center text-sm text-muted-foreground">
-            No shipments found for the selected filters.
+            {showAllDates
+              ? 'No shipments found for the selected filters.'
+              : 'No shipments found for this date. Try another date or open all orders.'}
           </p>
         )}
         {!shipmentsLoading &&
@@ -403,30 +486,36 @@ export default function LogisticsDashboard() {
                 </span>
               </div>
 
-              <div className="mt-4 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+              <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                 <span>
                   Courier:{' '}
                   {shipment.assigned_courier_name ?? shipment.assigned_courier_id ?? 'Unassigned'}
                 </span>
-                <div className="flex items-center gap-3">
+                {showAllDates && shipment.delivery_day && (
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium">
+                    {shipment.delivery_day}
+                  </span>
+                )}
+              </div>
+
+              <div className="mt-3 flex items-center justify-end gap-3 text-xs text-muted-foreground">
+                <button
+                  type="button"
+                  onClick={() => void handleShowShipmentOnMap(shipment)}
+                  className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-700 transition-colors hover:bg-sky-100"
+                >
+                  <MapPin className="h-3 w-3" />
+                  Show on map
+                </button>
+                {isManager && (
                   <button
                     type="button"
-                    onClick={() => void handleShowShipmentOnMap(shipment)}
-                    className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-700 transition-colors hover:bg-sky-100"
+                    onClick={() => void handleViewDetails(shipment.order_id)}
+                    className="font-medium text-slate-900 hover:underline"
                   >
-                    <MapPin className="h-3 w-3" />
-                    Show on map
+                    View details
                   </button>
-                  {isManager && (
-                    <button
-                      type="button"
-                      onClick={() => void handleViewDetails(shipment.order_id)}
-                      className="font-medium text-slate-900 hover:underline"
-                    >
-                      View details
-                    </button>
-                  )}
-                </div>
+                )}
               </div>
             </div>
           ))}
@@ -733,6 +822,8 @@ export default function LogisticsDashboard() {
                 highlightedOrderId={highlightedOrderId}
                 onStopSelect={setHighlightedOrderId}
                 showDemoRoutes={!routeResult}
+                hubLocations={hubLocations}
+                chinaMapOnly
               />
             </div>
           </section>
@@ -987,6 +1078,116 @@ export default function LogisticsDashboard() {
                   </tr>
                 </tfoot>
               </table>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ── All shipments history dialog ─────────────────────────────────── */}
+      <Dialog open={allShipmentsOpen} onOpenChange={setAllShipmentsOpen}>
+        <DialogContent className="flex max-h-[85vh] max-w-3xl flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="border-b border-border px-6 py-5">
+            <DialogTitle>All orders</DialogTitle>
+            <DialogDescription>
+              Every shipment on record — search by order ID, hub, city, courier, or delivery date.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="border-b border-border px-6 py-3">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={allShipmentsSearch}
+                onChange={(e) => setAllShipmentsSearch(e.target.value)}
+                placeholder="Search orders…"
+                className="pl-10"
+              />
+            </div>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar px-6 py-4">
+            {allShipmentsLoading && (
+              <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Loading all orders…
+              </div>
+            )}
+
+            {!allShipmentsLoading && filteredAllShipments.length === 0 && (
+              <p className="py-12 text-center text-sm text-muted-foreground">
+                No orders match your search.
+              </p>
+            )}
+
+            {!allShipmentsLoading && filteredAllShipments.length > 0 && (
+              <div className="space-y-2">
+                {filteredAllShipments.map((shipment) => (
+                  <div
+                    key={shipment.order_id}
+                    className="flex flex-col gap-3 rounded-xl border border-border bg-slate-50/80 p-4 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-semibold text-sm">{shipment.order_id}</p>
+                        {shipment.delivery_day && (
+                          <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-medium text-muted-foreground ring-1 ring-border">
+                            {shipment.delivery_day}
+                          </span>
+                        )}
+                        <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                          {shipment.status ?? 'In Transit'}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {shipment.from_hub_name} → {shipment.to_hub_name}
+                        {shipment.city_name ? ` · ${shipment.city_name}` : ''}
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Courier:{' '}
+                        {shipment.assigned_courier_name ??
+                          shipment.assigned_courier_id ??
+                          'Unassigned'}
+                      </p>
+                    </div>
+
+                    <div className="flex shrink-0 items-center gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="gap-1"
+                        onClick={() => {
+                          setAllShipmentsOpen(false);
+                          void handleShowShipmentOnMap(shipment);
+                        }}
+                      >
+                        <MapPin className="h-3.5 w-3.5" />
+                        Map
+                      </Button>
+                      {isManager && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            setAllShipmentsOpen(false);
+                            void handleViewDetails(shipment.order_id);
+                          }}
+                        >
+                          Details
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {!allShipmentsLoading && allShipments.length > 0 && (
+            <div className="border-t border-border px-6 py-3 text-xs text-muted-foreground">
+              Showing {filteredAllShipments.length} of {allShipments.length} orders
+              {allShipments.length >= 200 ? ' (most recent 200)' : ''}
             </div>
           )}
         </DialogContent>

@@ -869,6 +869,20 @@ export async function listHubs(cityName: string) {
   return data.hubs;
 }
 
+export interface HubMapLocation {
+  hub_id: number | string;
+  hub_name: string;
+  city_name?: string;
+  lat: number;
+  lng: number;
+  hub_type?: string;
+}
+
+export async function listHubLocations(): Promise<HubMapLocation[]> {
+  const data = await apiFetch<{ hubs: HubMapLocation[] }>('/orders/hub-locations');
+  return data.hubs;
+}
+
 export interface ListShipmentsOptions {
   limit?: number;
   courierId?: string;

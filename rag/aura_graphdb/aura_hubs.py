@@ -50,3 +50,25 @@ def list_hubs(city_name: str | None = None) -> list[dict]:
         return [dict(row) for row in (rows or [])]
     finally:
         conn.close()
+
+
+def list_hubs_with_coordinates() -> list[dict]:
+    """Return all hubs with WGS84 coordinates for map display."""
+    conn = AuraConnection()
+    query = """
+    MATCH (h:Hub)-[:LOCATED_IN]->(c:City)
+    WHERE h.lat IS NOT NULL AND h.lng IS NOT NULL
+    RETURN
+        h.hub_id AS hub_id,
+        coalesce(h.name, h.hub_name) AS hub_name,
+        c.city_name AS city_name,
+        h.lat AS lat,
+        h.lng AS lng,
+        coalesce(h.hub_type, 'hub') AS hub_type
+    ORDER BY c.city_name, h.hub_id
+    """
+    try:
+        rows = conn.execute_query(query)
+        return [dict(row) for row in (rows or [])]
+    finally:
+        conn.close()

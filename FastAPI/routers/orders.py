@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from neo4j.exceptions import Neo4jError, ServiceUnavailable
 from pydantic import BaseModel
 
-from aura_graphdb.aura_hubs import list_cities, list_hubs
+from aura_graphdb.aura_hubs import list_cities, list_hubs, list_hubs_with_coordinates
 from aura_graphdb.aura_route_queries import get_order_route, get_recent_order_routes, list_delivery_days_with_orders
 from aura_graphdb.aura_courier import (
     create_courier_user,
@@ -119,6 +119,17 @@ def list_hubs_endpoint(
     del current_user
     try:
         hubs = list_hubs(city_name=city_name)
+    except (ConnectionError, ServiceUnavailable, Neo4jError, OSError) as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {"success": True, "hubs": hubs, "count": len(hubs)}
+
+
+@router.get("/hub-locations")
+def list_hub_locations(current_user: AnyAuthUser):
+    """All hub coordinates for the operational map."""
+    del current_user
+    try:
+        hubs = list_hubs_with_coordinates()
     except (ConnectionError, ServiceUnavailable, Neo4jError, OSError) as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return {"success": True, "hubs": hubs, "count": len(hubs)}

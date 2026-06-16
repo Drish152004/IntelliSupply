@@ -24,7 +24,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { motion, AnimatePresence } from 'framer-motion';
 import { locations, routes, statsCards, aiInsights } from '@/data/mockData';
-import { predictCourierRoute, type CourierRouteResult } from '@/lib/api';
+import { predictCourierRoute, type CourierRouteResult, type HubMapLocation } from '@/lib/api';
 import { fetchRoadLegs, fetchRoadRoute } from '@/lib/roadRouting';
 import type { Route } from '@/data/mockData';
 
@@ -108,6 +108,18 @@ const createCourierStartIcon = () =>
     popupAnchor: [0, -18],
   });
 
+const CHINA_CENTER: [number, number] = [35.0, 105.0];
+const CHINA_ZOOM = 5;
+const CHINA_BOUNDS = L.latLngBounds([18.0, 73.5], [53.5, 135.0]);
+
+function MapBounds({ bounds }: { bounds: L.LatLngBounds }) {
+  const map = useMap();
+  useEffect(() => {
+    map.setMaxBounds(bounds);
+    map.options.minZoom = 4;
+  }, [map, bounds]);
+  return null;
+}
 function MapFitter({ points }: { points: [number, number][] }) {
   const map = useMap();
   useEffect(() => {
@@ -160,6 +172,8 @@ interface RouteMapProps {
   highlightedOrderId?: string | null;
   onStopSelect?: (orderId: string) => void;
   showDemoRoutes?: boolean;
+  hubLocations?: HubMapLocation[];
+  chinaMapOnly?: boolean;
 }
 
 export default function RouteMap({
@@ -169,6 +183,8 @@ export default function RouteMap({
   highlightedOrderId = null,
   onStopSelect,
   showDemoRoutes,
+  hubLocations = [],
+  chinaMapOnly = false,
 }: RouteMapProps) {
   const [showDelays, setShowDelays] = useState(true);
   const [showAISuggestions, setShowAISuggestions] = useState(true);
@@ -177,6 +193,8 @@ export default function RouteMap({
   const [mapObject, setMapObject] = useState<L.Map | null>(null);
 
   const demoMode = showDemoRoutes ?? !activeCourierRoute;
+  const hubMapMode = chinaMapOnly || hubLocations.length > 0;
+  const showMockDemo = demoMode && !hubMapMode;
 
   const livePath = useMemo<[number, number][]>(() => {
     if (!activeCourierRoute?.path?.length) return [];
@@ -227,9 +245,13 @@ export default function RouteMap({
   const fitPoints = useMemo<[number, number][]>(() => {
     if (displayHighlightLeg.length >= 2) return displayHighlightLeg;
     if (displayLivePath.length) return displayLivePath;
+    if (hubMapMode && demoMode) return [];
     if (!demoMode) return [];
     return locations.map((l) => [l.lat, l.lng] as [number, number]);
-  }, [displayHighlightLeg, displayLivePath, demoMode]);
+  }, [displayHighlightLeg, displayLivePath, demoMode, hubMapMode]);
+
+  const mapCenter: [number, number] = hubMapMode ? CHINA_CENTER : [15.5, 78.5];
+  const mapZoom = hubMapMode ? CHINA_ZOOM : 6;
 
   useEffect(() => {
     if (!activeCourierRoute) {
@@ -339,12 +361,14 @@ export default function RouteMap({
       <div className="pointer-events-none absolute inset-0 z-[2] bg-[radial-gradient(ellipse_at_center,transparent_50%,rgba(15,23,42,0.06)_100%)]" />
 
       <MapContainer
-        center={[15.5, 78.5]}
-        zoom={6}
+        center={mapCenter}
+        zoom={mapZoom}
         scrollWheelZoom
         className="h-full w-full min-h-0"
         style={{ width: '100%', height: '100%' }}
         zoomControl={false}
+        maxBounds={hubMapMode ? CHINA_BOUNDS : undefined}
+        maxBoundsViscosity={hubMapMode ? 1.0 : undefined}
         ref={(mapInstance) => {
           if (mapInstance && !mapObject) {
             setMapObject(mapInstance);
@@ -357,9 +381,31 @@ export default function RouteMap({
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>'
           url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
         />
+        {hubMapMode && <MapBounds bounds={CHINA_BOUNDS} />}
         {fitPoints.length > 0 && <MapFitter points={fitPoints} />}
 
-        {demoMode &&
+        {hubMapMode &&
+          hubLocations.map((hub) => (
+            <Marker
+              key={String(hub.hub_id)}
+              position={[hub.lat, hub.lng]}
+              icon={createCustomIcon('hub', false)}
+            >
+              <Popup>
+                <div className="text-xs">
+                  <p className="font-semibold text-sm">{hub.hub_name}</p>
+                  {hub.city_name && (
+                    <p className="text-muted-foreground mt-0.5">{hub.city_name}</p>
+                  )}
+                  {hub.hub_type && (
+                    <p className="text-muted-foreground capitalize mt-0.5">{hub.hub_type}</p>
+                  )}
+                </div>
+              </Popup>
+            </Marker>
+          ))}
+
+        {showMockDemo &&
           locations.map((loc) => (
             <Marker key={loc.id} position={[loc.lat, loc.lng]} icon={createCustomIcon(loc.type, false)}>
               <Popup>
@@ -371,7 +417,7 @@ export default function RouteMap({
             </Marker>
           ))}
 
-        {demoMode &&
+        {showMockDemo &&
           filteredRoutes.map((route) => (
             <Polyline
               key={route.id}
@@ -641,7 +687,22 @@ export default function RouteMap({
         </motion.div>
       )}
 
-      {demoMode && (
+      {hubMapMode && demoMode && hubLocations.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="absolute top-3 left-3 z-[20] rounded-xl border border-white/60 bg-white/90 px-3 py-2.5 shadow-lg backdrop-blur-md"
+        >
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+            China hub network
+          </p>
+          <p className="mt-1 text-sm font-semibold text-slate-900">
+            {hubLocations.length} operational hubs
+          </p>
+        </motion.div>
+      )}
+
+      {showMockDemo && (
         <>
           <motion.div
             initial={{ opacity: 0, y: -10 }}

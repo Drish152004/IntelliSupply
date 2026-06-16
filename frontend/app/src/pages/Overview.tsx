@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router';
 import { Package, Truck, TrendingUp, ShieldCheck, Users } from 'lucide-react';
 import RouteMap from '@/components/RouteMap';
 import AICopilot from '@/components/AICopilot';
-import { getDashboardSummary, type DashboardSummary } from '@/lib/api';
+import { getDashboardSummary, listHubLocations, type DashboardSummary, type HubMapLocation } from '@/lib/api';
 
 const defaultSummary: DashboardSummary = {
   sales_volume_label: 'This week',
@@ -21,11 +21,18 @@ const defaultSummary: DashboardSummary = {
 export default function Overview() {
   const navigate = useNavigate();
   const [summary, setSummary] = useState<DashboardSummary>(defaultSummary);
+  const [hubLocations, setHubLocations] = useState<HubMapLocation[]>([]);
 
   useEffect(() => {
     void getDashboardSummary()
       .then(setSummary)
       .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    void listHubLocations()
+      .then(setHubLocations)
+      .catch(() => setHubLocations([]));
   }, []);
 
   const summaryCards = [
@@ -170,7 +177,7 @@ export default function Overview() {
                 </button>
               </div>
               <div className="mt-6 h-[520px] overflow-hidden rounded-[1.75rem] border border-slate-200">
-                <RouteMap />
+                <RouteMap hubLocations={hubLocations} chinaMapOnly />
               </div>
             </div>
           </section>
