@@ -1,4 +1,5 @@
 from pathlib import Path
+import math
 
 import pandas as pd
 
@@ -204,6 +205,16 @@ def build_base_state(
         ),
     )
 
+    def _optional_float(value) -> float | None:
+        if value is None or (isinstance(value, float) and math.isnan(value)):
+            return None
+        try:
+            if pd.isna(value):
+                return None
+        except (TypeError, ValueError):
+            pass
+        return float(value)
+
     demand = DemandState(
         rolling_7_avg_demand=float(
             demand_row["rolling_7_avg_demand"]
@@ -214,12 +225,12 @@ def build_base_state(
         demand_growth_pct=float(
             demand_row["demand_growth_pct"]
         ),
-        previous_year_demand=demand_row[
-            "previous_year_demand"
-        ],
-        yoy_demand_change_pct=demand_row[
-            "yoy_demand_change_pct"
-        ],
+        previous_year_demand=_optional_float(
+            demand_row["previous_year_demand"]
+        ),
+        yoy_demand_change_pct=_optional_float(
+            demand_row["yoy_demand_change_pct"]
+        ),
         yoy_trend_label=str(
             demand_row["yoy_trend_label"]
         ),

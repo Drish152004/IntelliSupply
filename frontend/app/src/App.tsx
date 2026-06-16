@@ -97,7 +97,7 @@ export default function App() {
         <Route
           path="/planning"
           element={
-            <ProtectedRoute allowedRoles={['admin', 'inventory_manager']}>
+            <ProtectedRoute allowedRoles={['admin', 'inventory_manager', 'logistics_manager']}>
               <Planning />
             </ProtectedRoute>
           }

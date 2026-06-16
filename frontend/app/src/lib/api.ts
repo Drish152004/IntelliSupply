@@ -42,10 +42,12 @@ export function initializeAuth(): void {
 
 export class ApiError extends Error {
   status: number;
+  detailData?: unknown;
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, detailData?: unknown) {
     super(message);
     this.status = status;
+    this.detailData = detailData;
   }
 }
 
@@ -85,16 +87,21 @@ export async function apiFetch<T = unknown>(
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
+    const rawDetail = data.detail;
     const detail =
-      typeof data.detail === 'string'
-        ? data.detail
+      typeof rawDetail === 'string'
+        ? rawDetail
         : typeof data.message === 'string'
           ? data.message
-          : Array.isArray(data.detail)
-            ? data.detail.map((item: any) => item.msg ?? '').join(', ')
-            : 'Request failed';
+          : Array.isArray(rawDetail)
+            ? rawDetail.map((item: any) => item.msg ?? '').join(', ')
+            : typeof rawDetail === 'object' &&
+                rawDetail !== null &&
+                'clarification_questions' in rawDetail
+              ? (rawDetail as { clarification_questions: string[] }).clarification_questions.join(' ')
+              : 'Request failed';
 
-    throw new ApiError(detail, response.status);
+    throw new ApiError(detail, response.status, rawDetail);
   }
 
   return data as T;
@@ -585,64 +592,71 @@ export async function markAllNotificationsRead() {
   return data.updated_count;
 }
 
-export interface ScenarioPatch {
-  planning_window_days?: number | null;
-  inventory?: {
-    current_stock_delta?: number | null;
-    safety_stock_multiplier?: number | null;
-  } | null;
-  demand?: {
-    demand_multiplier?: number | null;
-  } | null;
-  event?: {
-    promotion?: boolean | null;
-    seasonality?: string | null;
-    epidemic?: boolean | null;
-  } | null;
-  replenishment?: {
-    lead_time_days_delta?: number | null;
-    actual_delay_days_delta?: number | null;
-    quantity_ordered_delta?: number | null;
-  } | null;
+export type {
+  ScenarioPatch,
+  PlanningContext,
+  ScenarioUnderstandingResult,
+  PlanningSimulationResult,
+  SimulatePlanningPayload,
+  UnderstandScenarioPayload,
+  EntityScope,
+} from './planningTypes';
+
+export {
+  mapSimulationDay,
+  mapDailyLog,
+  asBoolFlag,
+  formatPercentFraction,
+  formatPatchLabels,
+  PlanningClarificationError,
+} from './planningTypes';
+
+import type {
+  PlanningContext,
+  PlanningSimulationResult,
+  ScenarioUnderstandingResult,
+  SimulatePlanningPayload,
+  UnderstandScenarioPayload,
+} from './planningTypes';
+import { PlanningClarificationError } from './planningTypes';
+
+export async function getPlanningContext(): Promise<PlanningContext> {
+  return apiFetch<PlanningContext>('/planning/context');
 }
 
-export interface RunPlanningPayload {
-  hub_id: string;
-  product_id: string;
-  category: string;
-  simulation_date: string;
-  patch?: ScenarioPatch | null;
-  planning_window_days?: number | null;
-  n_worlds?: number;
-  random_seed?: number | null;
-  skip_llm?: boolean;
-  selected_decision_ids?: string[] | null;
-  auto_select_all_decisions?: boolean;
-}
-
-export async function runPlanningSimulation(payload: RunPlanningPayload) {
-  return apiFetch<any>('/planning/run', {
+export async function understandPlanningScenario(
+  payload: UnderstandScenarioPayload,
+): Promise<ScenarioUnderstandingResult> {
+  return apiFetch<ScenarioUnderstandingResult>('/planning/understand', {
     method: 'POST',
     body: JSON.stringify(payload),
   });
 }
 
-export interface PlanningFixtures {
-  hubs: number[];
-  products: string[];
-  categories: string[];
-  dates: string[];
-  combinations: Array<{
-    category: string;
-    product_id: string;
-    hub_id: number;
-  }>;
-}
-
-export const PlanningFixtures = {};
-
-export async function getPlanningFixtures(): Promise<PlanningFixtures> {
-  return apiFetch<PlanningFixtures>('/planning/fixtures');
+export async function simulatePlanning(
+  payload: SimulatePlanningPayload,
+): Promise<PlanningSimulationResult> {
+  try {
+    return await apiFetch<PlanningSimulationResult>('/planning/simulate', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 422) {
+      const detail = err.detailData as
+        | { status?: string; clarification_questions?: string[] }
+        | undefined;
+      if (
+        detail &&
+        typeof detail === 'object' &&
+        detail.status === 'needs_clarification' &&
+        Array.isArray(detail.clarification_questions)
+      ) {
+        throw new PlanningClarificationError(detail.clarification_questions);
+      }
+    }
+    throw err;
+  }
 }
 
 
