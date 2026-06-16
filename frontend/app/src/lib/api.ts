@@ -1035,7 +1035,98 @@ export async function updateInventoryProduct(id: string, payload: any) {
 export async function deleteInventoryProduct(id: string) {
   await apiFetch(`/inventory/products/${id}`, { method: 'DELETE' });
 }
+export interface InventoryProduct {
+  id: string;
+  product_id?: string;
+  name: string;
+  category?: string;
+  unit_price?: number | null;
+  supplier_name?: string | null;
+  stock: number;
+  demand?: number;
+  status: string;
+}
 
+export interface InventoryCategoryItem {
+  category: string;
+}
+
+export interface InventoryCatalogProduct {
+  id?: number;
+  product_id: string;
+  category: string;
+  product_name: string;
+  product_display_name?: string | null;
+}
+
+export interface InventoryCityItem {
+  city_id: number;
+  city_name: string;
+}
+
+export interface InventoryHubItem {
+  hub_id: number;
+  hub_name?: string | null;
+  city_id?: number | null;
+  hub_type?: string | null;
+}
+
+export interface CreateInventoryStockEntryPayload {
+  category: string;
+  product_id: string;
+  city_id: number;
+  hub_id: number;
+  inventory_level: number;
+  units_ordered?: number;
+  price?: number;
+  demand?: number;
+  discount?: number;
+  weather_condition?: string;
+  seasonality?: string;
+  promotion?: number;
+  epidemic?: number;
+}
+
+export async function listInventoryCategories(): Promise<string[]> {
+  const data = await apiFetch<{ categories: string[] }>('/inventory/categories');
+  return data.categories;
+}
+
+export async function listInventoryProductsByCategory(
+  category: string,
+): Promise<InventoryCatalogProduct[]> {
+  const params = new URLSearchParams({ category });
+  const data = await apiFetch<{ products: InventoryCatalogProduct[] }>(
+    `/inventory/products/by-category?${params.toString()}`,
+  );
+  return data.products;
+}
+
+export async function listInventoryCities(): Promise<InventoryCityItem[]> {
+  const data = await apiFetch<{ cities: InventoryCityItem[] }>('/inventory/cities');
+  return data.cities;
+}
+
+export async function listInventoryHubs(
+  cityId: number | string,
+): Promise<InventoryHubItem[]> {
+  const params = new URLSearchParams({ city_id: String(cityId) });
+  const data = await apiFetch<{ hubs: InventoryHubItem[] }>(
+    `/inventory/hubs?${params.toString()}`,
+  );
+  return data.hubs;
+}
+
+export async function createInventoryStockEntry(
+  payload: CreateInventoryStockEntryPayload,
+): Promise<InventoryProduct> {
+  const data = await apiFetch<{ product: InventoryProduct }>('/inventory/stock-entry', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+
+  return data.product;
+}
 // =======================
 // ✅ COPILOT
 // =======================

@@ -1,17 +1,23 @@
 from __future__ import annotations
+
 import sys
 from pathlib import Path
+
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _RAG_ROOT = _REPO_ROOT / "rag"
+
 for path in (_REPO_ROOT, _RAG_ROOT):
     path_str = str(path)
     if path_str not in sys.path:
         sys.path.insert(0, path_str)
+
 from config.env import load_env
+
 load_env()
+
 from rag.aura_graphdb.aura_route_queries import get_recent_order_routes
-from rag.supabase.supabase_inventory import get_low_stock_inventory
 from rag.supabase.supabase_notifications import create_notification
+from rag.inventory.chatbot.inventory_notifications import generate_inventory_notifications
 
 def backfill_order_notifications(limit: int = 100) -> int:
     orders = get_recent_order_routes(limit=limit)
@@ -42,53 +48,8 @@ def backfill_order_notifications(limit: int = 100) -> int:
 
     return created_count
 
-
 def backfill_inventory_notifications(limit: int = 100) -> int:
-    inventory_items = get_low_stock_inventory(limit=limit)
-    created_count = 0
-
-    for item in inventory_items:
-        inventory_id = item["inventory_id"]
-        product_name = item.get("product_name") or item.get("product_id")
-        product_id = item.get("product_id")
-        hub_id = item.get("hub_id")
-        quantity = item.get("quantity")
-        threshold = item.get("threshold_limit")
-
-        if quantity is not None and quantity <= 0:
-            title = "Product stockout"
-            alert_type = "stockout"
-            severity = "critical"
-            message = (
-                f"{product_name} is out of stock at hub {hub_id}. "
-                f"Current quantity is {quantity}, threshold limit is {threshold}."
-            )
-        else:
-            title = "Low inventory alert"
-            alert_type = "low_stock"
-            severity = "high"
-            message = (
-                f"{product_name} is below threshold at hub {hub_id}. "
-                f"Current quantity is {quantity}, threshold limit is {threshold}."
-            )
-
-        for role in ["admin", "inventory_manager"]:
-            notification = create_notification(
-                title=title,
-                message=message,
-                alert_type=alert_type,
-                severity=severity,
-                target_role=role,
-                related_entity_type="inventory",
-                related_entity_id=inventory_id,
-                source="backfill_supabase_inventory",
-                dedupe_key=f"{alert_type}:{inventory_id}:{product_id}:{hub_id}:{role}",
-            )
-
-            if notification:
-                created_count += 1
-
-    return created_count
+    return generate_inventory_notifications(limit=limit)
 
 
 def backfill_all_notifications() -> dict:

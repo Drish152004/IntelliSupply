@@ -1,9 +1,11 @@
 """Operational notification service.
 
-Logistics notifications and inventory notifications are stored separately.
+Notifications are read-only here.
 
-- Logistics notifications use rag.supabase.supabase_notifications
-- Inventory notifications use rag.inventory.chatbot.inventory_notifications
+Notification generation happens:
+- during logistics CRUD operations
+- during inventory CRUD operations
+- through one-time backfill scripts
 """
 
 from __future__ import annotations
@@ -19,7 +21,6 @@ from rag.supabase.supabase_notifications import (
 )
 
 from rag.inventory.chatbot.inventory_notifications import (
-    generate_inventory_notifications,
     get_inventory_unread_count,
     list_inventory_notifications_for_user,
     mark_all_inventory_notifications_read,
@@ -52,7 +53,6 @@ def list_notifications(
 
     if role in {"admin", "inventory_manager"}:
         try:
-            generate_inventory_notifications(limit=10)
             items.extend(
                 list_inventory_notifications_for_user(
                     user_id=user_id,
@@ -88,7 +88,6 @@ def unread_count(
 
     if role in {"admin", "inventory_manager"}:
         try:
-            generate_inventory_notifications(limit=10)
             total += get_inventory_unread_count(
                 user_id=user_id,
                 role=role,

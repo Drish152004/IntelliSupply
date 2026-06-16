@@ -1,5 +1,4 @@
 """Inventory REST service over current Supabase planning schema."""
-
 from __future__ import annotations
 
 import uuid
@@ -7,10 +6,15 @@ from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
-from rag.inventory import chatbot
-def _get_session_factory():
-    from chatbot.database import SessionLocal, engine
 
+from rag.inventory.chatbot.inventory_notifications import (
+    notify_inventory_product_created,
+    notify_inventory_product_updated,
+    notify_inventory_product_deleted,
+)
+
+def _get_session_factory():
+    from rag.inventory.chatbot.database import SessionLocal, engine
     return SessionLocal, engine
 
 
@@ -48,7 +52,270 @@ def _stock_status(stock: int, demand: int = 0) -> str:
         return "Low Stock"
 
     return "Healthy"
+CATEGORY_ORDER = [
+    "Electronics",
+    "Groceries",
+    "Furniture",
+    "Toys",
+]
 
+
+def list_categories() -> list[str]:
+    """
+    Return the 4 allowed inventory categories.
+    """
+    return CATEGORY_ORDER
+
+
+def list_products_by_category(
+    *,
+    category: str,
+    limit: int = 200,
+) -> list[dict[str, Any]]:
+    """
+    List catalog products for selected category.
+    Used by Add Stock dropdown.
+    """
+    sql = """
+    SELECT
+        pc.id,
+        pc.product_id,
+        pc.category,
+        pc.product_name,
+        pc.product_display_name
+    FROM product_catalog pc
+    WHERE pc.category ILIKE :category
+    ORDER BY
+        COALESCE(pc.product_display_name, pc.product_name, pc.product_id)
+    LIMIT :limit
+    """
+
+    with _session() as session:
+        rows = session.execute(
+            text(sql),
+            {
+                "category": category,
+                "limit": int(limit),
+            },
+        ).mappings().all()
+
+    return [dict(row) for row in rows]
+
+
+def list_cities() -> list[dict[str, Any]]:
+    """
+    List inventory cities.
+    """
+    sql = """
+    SELECT
+        city_id,
+        city_name
+    FROM cities
+    ORDER BY city_name
+    """
+
+    with _session() as session:
+        rows = session.execute(text(sql)).mappings().all()
+
+    return [dict(row) for row in rows]
+
+
+def list_hubs_by_city(
+    *,
+    city_id: int,
+) -> list[dict[str, Any]]:
+    """
+    List hubs for selected city.
+    """
+    sql = """
+    SELECT
+        hub_id,
+        hub_name,
+        city_id,
+        hub_type
+    FROM hubs
+    WHERE city_id = :city_id
+    ORDER BY hub_name NULLS LAST, hub_id
+    """
+
+    with _session() as session:
+        rows = session.execute(
+            text(sql),
+            {"city_id": int(city_id)},
+        ).mappings().all()
+
+    return [dict(row) for row in rows]
+
+
+def create_stock_entry(payload: dict[str, Any]) -> dict[str, Any]:
+    """
+    Create a hub-level stock entry in planning_dataset.
+
+    Important:
+    We insert into the current MAX(date) in planning_dataset.
+    This prevents the existing list query from switching to today's date
+    and hiding all historical/latest dataset rows.
+    """
+    category = str(payload["category"]).strip()
+    product_id = str(payload["product_id"]).strip()
+    city_id = int(payload["city_id"])
+    hub_id = int(payload["hub_id"])
+
+    inventory_level = int(payload.get("inventory_level") or 0)
+    units_sold = int(payload.get("units_sold") or 0)
+    units_ordered = int(payload.get("units_ordered") or 0)
+    demand = int(payload.get("demand") or 0)
+    promotion = int(payload.get("promotion") or 0)
+    epidemic = int(payload.get("epidemic") or 0)
+
+    price = payload.get("price")
+    discount = payload.get("discount")
+    competitor_pricing = payload.get("competitor_pricing")
+
+    weather_condition = payload.get("weather_condition") or None
+    seasonality = payload.get("seasonality") or None
+
+    validate_sql = """
+    SELECT
+        pc.product_id,
+        pc.category,
+        COALESCE(pc.product_display_name, pc.product_name, pc.product_id) AS product_name,
+        h.hub_id,
+        h.hub_name,
+        h.city_id
+    FROM product_catalog pc
+    JOIN hubs h
+        ON h.hub_id = :hub_id
+       AND h.city_id = :city_id
+    WHERE pc.product_id = :product_id
+      AND pc.category ILIKE :category
+    LIMIT 1
+    """
+
+    insert_sql = """
+    WITH entry_date AS (
+        SELECT COALESCE(MAX(date), CURRENT_DATE) AS date
+        FROM planning_dataset
+    )
+    INSERT INTO planning_dataset (
+        date,
+        hub_id,
+        product_id,
+        category,
+        inventory_level,
+        units_sold,
+        units_ordered,
+        price,
+        discount,
+        weather_condition,
+        promotion,
+        competitor_pricing,
+        seasonality,
+        epidemic,
+        demand
+    )
+    SELECT
+        entry_date.date,
+        :hub_id,
+        :product_id,
+        :category,
+        :inventory_level,
+        :units_sold,
+        :units_ordered,
+        :price,
+        :discount,
+        :weather_condition,
+        :promotion,
+        :competitor_pricing,
+        :seasonality,
+        :epidemic,
+        :demand
+    FROM entry_date
+    ON CONFLICT (date, hub_id, product_id, category)
+    DO UPDATE SET
+        inventory_level = EXCLUDED.inventory_level,
+        units_sold = EXCLUDED.units_sold,
+        units_ordered = EXCLUDED.units_ordered,
+        price = EXCLUDED.price,
+        discount = EXCLUDED.discount,
+        weather_condition = EXCLUDED.weather_condition,
+        promotion = EXCLUDED.promotion,
+        competitor_pricing = EXCLUDED.competitor_pricing,
+        seasonality = EXCLUDED.seasonality,
+        epidemic = EXCLUDED.epidemic,
+        demand = EXCLUDED.demand,
+        created_at = now()
+    RETURNING
+        id,
+        date,
+        hub_id,
+        product_id,
+        category,
+        inventory_level,
+        demand,
+        price
+    """
+
+    with _session() as session:
+        valid = session.execute(
+            text(validate_sql),
+            {
+                "product_id": product_id,
+                "category": category,
+                "city_id": city_id,
+                "hub_id": hub_id,
+            },
+        ).mappings().first()
+
+        if not valid:
+            raise ValueError(
+                "Invalid product/category/city/hub selection. "
+                "Check that the product exists in the selected category and the hub belongs to the selected city."
+            )
+
+        row = session.execute(
+            text(insert_sql),
+            {
+                "hub_id": hub_id,
+                "product_id": product_id,
+                "category": valid["category"],
+                "inventory_level": inventory_level,
+                "units_sold": units_sold,
+                "units_ordered": units_ordered,
+                "price": price,
+                "discount": discount or 0,
+                "weather_condition": weather_condition,
+                "promotion": promotion,
+                "competitor_pricing": competitor_pricing,
+                "seasonality": seasonality,
+                "epidemic": epidemic,
+                "demand": demand,
+            },
+        ).mappings().first()
+
+        session.commit()
+
+    product = {
+        "id": _product_key(row["product_id"], row["category"]),
+        "product_id": row["product_id"],
+        "name": valid["product_name"],
+        "category": row["category"],
+        "unit_price": float(row["price"]) if row["price"] is not None else None,
+        "supplier_name": None,
+        "stock": int(row["inventory_level"] or 0),
+        "demand": int(row["demand"] or 0),
+        "status": _stock_status(
+            int(row["inventory_level"] or 0),
+            int(row["demand"] or 0),
+        ),
+    }
+
+    try:
+        notify_inventory_product_updated(product)
+    except Exception as exc:
+        print(f"Inventory stock-entry notification skipped: {exc}")
+
+    return product
 
 def list_products(
     *,
@@ -373,7 +640,7 @@ def create_product(payload: dict[str, Any]) -> dict[str, Any]:
         row = session.execute(text(sql), params).mappings().first()
         session.commit()
 
-    return {
+    product = {
         "id": _product_key(row["product_id"], row["category"]),
         "product_id": row["product_id"],
         "name": row["product_name"],
@@ -383,6 +650,13 @@ def create_product(payload: dict[str, Any]) -> dict[str, Any]:
         "stock": 0,
         "status": "Out of Stock",
     }
+
+    try:
+        notify_inventory_product_created(product)
+    except Exception as exc:
+        print(f"Inventory create notification skipped: {exc}")
+
+    return product
 
 
 def update_product(product_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
@@ -475,7 +749,7 @@ def update_product(product_id: str, payload: dict[str, Any]) -> dict[str, Any] |
     stock = int(stock_row["total_stock"] or 0)
     demand = int(stock_row["total_demand"] or 0)
 
-    return {
+    product = {
         "id": _product_key(row["product_id"], row["category"]),
         "product_id": row["product_id"],
         "name": row["product_name"],
@@ -486,6 +760,13 @@ def update_product(product_id: str, payload: dict[str, Any]) -> dict[str, Any] |
         "demand": demand,
         "status": _stock_status(stock, demand),
     }
+
+    try:
+        notify_inventory_product_updated(product)
+    except Exception as exc:
+        print(f"Inventory update notification skipped: {exc}")
+
+    return product
 
 
 def delete_product(product_id: str) -> bool:
@@ -531,8 +812,18 @@ def delete_product(product_id: str) -> bool:
         ).first()
 
         session.commit()
+    deleted = row is not None
 
-    return row is not None
+    if deleted:
+        try:
+            notify_inventory_product_deleted(
+                product_id=raw_product_id,
+                category=category,
+            )
+        except Exception as exc:
+            print(f"Inventory delete notification skipped: {exc}")
+
+    return deleted
 
 
 def inventory_db_available() -> bool:

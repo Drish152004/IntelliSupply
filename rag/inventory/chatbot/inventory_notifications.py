@@ -18,7 +18,7 @@ def _engine():
     - product_catalog
     - hubs
     """
-    from chatbot.database import engine
+    from rag.inventory.chatbot.database import engine
 
     return engine
 
@@ -395,3 +395,83 @@ def mark_all_inventory_notifications_read(
         )
 
     return int(result.rowcount or 0)
+def notify_inventory_product_created(product: dict[str, Any]) -> None:
+    product_id = product.get("product_id") or product.get("id")
+    name = product.get("name") or product.get("product_name") or product_id
+    category = product.get("category") or "General"
+
+    if not product_id:
+        return
+
+    create_inventory_notification(
+        title="Product created",
+        message=f"{name} was added to inventory catalog under {category}.",
+        alert_type="inventory_product_created",
+        severity="medium",
+        target_role="inventory_manager",
+        related_entity_type="product",
+        related_entity_id=str(product.get("id") or product_id),
+        source="inventory_crud",
+        dedupe_key=f"inventory_product_created:{product_id}:{category}",
+    )
+
+
+def notify_inventory_product_updated(product: dict[str, Any]) -> None:
+    product_id = product.get("product_id") or product.get("id")
+    name = product.get("name") or product.get("product_name") or product_id
+    category = product.get("category") or "General"
+    status = product.get("status")
+    stock = product.get("stock")
+    demand = product.get("demand")
+
+    if not product_id:
+        return
+
+    if status == "Out of Stock":
+        title = "Product out of stock"
+        severity = "critical"
+        message = f"{name} is now out of stock."
+    elif status == "Low Stock":
+        title = "Product low stock"
+        severity = "high"
+        if demand is not None:
+            message = f"{name} has {stock} units available against demand of {demand}."
+        else:
+            message = f"{name} has low stock."
+    else:
+        title = "Product updated"
+        severity = "low"
+        message = f"{name} inventory details were updated."
+
+    create_inventory_notification(
+        title=title,
+        message=message,
+        alert_type="inventory_product_updated",
+        severity=severity,
+        target_role="inventory_manager",
+        related_entity_type="product",
+        related_entity_id=str(product.get("id") or product_id),
+        source="inventory_crud",
+        dedupe_key=f"inventory_product_updated:{product_id}:{category}:{status}:{stock}:{demand}",
+    )
+
+
+def notify_inventory_product_deleted(
+    *,
+    product_id: str,
+    category: str | None = None,
+) -> None:
+    create_inventory_notification(
+        title="Product deleted",
+        message=(
+            f"Product {product_id}"
+            f"{f' under {category}' if category else ''} was removed from inventory."
+        ),
+        alert_type="inventory_product_deleted",
+        severity="high",
+        target_role="inventory_manager",
+        related_entity_type="product",
+        related_entity_id=str(product_id),
+        source="inventory_crud",
+        dedupe_key=f"inventory_product_deleted:{product_id}:{category or 'all'}",
+    )

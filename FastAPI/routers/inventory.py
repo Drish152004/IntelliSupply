@@ -20,37 +20,40 @@ InventoryUser = Annotated[
 
 
 class ProductCreateRequest(BaseModel):
-    # Optional because backend can generate one if not supplied
     product_id: str | None = None
-
-    # Frontend sends name
     name: str = Field(..., min_length=1)
-
-    # product_catalog requires category
     category: str = Field(default="General")
-
-    # Kept for frontend compatibility.
-    # In the new schema, price comes mainly from planning_dataset.price.
     unit_price: float | None = Field(default=None, ge=0)
-
-    # Kept for frontend compatibility.
-    # New schema does not have supplier_name.
     supplier_name: str | None = None
-
-    # Optional display name for product_catalog
     product_display_name: str | None = None
 
 
 class ProductUpdateRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1)
     category: str | None = None
-
-    # Kept for frontend compatibility.
-    # These are ignored by the current service if not stored in schema.
     unit_price: float | None = Field(default=None, ge=0)
     supplier_name: str | None = None
-
     product_display_name: str | None = None
+
+
+class StockEntryCreateRequest(BaseModel):
+    category: str = Field(..., min_length=1)
+    product_id: str = Field(..., min_length=1)
+    city_id: int
+    hub_id: int
+
+    inventory_level: int = Field(..., ge=0)
+    units_ordered: int | None = Field(default=0, ge=0)
+    price: float | None = Field(default=None, ge=0)
+    demand: int | None = Field(default=0, ge=0)
+    discount: float | None = Field(default=0, ge=0)
+
+    units_sold: int | None = Field(default=0, ge=0)
+    weather_condition: str | None = None
+    promotion: int | None = Field(default=0, ge=0)
+    competitor_pricing: float | None = Field(default=None, ge=0)
+    seasonality: str | None = None
+    epidemic: int | None = Field(default=0, ge=0)
 
 
 def _ensure_db():
@@ -59,7 +62,7 @@ def _ensure_db():
             status_code=503,
             detail=(
                 "Inventory database unavailable. Check Supabase/Postgres connection "
-                "and required tables: product_catalog, planning_dataset, hubs."
+                "and required tables: product_catalog, planning_dataset, hubs, cities."
             ),
         )
 
@@ -72,7 +75,6 @@ def list_products(
     limit: int = Query(default=100, ge=1, le=500),
 ):
     del current_user
-
     _ensure_db()
 
     products = inventory_svc.list_products(
@@ -88,13 +90,97 @@ def list_products(
     }
 
 
+@router.get("/categories")
+def list_categories(current_user: InventoryUser):
+    del current_user
+    _ensure_db()
+
+    categories = inventory_svc.list_categories()
+
+    return {
+        "success": True,
+        "categories": categories,
+        "count": len(categories),
+    }
+
+
+@router.get("/products/by-category")
+def list_products_by_category(
+    current_user: InventoryUser,
+    category: str = Query(..., min_length=1),
+    limit: int = Query(default=200, ge=1, le=500),
+):
+    del current_user
+    _ensure_db()
+
+    products = inventory_svc.list_products_by_category(
+        category=category,
+        limit=limit,
+    )
+
+    return {
+        "success": True,
+        "products": products,
+        "count": len(products),
+    }
+
+
+@router.get("/cities")
+def list_cities(current_user: InventoryUser):
+    del current_user
+    _ensure_db()
+
+    cities = inventory_svc.list_cities()
+
+    return {
+        "success": True,
+        "cities": cities,
+        "count": len(cities),
+    }
+
+
+@router.get("/hubs")
+def list_hubs(
+    current_user: InventoryUser,
+    city_id: int = Query(...),
+):
+    del current_user
+    _ensure_db()
+
+    hubs = inventory_svc.list_hubs_by_city(city_id=city_id)
+
+    return {
+        "success": True,
+        "hubs": hubs,
+        "count": len(hubs),
+    }
+
+
+@router.post("/stock-entry", status_code=201)
+def create_stock_entry(
+    body: StockEntryCreateRequest,
+    current_user: InventoryUser,
+):
+    del current_user
+    _ensure_db()
+
+    try:
+        product = inventory_svc.create_stock_entry(body.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return {
+        "success": True,
+        "product": product,
+    }
+
+
 @router.post("/products", status_code=201)
 def create_product(
     body: ProductCreateRequest,
     current_user: InventoryUser,
 ):
     del current_user
-
     _ensure_db()
 
     product = inventory_svc.create_product(body.model_dump())
@@ -112,7 +198,6 @@ def update_product(
     current_user: InventoryUser,
 ):
     del current_user
-
     _ensure_db()
 
     updated = inventory_svc.update_product(
@@ -135,7 +220,6 @@ def delete_product(
     current_user: InventoryUser,
 ):
     del current_user
-
     _ensure_db()
 
     deleted = inventory_svc.delete_product(product_id)
@@ -152,7 +236,6 @@ def delete_product(
 @router.get("/summary")
 def inventory_summary(current_user: InventoryUser):
     del current_user
-
     _ensure_db()
 
     return {
@@ -164,7 +247,6 @@ def inventory_summary(current_user: InventoryUser):
 @router.get("/forecast-trend")
 def inventory_forecast_trend(current_user: InventoryUser):
     del current_user
-
     _ensure_db()
 
     return {

@@ -1,7 +1,12 @@
 import { useEffect, useState } from 'react';
-import { listCities, listHubs, type CityListItem, type HubListItem } from '@/lib/api';
+import {
+  listCities,
+  listHubs,
+  type CityListItem,
+  type HubListItem,
+} from '@/lib/api';
 
-export function useLogisticsLocations(cityName: string) {
+export function useLogisticsLocations(cityName?: string) {
   const [cities, setCities] = useState<CityListItem[]>([]);
   const [hubs, setHubs] = useState<HubListItem[]>([]);
   const [loadingCities, setLoadingCities] = useState(false);
@@ -9,6 +14,7 @@ export function useLogisticsLocations(cityName: string) {
 
   useEffect(() => {
     setLoadingCities(true);
+
     void listCities()
       .then(setCities)
       .catch(() => setCities([]))
@@ -16,16 +22,22 @@ export function useLogisticsLocations(cityName: string) {
   }, []);
 
   useEffect(() => {
-    if (!cityName) {
-      setHubs([]);
-      return;
-    }
     setLoadingHubs(true);
-    void listHubs(cityName)
+
+    /*
+      Empty cityName means fetch all hubs.
+      This is needed for the logistics China map.
+    */
+    void listHubs(cityName ?? '')
       .then(setHubs)
       .catch(() => setHubs([]))
       .finally(() => setLoadingHubs(false));
   }, [cityName]);
 
-  return { cities, hubs, loadingCities, loadingHubs };
+  return {
+    cities,
+    hubs,
+    loadingCities,
+    loadingHubs,
+  };
 }

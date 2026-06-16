@@ -128,6 +128,28 @@ Semantic Rules:
 - Date filters should use:
   pd.date
 
+Default Date Rule:
+- planning_dataset is a time-series table.
+- If the user asks about current inventory, stock, quantity, available units, remaining units, low stock, highest stock, lowest stock, least stock, most stock, stockout, reorder, demand vs inventory, or inventory status, and the user does NOT mention a specific date or date range, always use the latest available date.
+- The latest available date must be selected using:
+  pd.date = (SELECT MAX(date) FROM planning_dataset)
+- Prefer using this latest date CTE for readability:
+  WITH latest_date AS (
+      SELECT MAX(date) AS latest_date
+      FROM planning_dataset
+  )
+  SELECT ...
+  FROM planning_dataset pd
+  JOIN latest_date ld
+      ON pd.date = ld.latest_date
+- Do NOT sum inventory_level across all dates unless the user explicitly asks for historical total, across all dates, all-time, trend, monthly, yearly, or date-wise analysis.
+- If the user asks "which product is least in hub 1", interpret it as latest-date/current inventory.
+- If the user asks "which product has the highest stock in hub 1", interpret it as latest-date/current inventory.
+- If the user asks "current stock", "available stock", "stock level", or "quantity available", use the latest available date.
+- If the user asks for a trend, monthly report, yearly report, historical analysis, or across all dates, then do not apply the latest-date filter unless the user asks for it.
+- For latest-date/current inventory questions, include pd.date in the SELECT output when possible.
+- For latest-date/current inventory answers, the result should allow the final answer to say "on the latest available date".
+
 Business Meaning:
 - inventory_level means current stock/inventory level
 - units_sold means fulfilled/sold quantity
@@ -176,11 +198,13 @@ Aggregation Rules:
 - Questions asking "top sold products" should sort by:
   SUM(pd.units_sold) DESC
 
-- Questions asking "highest inventory products" should sort by:
+- Questions asking "highest inventory products", "most stock", "highest quantity", or "most quantity" should sort by:
   SUM(pd.inventory_level) DESC
+- If no date is mentioned, apply the Default Date Rule and use only the latest available date.
 
-- Questions asking "lowest inventory products" should sort by:
+- Questions asking "lowest inventory products", "least stock", "least quantity", or "lowest quantity" should sort by:
   SUM(pd.inventory_level) ASC
+- If no date is mentioned, apply the Default Date Rule and use only the latest available date.
 
 - Questions asking "demand by category" should group by:
   pd.category
@@ -210,6 +234,7 @@ Human Readability Rules:
 - Include pd.category when showing product-level results
 - Include h.hub_type when the question involves hub type, warehouse, delivery hub, or mixed hub
 - Include h.city_id when the question involves city-level grouping
+- Include pd.date for current/latest-date inventory questions
 - Internal ids like pd.id and pc.id should only be used if explicitly requested
 
 Important Identity Rule:
@@ -231,11 +256,13 @@ Examples:
   Use:
   pc.product_name ILIKE '%Wireless Router%'
   AND pd.hub_id = 0
+  AND pd.date = (SELECT MAX(date) FROM planning_dataset)
 
 - User asks: inventory in Hub 5
   Join hubs.
   Use:
   pd.hub_id = 5
+  AND pd.date = (SELECT MAX(date) FROM planning_dataset)
 
 - User asks: demand in mixed hubs
   Join hubs.
@@ -246,10 +273,12 @@ Examples:
   Join hubs.
   Use:
   h.hub_type ILIKE '%warehouse%'
+  AND pd.date = (SELECT MAX(date) FROM planning_dataset)
 
 - User asks: stock for P0001
   Use:
   pd.product_id = 'P0001'
+  AND pd.date = (SELECT MAX(date) FROM planning_dataset)
   and include category in SELECT because P0001 may exist in multiple categories.
 
 - User asks: top categories by demand
@@ -260,10 +289,64 @@ Examples:
 - User asks: stockout products
   Use:
   pd.demand > pd.units_sold
+  AND pd.date = (SELECT MAX(date) FROM planning_dataset)
 
 - User asks: products with high discount
   Use:
   ORDER BY pd.discount DESC
+
+- User asks: which product is least in hub 1
+  Use latest available date by default:
+  WITH latest_date AS (
+      SELECT MAX(date) AS latest_date
+      FROM planning_dataset
+  )
+  SELECT
+      pd.date,
+      pd.hub_id,
+      pd.product_id,
+      pd.category,
+      COALESCE(pc.product_display_name, pc.product_name, pd.product_id) AS product_name,
+      SUM(pd.inventory_level) AS total_inventory
+  FROM planning_dataset pd
+  JOIN latest_date ld
+      ON pd.date = ld.latest_date
+  LEFT JOIN product_catalog pc
+      ON pc.product_id = pd.product_id
+     AND pc.category = pd.category
+  WHERE pd.hub_id = 1
+  GROUP BY
+      pd.date,
+      pd.hub_id,
+      pd.product_id,
+      pd.category,
+      pc.product_display_name,
+      pc.product_name
+  ORDER BY total_inventory ASC
+  LIMIT 1
+
+- User asks: which product had least inventory in hub 1 across all dates
+  Do not apply latest-date filter.
+  Aggregate across all dates:
+  SELECT
+      pd.hub_id,
+      pd.product_id,
+      pd.category,
+      COALESCE(pc.product_display_name, pc.product_name, pd.product_id) AS product_name,
+      SUM(pd.inventory_level) AS total_inventory
+  FROM planning_dataset pd
+  LEFT JOIN product_catalog pc
+      ON pc.product_id = pd.product_id
+     AND pc.category = pd.category
+  WHERE pd.hub_id = 1
+  GROUP BY
+      pd.hub_id,
+      pd.product_id,
+      pd.category,
+      pc.product_display_name,
+      pc.product_name
+  ORDER BY total_inventory ASC
+  LIMIT 1
 """
 
 # DOMAIN KEYWORDS
@@ -291,6 +374,10 @@ allowed_keywords = [
     "out of stock",
     "low inventory",
     "low stock",
+    "reorder",
+    "restock",
+    "replenish",
+    "replenishment",
 
     # Hub Terms
     "hub",
@@ -425,6 +512,10 @@ allowed_keywords = [
     "last 30 days",
     "last 90 days",
     "trend",
+    "current",
+    "latest",
+    "recent",
+    "now",
 
     # Analytics
     "highest",
@@ -442,6 +533,8 @@ allowed_keywords = [
     "report",
     "status"
 ]
+
+
 # SQL GENERATION FUNCTION
 def generate_sql(question):
 

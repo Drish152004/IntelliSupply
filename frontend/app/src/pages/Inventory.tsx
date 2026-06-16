@@ -24,43 +24,28 @@ import {
   Loader2,
   ShieldCheck,
 } from 'lucide-react';
+
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+
 import {
-  createInventoryProduct,
+  createInventoryStockEntry,
   deleteInventoryProduct,
+  listInventoryCategories,
+  listInventoryCities,
+  listInventoryHubs,
   listInventoryProducts,
+  listInventoryProductsByCategory,
+  type InventoryCatalogProduct,
+  type InventoryCityItem,
+  type InventoryHubItem,
 } from '@/lib/api';
 
-const PRODUCT_CATEGORIES = [
-  'Smartphones',
-  'Laptops',
-  'Tablets',
-  'Wearables',
-  'Audio Devices',
-  'Accessories',
-  'Smart Home',
-  'XR Devices',
+const DEFAULT_CATEGORIES = [
   'Electronics',
-  'Warehouse',
-  'Apparel',
-  'Medical',
-];
-
-const categories = [
-  'All',
-  'Electronics',
-  'Warehouse',
-  'Apparel',
-  'Medical',
-  'Accessories',
-  'Smartphones',
-  'Laptops',
-  'Tablets',
-  'Wearables',
-  'Audio Devices',
-  'Smart Home',
-  'XR Devices',
+  'Furniture',
+  'Groceries',
+  'Toys',
 ];
 
 const statuses = [
@@ -69,15 +54,39 @@ const statuses = [
   'Low Stock',
   'Out of Stock',
 ];
+const WEATHER_OPTIONS = [
+  'Sunny',
+  'Cloudy',
+  'Rainy',
+  'Snowy',
+];
+
+const SEASONALITY_OPTIONS = [
+  'Spring',
+  'Summer',
+  'Autumn',
+  'Winter',
+];
+
+const YES_NO_OPTIONS = [
+  { label: 'No', value: '0' },
+  { label: 'Yes', value: '1' },
+];
 
 const EMPTY_FORM = {
-  product_name: '',
-  category: 'Smartphones',
-  unit_price: '',
-  supplier_name: '',
-  quantity: '',
-  threshold_limit: '',
+  category: '',
+  product_id: '',
+  city_id: '',
   hub_id: '',
+  inventory_level: '',
+  units_ordered: '',
+  price: '',
+  demand: '',
+  discount: '',
+  weather_condition: '',
+  seasonality: '',
+  promotion: '0',
+  epidemic: '0',
 };
 
 type ProductRow = {
@@ -96,26 +105,11 @@ export default function Inventory() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  useEffect(() => {
-    void listInventoryProducts()
-      .then((rows) => {
-        setLoadError(null);
-        setProducts(
-          rows.map((product) => ({
-            id: product.id,
-            name: product.name,
-            sku: product.id,
-            category: product.category ?? 'General',
-            stock: product.stock,
-            price: product.unit_price ? `₹${product.unit_price.toLocaleString('en-IN')}` : '₹0',
-            status: product.status,
-            updated: 'Synced',
-          })),
-        );
-      })
-      .catch(() => setLoadError('Unable to load inventory. Please try again.'))
-      .finally(() => setLoading(false));
-  }, []);
+  const [availableCategories, setAvailableCategories] = useState<string[]>(DEFAULT_CATEGORIES);
+  const [categoryProducts, setCategoryProducts] = useState<InventoryCatalogProduct[]>([]);
+  const [cities, setCities] = useState<InventoryCityItem[]>([]);
+  const [hubs, setHubs] = useState<InventoryHubItem[]>([]);
+  const [dropdownLoading, setDropdownLoading] = useState(false);
 
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All');
@@ -127,8 +121,99 @@ export default function Inventory() {
   const [addSubmitting, setAddSubmitting] = useState(false);
   const [addSuccess, setAddSuccess] = useState(false);
 
-  const handleFormChange = (field: string, value: string) =>
+  const filterCategories = useMemo(
+    () => ['All', ...availableCategories],
+    [availableCategories],
+  );
+
+  const handleFormChange = (field: keyof typeof EMPTY_FORM, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const mapProductRow = (product: any): ProductRow => ({
+    id: product.id,
+    name: product.name,
+    sku: product.id,
+    category: product.category ?? 'General',
+    stock: product.stock ?? 0,
+    price: product.unit_price
+      ? `₹${Number(product.unit_price).toLocaleString('en-IN')}`
+      : '₹0',
+    status: product.status ?? 'Healthy',
+    updated: 'Synced',
+  });
+
+  const loadInventory = async () => {
+    setLoading(true);
+
+    try {
+      const rows = await listInventoryProducts();
+
+      setLoadError(null);
+      setProducts(rows.map(mapProductRow));
+    } catch {
+      setLoadError('Unable to load inventory. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    async function loadDropdownData() {
+      setDropdownLoading(true);
+
+      try {
+        const [categoryRows, cityRows] = await Promise.all([
+          listInventoryCategories().catch(() => DEFAULT_CATEGORIES),
+          listInventoryCities().catch(() => []),
+        ]);
+
+        const normalizedCategories = categoryRows.length
+          ? categoryRows.slice(0, 4)
+          : DEFAULT_CATEGORIES;
+
+        setAvailableCategories(normalizedCategories);
+        setCities(cityRows);
+      } finally {
+        setDropdownLoading(false);
+      }
+    }
+
+    void loadInventory();
+    void loadDropdownData();
+  }, []);
+
+  useEffect(() => {
+    if (!form.category) {
+      setCategoryProducts([]);
+      return;
+    }
+
+    setForm((prev) => ({
+      ...prev,
+      product_id: '',
+    }));
+
+    void listInventoryProductsByCategory(form.category)
+      .then(setCategoryProducts)
+      .catch(() => setCategoryProducts([]));
+  }, [form.category]);
+
+  useEffect(() => {
+    if (!form.city_id) {
+      setHubs([]);
+      return;
+    }
+
+    setForm((prev) => ({
+      ...prev,
+      hub_id: '',
+    }));
+
+    void listInventoryHubs(form.city_id)
+      .then(setHubs)
+      .catch(() => setHubs([]));
+  }, [form.city_id]);
 
   const handleAddProduct = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -136,12 +221,20 @@ export default function Inventory() {
     setAddSuccess(false);
 
     try {
-      const price = parseFloat(form.unit_price) || 0;
-      const created = await createInventoryProduct({
-        name: form.product_name,
+      const created = await createInventoryStockEntry({
         category: form.category,
-        unit_price: price,
-        supplier_name: form.supplier_name || undefined,
+        product_id: form.product_id,
+        city_id: Number(form.city_id),
+        hub_id: Number(form.hub_id),
+        inventory_level: Number(form.inventory_level || 0),
+        units_ordered: form.units_ordered ? Number(form.units_ordered) : 0,
+        price: form.price ? Number(form.price) : undefined,
+        demand: form.demand ? Number(form.demand) : 0,
+        discount: form.discount ? Number(form.discount) : 0,
+        weather_condition: form.weather_condition || undefined,
+        seasonality: form.seasonality || undefined,
+        promotion: Number(form.promotion || 0),
+        epidemic: Number(form.epidemic || 0),
       });
 
       const newProduct: ProductRow = {
@@ -150,18 +243,28 @@ export default function Inventory() {
         sku: created.id,
         category: created.category ?? form.category,
         stock: created.stock,
-        price: `₹${price.toLocaleString('en-IN')}`,
+        price: created.unit_price
+          ? `₹${Number(created.unit_price).toLocaleString('en-IN')}`
+          : form.price
+            ? `₹${Number(form.price).toLocaleString('en-IN')}`
+            : '₹0',
         status: created.status,
         updated: 'Just now',
       };
 
       setProducts((prev) => [newProduct, ...prev]);
       setAddSuccess(true);
+
       setTimeout(() => {
         setShowAddModal(false);
         setAddSuccess(false);
         setForm(EMPTY_FORM);
+        setCategoryProducts([]);
+        setHubs([]);
       }, 1200);
+    } catch (error) {
+      console.error('Add inventory stock entry failed:', error);
+      setLoadError('Unable to add inventory entry. Please check the form and try again.');
     } finally {
       setAddSubmitting(false);
     }
@@ -190,7 +293,7 @@ export default function Inventory() {
       await deleteInventoryProduct(id);
       setProducts((prev) => prev.filter((item) => item.id !== id));
     } catch {
-      // ignore delete errors in UI for now
+      // keep UI stable for now
     }
 
     if (selectedProduct?.id === id) {
@@ -202,6 +305,10 @@ export default function Inventory() {
 
   const lowStockCount = products.filter(
     (p) => p.status === 'Low Stock',
+  ).length;
+
+  const healthyCount = products.filter(
+    (p) => p.status === 'Healthy',
   ).length;
 
   return (
@@ -220,8 +327,7 @@ export default function Inventory() {
             </h1>
 
             <p className="mt-2 text-sm text-slate-500 max-w-3xl leading-6">
-              Manage product inventory, stock visibility, SKU operations and
-              warehouse product data from one centralized workspace.
+              Manage product inventory and stock visibility from one centralized workspace.
             </p>
           </div>
 
@@ -274,7 +380,7 @@ export default function Inventory() {
                   Healthy inventory
                 </p>
                 <h2 className="mt-2 text-2xl font-semibold">
-                  {products.filter((p) => p.status === 'Healthy').length}
+                  {healthyCount}
                 </h2>
               </div>
               <div className="flex h-12 w-12 items-center justify-center rounded-[1.25rem] bg-emerald-50">
@@ -309,7 +415,7 @@ export default function Inventory() {
                       onChange={(e) => setCategoryFilter(e.target.value)}
                       className="h-10 appearance-none rounded-full border border-slate-200 bg-white px-4 pr-9 text-sm font-medium outline-none"
                     >
-                      {categories.map((category) => (
+                      {filterCategories.map((category) => (
                         <option key={category}>{category}</option>
                       ))}
                     </select>
@@ -382,13 +488,12 @@ export default function Inventory() {
                             <p className="text-sm font-semibold text-slate-950">{product.stock}</p>
                             <div className="mt-1.5 h-1.5 w-20 overflow-hidden rounded-full bg-slate-100">
                               <div
-                                className={`h-full rounded-full ${
-                                  product.status === 'Out of Stock'
-                                    ? 'bg-red-500 w-[8%]'
-                                    : product.status === 'Low Stock'
+                                className={`h-full rounded-full ${product.status === 'Out of Stock'
+                                  ? 'bg-red-500 w-[8%]'
+                                  : product.status === 'Low Stock'
                                     ? 'bg-amber-500 w-[35%]'
                                     : 'bg-emerald-500 w-[90%]'
-                                }`}
+                                  }`}
                               />
                             </div>
                           </td>
@@ -397,13 +502,12 @@ export default function Inventory() {
 
                           <td className="px-4 py-3">
                             <span
-                              className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-                                product.status === 'Healthy'
-                                  ? 'bg-emerald-50 text-emerald-700'
-                                  : product.status === 'Low Stock'
+                              className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${product.status === 'Healthy'
+                                ? 'bg-emerald-50 text-emerald-700'
+                                : product.status === 'Low Stock'
                                   ? 'bg-amber-50 text-amber-700'
                                   : 'bg-red-50 text-red-700'
-                              }`}
+                                }`}
                             >
                               {product.status}
                             </span>
@@ -419,7 +523,7 @@ export default function Inventory() {
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  deleteProduct(product.id);
+                                  void deleteProduct(product.id);
                                 }}
                                 className="flex h-8 w-8 items-center justify-center rounded-full bg-red-50 transition hover:bg-red-100"
                               >
@@ -510,7 +614,7 @@ export default function Inventory() {
                       Edit
                     </button>
                     <button
-                      onClick={() => deleteProduct(selectedProduct.id)}
+                      onClick={() => void deleteProduct(selectedProduct.id)}
                       className="flex-1 rounded-full bg-red-50 px-4 py-2.5 text-sm font-semibold text-red-700 transition hover:bg-red-100"
                     >
                       Delete
@@ -533,45 +637,42 @@ export default function Inventory() {
         </section>
       </main>
 
-      <Dialog open={showAddModal} onOpenChange={(open) => {
-        setShowAddModal(open);
-        if (!open) { setForm(EMPTY_FORM); setAddSuccess(false); }
-      }}>
+      <Dialog
+        open={showAddModal}
+        onOpenChange={(open) => {
+          setShowAddModal(open);
+          if (!open) {
+            setForm(EMPTY_FORM);
+            setAddSuccess(false);
+            setCategoryProducts([]);
+            setHubs([]);
+          }
+        }}
+      >
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-lg">
               <Package2 className="h-5 w-5 text-slate-700" />
-              Add new product
+              Add inventory stock
             </DialogTitle>
             <DialogDescription>
-              Creates a record in <span className="font-medium text-slate-700">products</span> and an initial entry in the <span className="font-medium text-slate-700">inventory</span> table.
-              Product ID and Inventory ID are auto-generated.
+              Select a category, product, city, and hub, then create a new stock entry in the planning dataset.
             </DialogDescription>
           </DialogHeader>
 
           <form onSubmit={handleAddProduct} className="mt-2 space-y-5">
+            {/* Select product */}
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <p className="mb-3 text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
-                products table
+                Select product
               </p>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="sm:col-span-2">
-                  <label className="mb-1.5 block text-xs font-medium text-slate-700">
-                    product_name <span className="text-red-500">*</span>
-                  </label>
-                  <Input
-                    value={form.product_name}
-                    onChange={(e) => handleFormChange('product_name', e.target.value)}
-                    placeholder="e.g. iPhone 17 Pro Max"
-                    required
-                    className="rounded-xl"
-                  />
-                </div>
 
+              <div className="grid gap-3 sm:grid-cols-2">
                 <div>
                   <label className="mb-1.5 block text-xs font-medium text-slate-700">
                     category <span className="text-red-500">*</span>
                   </label>
+
                   <div className="relative">
                     <select
                       value={form.category}
@@ -579,58 +680,129 @@ export default function Inventory() {
                       className="h-10 w-full appearance-none rounded-xl border border-input bg-background px-3 pr-8 text-sm outline-none focus:border-slate-400"
                       required
                     >
-                      {PRODUCT_CATEGORIES.map((cat) => (
-                        <option key={cat}>{cat}</option>
+                      <option value="">Select category</option>
+                      {availableCategories.map((cat) => (
+                        <option key={cat} value={cat}>
+                          {cat}
+                        </option>
                       ))}
                     </select>
+
                     <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
                   </div>
                 </div>
 
                 <div>
                   <label className="mb-1.5 block text-xs font-medium text-slate-700">
-                    unit_price (₹) <span className="text-red-500">*</span>
+                    product <span className="text-red-500">*</span>
                   </label>
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={form.unit_price}
-                    onChange={(e) => handleFormChange('unit_price', e.target.value)}
-                    placeholder="e.g. 174900"
-                    required
-                    className="rounded-xl"
-                  />
-                </div>
 
-                <div className="sm:col-span-2">
-                  <label className="mb-1.5 block text-xs font-medium text-slate-700">
-                    supplier_name
-                  </label>
-                  <Input
-                    value={form.supplier_name}
-                    onChange={(e) => handleFormChange('supplier_name', e.target.value)}
-                    placeholder="e.g. Apple Inc."
-                    className="rounded-xl"
-                  />
+                  <div className="relative">
+                    <select
+                      value={form.product_id}
+                      onChange={(e) => handleFormChange('product_id', e.target.value)}
+                      className="h-10 w-full appearance-none rounded-xl border border-input bg-background px-3 pr-8 text-sm outline-none focus:border-slate-400"
+                      required
+                      disabled={!form.category}
+                    >
+                      <option value="">
+                        {form.category ? 'Select product' : 'Select category first'}
+                      </option>
+
+                      {categoryProducts.map((product) => (
+                        <option
+                          key={`${product.product_id}-${product.category}`}
+                          value={product.product_id}
+                        >
+                          {product.product_display_name || product.product_name || product.product_id}
+                        </option>
+                      ))}
+                    </select>
+
+                    <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
+                  </div>
                 </div>
               </div>
             </div>
 
+            {/* Select location */}
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <p className="mb-3 text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
-                inventory table
+                Select location
               </p>
-              <div className="grid gap-3 sm:grid-cols-3">
+
+              <div className="grid gap-3 sm:grid-cols-2">
                 <div>
                   <label className="mb-1.5 block text-xs font-medium text-slate-700">
-                    quantity <span className="text-red-500">*</span>
+                    city <span className="text-red-500">*</span>
                   </label>
+
+                  <div className="relative">
+                    <select
+                      value={form.city_id}
+                      onChange={(e) => handleFormChange('city_id', e.target.value)}
+                      className="h-10 w-full appearance-none rounded-xl border border-input bg-background px-3 pr-8 text-sm outline-none focus:border-slate-400"
+                      required
+                    >
+                      <option value="">Select city</option>
+                      {cities.map((city) => (
+                        <option key={city.city_id} value={city.city_id}>
+                          {city.city_name}
+                        </option>
+                      ))}
+                    </select>
+
+                    <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-slate-700">
+                    hub <span className="text-red-500">*</span>
+                  </label>
+
+                  <div className="relative">
+                    <select
+                      value={form.hub_id}
+                      onChange={(e) => handleFormChange('hub_id', e.target.value)}
+                      className="h-10 w-full appearance-none rounded-xl border border-input bg-background px-3 pr-8 text-sm outline-none focus:border-slate-400"
+                      required
+                      disabled={!form.city_id}
+                    >
+                      <option value="">
+                        {form.city_id ? 'Select hub' : 'Select city first'}
+                      </option>
+
+                      {hubs.map((hub) => (
+                        <option key={hub.hub_id} value={hub.hub_id}>
+                          {hub.hub_name || `Hub ${hub.hub_id}`}
+                        </option>
+                      ))}
+                    </select>
+
+                    <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Stock details */}
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <p className="mb-3 text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
+                Stock details
+              </p>
+
+              <div className="grid gap-3 sm:grid-cols-4">
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-slate-700">
+                    inventory_level <span className="text-red-500">*</span>
+                  </label>
+
                   <Input
                     type="number"
                     min="0"
-                    value={form.quantity}
-                    onChange={(e) => handleFormChange('quantity', e.target.value)}
+                    value={form.inventory_level}
+                    onChange={(e) => handleFormChange('inventory_level', e.target.value)}
                     placeholder="e.g. 120"
                     required
                     className="rounded-xl"
@@ -639,55 +811,153 @@ export default function Inventory() {
 
                 <div>
                   <label className="mb-1.5 block text-xs font-medium text-slate-700">
-                    threshold_limit <span className="text-red-500">*</span>
+                    units_ordered
                   </label>
+
                   <Input
                     type="number"
                     min="0"
-                    value={form.threshold_limit}
-                    onChange={(e) => handleFormChange('threshold_limit', e.target.value)}
-                    placeholder="e.g. 20"
-                    required
+                    value={form.units_ordered}
+                    onChange={(e) => handleFormChange('units_ordered', e.target.value)}
+                    placeholder="e.g. 50"
                     className="rounded-xl"
                   />
                 </div>
 
                 <div>
                   <label className="mb-1.5 block text-xs font-medium text-slate-700">
-                    hub_id
+                    price ₹
                   </label>
+
                   <Input
-                    value={form.hub_id}
-                    onChange={(e) => handleFormChange('hub_id', e.target.value)}
-                    placeholder="e.g. W001"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={form.price}
+                    onChange={(e) => handleFormChange('price', e.target.value)}
+                    placeholder="e.g. 174900"
+                    className="rounded-xl"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-slate-700">
+                    discount
+                  </label>
+
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={form.discount}
+                    onChange={(e) => handleFormChange('discount', e.target.value)}
+                    placeholder="e.g. 5"
                     className="rounded-xl"
                   />
                 </div>
               </div>
+            </div>
 
-              {(form.quantity !== '' && form.threshold_limit !== '') && (
-                <div className="mt-3 flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5">
-                  <span className="text-xs text-slate-500">Computed status:</span>
-                  <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
-                    parseInt(form.quantity) === 0
-                      ? 'bg-red-50 text-red-700'
-                      : parseInt(form.quantity) <= parseInt(form.threshold_limit)
-                      ? 'bg-amber-50 text-amber-700'
-                      : 'bg-emerald-50 text-emerald-700'
-                  }`}>
-                    {parseInt(form.quantity) === 0
-                      ? 'Out of Stock'
-                      : parseInt(form.quantity) <= parseInt(form.threshold_limit)
-                      ? 'Low Stock'
-                      : 'Healthy'}
-                  </span>
-                  <span className="text-xs text-slate-400">(quantity vs threshold_limit)</span>
+            {/* Context details */}
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <p className="mb-3 text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
+                Context details
+              </p>
+
+              <div className="grid gap-3 sm:grid-cols-4">
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-slate-700">
+                    weather_condition
+                  </label>
+
+                  <div className="relative">
+                    <select
+                      value={form.weather_condition}
+                      onChange={(e) => handleFormChange('weather_condition', e.target.value)}
+                      className="h-10 w-full appearance-none rounded-xl border border-input bg-background px-3 pr-8 text-sm outline-none focus:border-slate-400"
+                    >
+                      <option value="">Select weather</option>
+                      {WEATHER_OPTIONS.map((weather) => (
+                        <option key={weather} value={weather}>
+                          {weather}
+                        </option>
+                      ))}
+                    </select>
+
+                    <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
+                  </div>
                 </div>
-              )}
+
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-slate-700">
+                    seasonality
+                  </label>
+
+                  <div className="relative">
+                    <select
+                      value={form.seasonality}
+                      onChange={(e) => handleFormChange('seasonality', e.target.value)}
+                      className="h-10 w-full appearance-none rounded-xl border border-input bg-background px-3 pr-8 text-sm outline-none focus:border-slate-400"
+                    >
+                      <option value="">Select season</option>
+                      {SEASONALITY_OPTIONS.map((season) => (
+                        <option key={season} value={season}>
+                          {season}
+                        </option>
+                      ))}
+                    </select>
+
+                    <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-slate-700">
+                    promotion
+                  </label>
+
+                  <div className="relative">
+                    <select
+                      value={form.promotion}
+                      onChange={(e) => handleFormChange('promotion', e.target.value)}
+                      className="h-10 w-full appearance-none rounded-xl border border-input bg-background px-3 pr-8 text-sm outline-none focus:border-slate-400"
+                    >
+                      {YES_NO_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+
+                    <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-slate-700">
+                    epidemic
+                  </label>
+
+                  <div className="relative">
+                    <select
+                      value={form.epidemic}
+                      onChange={(e) => handleFormChange('epidemic', e.target.value)}
+                      className="h-10 w-full appearance-none rounded-xl border border-input bg-background px-3 pr-8 text-sm outline-none focus:border-slate-400"
+                    >
+                      {YES_NO_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+
+                    <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
+                  </div>
+                </div>
+              </div>
 
               <div className="mt-3 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs text-slate-400">
-                <span className="font-medium text-slate-600">product_id</span> and <span className="font-medium text-slate-600">inventory_id</span> are auto-generated on save.
-                <span className="ml-2 font-medium text-slate-600">last_updated</span> is set to now.
+                <span className="font-medium text-slate-600">date</span> is set by the backend.
               </div>
             </div>
 
@@ -696,13 +966,27 @@ export default function Inventory() {
                 type="button"
                 variant="outline"
                 className="rounded-full px-5"
-                onClick={() => { setShowAddModal(false); setForm(EMPTY_FORM); }}
+                onClick={() => {
+                  setShowAddModal(false);
+                  setForm(EMPTY_FORM);
+                  setCategoryProducts([]);
+                  setHubs([]);
+                }}
               >
                 Cancel
               </Button>
               <Button
                 type="submit"
-                disabled={addSubmitting || addSuccess}
+                disabled={
+                  addSubmitting ||
+                  addSuccess ||
+                  dropdownLoading ||
+                  !form.category ||
+                  !form.product_id ||
+                  !form.city_id ||
+                  !form.hub_id ||
+                  !form.inventory_level
+                }
                 className="rounded-full bg-slate-950 px-6 text-white min-w-[140px]"
               >
                 {addSuccess ? (
@@ -718,7 +1002,7 @@ export default function Inventory() {
                 ) : (
                   <>
                     <Plus className="mr-2 h-4 w-4" />
-                    Add product
+                    Add stock
                   </>
                 )}
               </Button>
