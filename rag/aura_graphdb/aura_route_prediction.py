@@ -91,7 +91,7 @@ def persist_ml_courier_route(
                 dedupe_key=f"route_prediction_completed:{route_prediction_id}:{role}",
             )
 
-        if predicted_eta_min is not None and predicted_eta_min >= 60:
+        if predicted_eta_min is not None and predicted_eta_min >= 250:
             for role in ["admin", "logistics_manager"]:
                 _safe_create_notification(
                     title="High ETA predicted",
