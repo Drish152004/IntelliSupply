@@ -1,5 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import Navbar from '@/components/Navbar';
+import { runPlanningSimulation, getPlanningFixtures } from '@/lib/api';
+import type { PlanningFixtures } from '@/lib/api';
 import {
     Sparkles,
     Brain,
@@ -44,6 +46,33 @@ interface Scenario {
     recommendation: string;
     situation: string;
     analysis: string;
+    inventory: {
+        current_stock: number;
+        coverage_days: number;
+        safety_stock: number;
+        inventory_status: string;
+    };
+    demand: {
+        demand_growth_pct: number;
+    };
+    forecast: {
+        predicted_demand: number;
+        confidence_score: number;
+    };
+    risk: {
+        risk_level: string;
+        composite_risk_score: number;
+        primary_risk_driver: string;
+    };
+    event: {
+        promotion: boolean;
+        seasonality: string;
+    };
+    replenishment: {
+        quantity_ordered: number;
+        lead_time_days: number;
+        actual_delay_days: number;
+    };
 }
 
 interface DailyLogEntry {
@@ -68,290 +97,7 @@ interface CaseSimulationData {
     daily_log: string;
 }
 
-const scenarios: Scenario[] = [
-    {
-        id: 1,
-        title: 'HYD Smartphone Shortage',
-        hubId: 'HYD-01',
-        productId: 'SMARTPHONE-X',
-        category: 'Electronics',
-        riskLevel: 'HIGH',
-        riskScore: 89,
-        coverageDays: 5,
-        currentStock: 2450,
-        safetyStock: 3200,
-        forecastDemand: 5200,
-        confidenceScore: 93,
-        demandGrowth: 24,
-        primaryRiskDriver: 'Demand Surge',
-        replenishmentQty: 1200,
-        etaDays: 3,
-        recommendation:
-            'Transfer 450 units from BLR Hub and immediately raise PO for 1200 units.',
-        situation:
-            'Inventory projected to fall below safety stock within 5 days.',
-        analysis:
-            'Demand has increased significantly while inbound supply remains unchanged.',
-    },
-    {
-        id: 2,
-        title: 'BLR Supplier Delay',
-        hubId: 'BLR-02',
-        productId: 'TABLET-A',
-        category: 'Electronics',
-        riskLevel: 'MEDIUM',
-        riskScore: 63,
-        coverageDays: 11,
-        currentStock: 6100,
-        safetyStock: 4500,
-        forecastDemand: 3900,
-        confidenceScore: 90,
-        demandGrowth: 11,
-        primaryRiskDriver: 'Inbound Delay',
-        replenishmentQty: 2000,
-        etaDays: 7,
-        recommendation:
-            'Reallocate inventory from CHN hub until delayed shipment arrives.',
-        situation:
-            'Supplier shipment delayed by 4 days.',
-        analysis:
-            'Stock remains healthy but risk increases if delay extends further.',
-    },
-    {
-        id: 3,
-        title: 'CHN Seasonal Demand Spike',
-        hubId: 'CHN-03',
-        productId: 'HEADPHONE-Z',
-        category: 'Accessories',
-        riskLevel: 'HIGH',
-        riskScore: 81,
-        coverageDays: 7,
-        currentStock: 3700,
-        safetyStock: 3000,
-        forecastDemand: 6200,
-        confidenceScore: 95,
-        demandGrowth: 38,
-        primaryRiskDriver: 'Seasonality',
-        replenishmentQty: 1800,
-        etaDays: 4,
-        recommendation:
-            'Increase reorder quantity by 25% for next cycle.',
-        situation:
-            'Upcoming promotion expected to significantly increase sales.',
-        analysis:
-            'Historical promotion patterns indicate delayed demand spike.',
-    },
-    {
-        id: 4,
-        title: 'MUM Overstock Risk',
-        hubId: 'MUM-04',
-        productId: 'MONITOR-27',
-        category: 'Peripherals',
-        riskLevel: 'LOW',
-        riskScore: 22,
-        coverageDays: 42,
-        currentStock: 9200,
-        safetyStock: 2400,
-        forecastDemand: 1800,
-        confidenceScore: 91,
-        demandGrowth: -8,
-        primaryRiskDriver: 'Excess Inventory',
-        replenishmentQty: 0,
-        etaDays: 0,
-        recommendation:
-            'Pause replenishment and redistribute inventory to nearby hubs.',
-        situation:
-            'Inventory significantly exceeds projected demand.',
-        analysis:
-            'Demand decline causing inventory accumulation.',
-    },
-];
-
-const generateCaseSimulation = (scenario: Scenario, caseId: string): CaseSimulationData => {
-    const totalDays = 10;
-    const logs: DailyLogEntry[] = [];
-    let currentInv = scenario.currentStock;
-    const safetyStock = scenario.safetyStock;
-
-    let demandMultiplier = 1.0;
-    let eta = scenario.etaDays;
-
-    if (caseId === 'best') {
-        demandMultiplier = 0.75;
-        eta = Math.max(1, scenario.etaDays - 1);
-    } else if (caseId === 'likely') {
-        demandMultiplier = 1.0;
-        eta = scenario.etaDays;
-    } else if (caseId === 'worst') {
-        demandMultiplier = 1.4;
-        eta = scenario.etaDays + 3;
-    }
-
-    const dailyDemandAverage = Math.round(scenario.forecastDemand / 15);
-
-    let minimumInventory = currentInv;
-    let stockoutOccurredTotal = false;
-    let firstStockoutDay: number | string = 'N/A';
-    let totalShortage = 0;
-    let safetyStockBreachedTotal = false;
-    let daysBelowSafetyStock = 0;
-
-    for (let day = 1; day <= totalDays; day++) {
-        const startInv = currentInv;
-        const dayDemand = Math.round(dailyDemandAverage * demandMultiplier * (0.95 + (day % 3) * 0.05));
-
-        let repReceived = 0;
-        if (day === eta && scenario.replenishmentQty > 0) {
-            repReceived = scenario.replenishmentQty;
-        }
-
-        let endInv = startInv - dayDemand + repReceived;
-        let dayStockout = false;
-        if (endInv < 0) {
-            dayStockout = true;
-            totalShortage += Math.abs(endInv);
-            endInv = 0;
-        }
-
-        if (endInv < safetyStock) {
-            daysBelowSafetyStock++;
-        }
-
-        if (endInv < minimumInventory) {
-            minimumInventory = endInv;
-        }
-
-        if (dayStockout) {
-            stockoutOccurredTotal = true;
-            if (firstStockoutDay === 'N/A') {
-                firstStockoutDay = day;
-            }
-        }
-
-        currentInv = endInv;
-
-        logs.push({
-            day,
-            startingInventory: startInv,
-            demand: dayDemand,
-            replenishmentReceived: repReceived,
-            endingInventory: endInv,
-            stockoutOccurred: dayStockout,
-            belowSafetyStock: endInv < safetyStock,
-        });
-    }
-
-    if (minimumInventory < safetyStock) {
-        safetyStockBreachedTotal = true;
-    }
-
-    const worldId = `SIM-${scenario.hubId.split('-')[0]}-${caseId.toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
-
-    return {
-        world_id: worldId,
-        ending_inventory: currentInv,
-        minimum_inventory: minimumInventory,
-        stockout_occurred: stockoutOccurredTotal,
-        stockout_day: firstStockoutDay,
-        shortage_quantity: totalShortage,
-        safety_stock_breached: safetyStockBreachedTotal,
-        days_below_safety_stock: daysBelowSafetyStock,
-        daily_log: JSON.stringify(logs),
-    };
-};
-
-const getSimulationResult = (scenarioCase: string, decision: string, scenario: Scenario) => {
-    const hub = scenario.hubId;
-    const product = scenario.productId;
-
-    let summary = '';
-    let demandImpact = '';
-    let inventoryChange = '';
-    let riskShift = '';
-    let action = '';
-
-    if (scenarioCase === 'best') {
-        if (decision === 'Reallocate Inventory') {
-            summary = `Successful stock transfer under optimistic conditions. Shortage resolved with minimal cost.`;
-            demandImpact = `Stable demand allows reallocation to cover 100% of pending orders.`;
-            inventoryChange = `Inventory at ${hub} increased by 450 units; helper hub remains above safety threshold.`;
-            riskShift = `Risk level drops from ${scenario.riskLevel} to LOW (Risk Score: 15).`;
-            action = `Approve reallocation order and initiate truck transfer immediately.`;
-        } else if (decision === 'Increase Purchase Order') {
-            summary = `Emergency PO successfully expedited. Supplier confirms immediate dispatch.`;
-            demandImpact = `Strong demand absorbed by new stock arrival in 2 days.`;
-            inventoryChange = `Stock level reaches ${scenario.currentStock + 1200} units, restoring healthy buffer.`;
-            riskShift = `Risk level drops to LOW (Risk Score: 20).`;
-            action = `Confirm PO with finance team and track shipment.`;
-        } else if (decision === 'Delay Replenishment') {
-            summary = `Replenishment delay managed without stockout due to high beginning inventory.`;
-            demandImpact = `No demand impact; existing stock is sufficient for current cycle.`;
-            inventoryChange = `No immediate change; delayed shipment scheduled in 7 days.`;
-            riskShift = `Risk level remains stable.`;
-            action = `Monitor daily sales to ensure stock levels don't drop unexpectedly.`;
-        } else {
-            summary = `No intervention taken. High market confidence prevents any severe fallout.`;
-            demandImpact = `Normal demand patterns persist.`;
-            inventoryChange = `Inventory naturally draws down to safety levels.`;
-            riskShift = `Risk level drops slightly to MEDIUM.`;
-            action = `Continue standard operations and check status in 48 hours.`;
-        }
-    } else if (scenarioCase === 'likely') {
-        if (decision === 'Reallocate Inventory') {
-            summary = `Moderate success. Stock transfer covers the immediate deficit but tightens supply elsewhere.`;
-            demandImpact = `Covers 85% of projected demand spike for ${product}.`;
-            inventoryChange = `Restores safety stock level to ${scenario.safetyStock} units at ${hub}.`;
-            riskShift = `Risk level reduces from ${scenario.riskLevel} to MEDIUM.`;
-            action = `Execute partial transfer and prepare backup purchase orders.`;
-        } else if (decision === 'Increase Purchase Order') {
-            summary = `New PO generated. Restores inventory safety stock in 4 days.`;
-            demandImpact = `Demand satisfied, but higher logistics fees reduce margin by 5%.`;
-            inventoryChange = `Inventory will increase by ${scenario.replenishmentQty || 1200} units on ETA day.`;
-            riskShift = `Risk level reduces to LOW/MEDIUM.`;
-            action = `Raise purchase order and approve express delivery fee.`;
-        } else if (decision === 'Delay Replenishment') {
-            summary = `Delaying replenishment increases risk of inventory depletion.`;
-            demandImpact = `Potential 10% lost sales if demand surges during delay.`;
-            inventoryChange = `Current stock will drop to ${scenario.currentStock - 1000} units before shipment arrival.`;
-            riskShift = `Risk level increases to HIGH.`;
-            action = `Avoid delaying replenishment unless storage space is fully capped.`;
-        } else {
-            summary = `No action taken. Inventory is highly likely to fall below safety threshold.`;
-            demandImpact = `Expected stockout in ${scenario.coverageDays} days.`;
-            inventoryChange = `Inventory drops below safety threshold (${scenario.safetyStock} units).`;
-            riskShift = `Risk level remains at ${scenario.riskLevel}.`;
-            action = `Urgent action recommended: initiate reallocation or PO.`;
-        }
-    } else {
-        if (decision === 'Reallocate Inventory') {
-            summary = `Ineffective reallocation. High demand across all regions limits available helper stock.`;
-            demandImpact = `Only covers 40% of demand; critical stockouts expected at multiple hubs.`;
-            inventoryChange = `Stock increases marginally at ${hub} but depletes other regional centers.`;
-            riskShift = `Risk level remains HIGH.`;
-            action = `Combine reallocation with emergency local vendor sourcing.`;
-        } else if (decision === 'Increase Purchase Order') {
-            summary = `Expedited PO delayed due to supply chain congestion. Arrival takes 5+ days.`;
-            demandImpact = `Severe demand backlog; customer satisfaction drops.`;
-            inventoryChange = `Inventory remains critical until delayed PO arrives.`;
-            riskShift = `Risk level remains HIGH.`;
-            action = `Request partial split-shipment delivery from supplier.`;
-        } else if (decision === 'Delay Replenishment') {
-            summary = `Disastrous delay. Critical stockout occurs within 48 hours.`;
-            demandImpact = `40% of sales orders unfulfilled; severe penalties from clients.`;
-            inventoryChange = `Stock levels drop to zero at ${hub}.`;
-            riskShift = `Risk level escalates to CRITICAL.`;
-            action = `Cancel replenishment delay immediately; trigger emergency supplies.`;
-        } else {
-            summary = `No action taken under severe conditions. Major supply disruption.`;
-            demandImpact = `Immediate stockout for ${product} at ${hub}.`;
-            inventoryChange = `Inventory drops to zero; pending orders accumulate.`;
-            riskShift = `Risk level rises to CRITICAL (Risk Score: 98).`;
-            action = `Convene emergency supply chain board to approve immediate purchase order.`;
-        }
-    }
-
-    return { summary, demandImpact, inventoryChange, riskShift, action };
-};
+// Mock/static scenario logic removed.
 
 // ==========================================
 // SUBCOMPONENTS
@@ -366,6 +112,15 @@ interface TopFiltersProps {
     setCategoryFilter: (val: string) => void;
     dateFilter: string;
     setDateFilter: (val: string) => void;
+    planningWindow: number;
+    setPlanningWindow: (val: number) => void;
+    categoriesList: string[];
+    productsList: string[];
+    hubsList: string[];
+    datesList: string[];
+    onRunSimulation: () => void;
+    loading: boolean;
+    disabled: boolean;
 }
 
 export function TopFilters({
@@ -377,9 +132,19 @@ export function TopFilters({
     setCategoryFilter,
     dateFilter,
     setDateFilter,
+    planningWindow,
+    setPlanningWindow,
+    categoriesList,
+    productsList,
+    hubsList,
+    datesList,
+    onRunSimulation,
+    loading,
+    disabled,
 }: TopFiltersProps) {
     return (
-        <div className="flex flex-wrap items-center gap-6 rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm animate-fade-in">
+        <div className="flex flex-wrap items-end gap-6 rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm animate-fade-in">
+
             <div className="flex flex-col gap-1 min-w-[150px] flex-1">
                 <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Hub</label>
                 <select
@@ -387,11 +152,23 @@ export function TopFilters({
                     onChange={(e) => setHubFilter(e.target.value)}
                     className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-slate-50 text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors"
                 >
-                    <option value="ALL">All Hubs</option>
-                    <option value="HYD-01">Hyderabad (HYD-01)</option>
-                    <option value="BLR-02">Bangalore (BLR-02)</option>
-                    <option value="CHN-03">Chennai (CHN-03)</option>
-                    <option value="MUM-04">Mumbai (MUM-04)</option>
+                    {hubsList.map((hub) => (
+                        <option key={hub} value={hub}>Hub {hub}</option>
+                    ))}
+                </select>
+            </div>
+
+
+            <div className="flex flex-col gap-1 min-w-[150px] flex-1">
+                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Category</label>
+                <select
+                    value={categoryFilter}
+                    onChange={(e) => setCategoryFilter(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-slate-50 text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors"
+                >
+                    {categoriesList.map((cat) => (
+                        <option key={cat} value={cat}>{cat}</option>
+                    ))}
                 </select>
             </div>
 
@@ -402,36 +179,53 @@ export function TopFilters({
                     onChange={(e) => setProductFilter(e.target.value)}
                     className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-slate-50 text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors"
                 >
-                    <option value="ALL">All Products</option>
-                    <option value="SMARTPHONE-X">SMARTPHONE-X</option>
-                    <option value="TABLET-A">TABLET-A</option>
-                    <option value="HEADPHONE-Z">HEADPHONE-Z</option>
-                    <option value="MONITOR-27">MONITOR-27</option>
+                    {productsList.map((prod) => (
+                        <option key={prod} value={prod}>{prod}</option>
+                    ))}
                 </select>
             </div>
 
+
+
             <div className="flex flex-col gap-1 min-w-[150px] flex-1">
-                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Category</label>
+                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Simulation Date</label>
                 <select
-                    value={categoryFilter}
-                    onChange={(e) => setCategoryFilter(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-slate-50 text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors"
-                >
-                    <option value="ALL">All Categories</option>
-                    <option value="Electronics">Electronics</option>
-                    <option value="Accessories">Accessories</option>
-                    <option value="Peripherals">Peripherals</option>
-                </select>
-            </div>
-
-            <div className="flex flex-col gap-1 min-w-[150px] flex-1">
-                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Date</label>
-                <input
-                    type="date"
                     value={dateFilter}
                     onChange={(e) => setDateFilter(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 px-3 py-1.5 text-sm bg-slate-50 text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors"
-                />
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-slate-50 text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors"
+                >
+                    {datesList.map((dt) => (
+                        <option key={dt} value={dt}>{dt}</option>
+                    ))}
+                </select>
+            </div>
+
+            <div className="flex flex-col gap-1 min-w-[150px] flex-1">
+                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Planning Window</label>
+                <select
+                    value={planningWindow}
+                    onChange={(e) => setPlanningWindow(Number(e.target.value))}
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-slate-50 text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors"
+                >
+                    <option value={7}>7 days</option>
+                    <option value={14}>14 days</option>
+                    <option value={30}>30 days</option>
+                </select>
+            </div>
+
+            <div className="flex flex-col gap-1 min-w-[150px] flex-1 justify-end">
+                <button
+                    onClick={onRunSimulation}
+                    disabled={loading || disabled}
+                    className="w-full bg-indigo-600 text-white rounded-xl px-4 py-2 text-sm font-semibold hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 h-[38px]"
+                >
+                    {loading ? (
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                        <Activity className="h-4 w-4" />
+                    )}
+                    <span>{loading ? 'Running...' : 'Run Simulation'}</span>
+                </button>
             </div>
         </div>
     );
@@ -443,6 +237,8 @@ interface StateCardsProps {
 }
 
 export function StateCards({ selectedScenario, setSelectedStateCard }: StateCardsProps) {
+    const scenario = selectedScenario;
+
     return (
         <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -462,7 +258,7 @@ export function StateCards({ selectedScenario, setSelectedStateCard }: StateCard
                         </div>
                         <h3 className="text-lg font-bold text-slate-900">Inventory</h3>
                         <p className="mt-2 text-xs text-slate-500 line-clamp-1">
-                            Stock: {selectedScenario.currentStock.toLocaleString()} | {selectedScenario.coverageDays} days remaining
+                            Stock: {scenario.inventory.current_stock} | {scenario.inventory.coverage_days} days remaining
                         </p>
                     </div>
                     <div className="mt-4 text-xs font-semibold text-blue-600 flex items-center gap-1">
@@ -482,7 +278,7 @@ export function StateCards({ selectedScenario, setSelectedStateCard }: StateCard
                         </div>
                         <h3 className="text-lg font-bold text-slate-900">Demand</h3>
                         <p className="mt-2 text-xs text-slate-500 line-clamp-1">
-                            Forecast: {selectedScenario.forecastDemand.toLocaleString()} | +{selectedScenario.demandGrowth}% growth trend
+                            Forecast: {scenario.forecast.predicted_demand} | +{scenario.demand.demand_growth_pct * 100}% growth trend
                         </p>
                     </div>
                     <div className="mt-4 text-xs font-semibold text-emerald-600 flex items-center gap-1">
@@ -502,7 +298,7 @@ export function StateCards({ selectedScenario, setSelectedStateCard }: StateCard
                         </div>
                         <h3 className="text-lg font-bold text-slate-900">Risk</h3>
                         <p className="mt-2 text-xs text-slate-500 line-clamp-1">
-                            Level: {selectedScenario.riskLevel} | Composite score: {selectedScenario.riskScore}/100
+                            Level: {scenario.risk.risk_level} | Composite score: {scenario.risk.composite_risk_score}/100
                         </p>
                     </div>
                     <div className="mt-4 text-xs font-semibold text-rose-600 flex items-center gap-1">
@@ -522,7 +318,7 @@ export function StateCards({ selectedScenario, setSelectedStateCard }: StateCard
                         </div>
                         <h3 className="text-lg font-bold text-slate-900">Event</h3>
                         <p className="mt-2 text-xs text-slate-500 line-clamp-1">
-                            Driver: {selectedScenario.primaryRiskDriver} | Category: {selectedScenario.category}
+                            Promotion: {scenario.event.promotion ? "Yes" : "No"} | Seasonality: {scenario.event.seasonality}
                         </p>
                     </div>
                     <div className="mt-4 text-xs font-semibold text-purple-600 flex items-center gap-1">
@@ -542,7 +338,7 @@ export function StateCards({ selectedScenario, setSelectedStateCard }: StateCard
                         </div>
                         <h3 className="text-lg font-bold text-slate-900">Replenishment</h3>
                         <p className="mt-2 text-xs text-slate-500 line-clamp-1">
-                            Inbound PO: {selectedScenario.replenishmentQty.toLocaleString()} units | ETA: {selectedScenario.etaDays} days
+                            Inbound PO: {scenario.replenishment.quantity_ordered} units | Delay: {scenario.replenishment.actual_delay_days} days
                         </p>
                     </div>
                     <div className="mt-4 text-xs font-semibold text-amber-600 flex items-center gap-1">
@@ -661,9 +457,10 @@ interface DecisionCardsProps {
     selectedCase: string | null;
     selectedDecision: string | null;
     onSelectDecision: (decision: string) => void;
+    decisionsList: any[];
 }
 
-export function DecisionCards({ selectedCase, selectedDecision, onSelectDecision }: DecisionCardsProps) {
+export function DecisionCards({ selectedCase, selectedDecision, onSelectDecision, decisionsList }: DecisionCardsProps) {
     return (
         <div className="space-y-4">
             <div className="flex items-center gap-2">
@@ -673,32 +470,7 @@ export function DecisionCards({ selectedCase, selectedDecision, onSelectDecision
                 </span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                {[
-                    {
-                        name: 'Reallocate Inventory',
-                        desc: 'Transfer stock from BLR-02 or CHN-03 to cover immediate deficits.',
-                        icon: Truck,
-                        color: 'indigo',
-                    },
-                    {
-                        name: 'Increase Purchase Order',
-                        desc: 'Place an emergency order for 1,200 additional units immediately.',
-                        icon: Package,
-                        color: 'sky',
-                    },
-                    {
-                        name: 'Delay Replenishment',
-                        desc: 'Reschedule incoming delivery dates to match hub capacity constraints.',
-                        icon: CalendarDays,
-                        color: 'amber',
-                    },
-                    {
-                        name: 'Do Nothing',
-                        desc: 'Maintain current supply chain parameters and monitor daily stock rates.',
-                        icon: Activity,
-                        color: 'slate',
-                    },
-                ].map((dec) => {
+                {decisionsList.map((dec) => {
                     const DecIcon = dec.icon;
                     const isSelected = selectedDecision === dec.name;
 
@@ -795,15 +567,41 @@ interface ScenarioModalProps {
     caseId: string | null;
     onClose: () => void;
     scenario: Scenario;
+    simulationData?: any;
 }
 
-export function ScenarioModal({ caseId, onClose, scenario }: ScenarioModalProps) {
+export function ScenarioModal({ caseId, onClose, scenario, simulationData }: ScenarioModalProps) {
     const [activeTab, setActiveTab] = useState<'summary' | 'timeline'>('summary');
 
     if (!caseId) return null;
 
-    const simData = generateCaseSimulation(scenario, caseId);
-    const logEntries = JSON.parse(simData.daily_log) as DailyLogEntry[];
+    let simData: any = null;
+    let logEntries: DailyLogEntry[] = [];
+
+    if (simulationData?.outcomes) {
+        const outcomes = simulationData.outcomes;
+        let realWorld: any;
+        if (caseId === 'best') realWorld = outcomes.best_case_world;
+        else if (caseId === 'likely') realWorld = outcomes.most_likely_world;
+        else realWorld = outcomes.worst_case_world;
+
+        if (realWorld) {
+            simData = {
+                world_id: String(realWorld.world_id),
+                ending_inventory: realWorld.ending_inventory,
+                minimum_inventory: realWorld.minimum_inventory,
+                stockout_occurred: realWorld.stockout_occurred,
+                stockout_day: realWorld.stockout_occurred ? (realWorld.stockout_day !== null ? realWorld.stockout_day : 'N/A') : 'N/A',
+                shortage_quantity: realWorld.shortage_quantity,
+                safety_stock_breached: realWorld.safety_stock_breached,
+                days_below_safety_stock: realWorld.days_below_safety_stock,
+            };
+            logEntries = realWorld.daily_log || [];
+        }
+    }
+
+    if (!simData) return null;
+
     const caseLabel = caseId === 'best' ? 'Best Case' : caseId === 'likely' ? 'Most Likely' : 'Worst Case';
 
     return (
@@ -825,8 +623,8 @@ export function ScenarioModal({ caseId, onClose, scenario }: ScenarioModalProps)
                         <button
                             onClick={() => setActiveTab('summary')}
                             className={`flex-1 pb-3 text-sm font-bold text-center border-b-2 transition-all ${activeTab === 'summary'
-                                    ? 'border-indigo-600 text-indigo-600'
-                                    : 'border-transparent text-slate-400 hover:text-slate-600'
+                                ? 'border-indigo-600 text-indigo-600'
+                                : 'border-transparent text-slate-400 hover:text-slate-600'
                                 }`}
                         >
                             Summary
@@ -834,8 +632,8 @@ export function ScenarioModal({ caseId, onClose, scenario }: ScenarioModalProps)
                         <button
                             onClick={() => setActiveTab('timeline')}
                             className={`flex-1 pb-3 text-sm font-bold text-center border-b-2 transition-all ${activeTab === 'timeline'
-                                    ? 'border-indigo-600 text-indigo-600'
-                                    : 'border-transparent text-slate-400 hover:text-slate-600'
+                                ? 'border-indigo-600 text-indigo-600'
+                                : 'border-transparent text-slate-400 hover:text-slate-600'
                                 }`}
                         >
                             Timeline
@@ -1056,6 +854,7 @@ interface DecisionModalProps {
     setSelectedDecision: (decision: string | null) => void;
     selectedScenario: Scenario;
     selectedCase: string | null;
+    simulationData?: any;
 }
 
 export function DecisionModal({
@@ -1063,10 +862,35 @@ export function DecisionModal({
     setSelectedDecision,
     selectedScenario,
     selectedCase,
+    simulationData,
 }: DecisionModalProps) {
     if (!selectedDecision) return null;
 
-    const res = getSimulationResult(selectedCase || 'likely', selectedDecision, selectedScenario);
+    const matchedRanked = simulationData?.ranked_decisions?.find((rd: any) => rd.decision.title === selectedDecision);
+
+    if (!matchedRanked) return null;
+
+    const comp = matchedRanked.comparison;
+    const rd = matchedRanked;
+
+    const summary = rd.decision.rationale;
+
+    const stockoutDelta = Math.round(comp.stockout_probability_change * 100);
+    const shortageRed = Math.round(comp.shortage_reduction);
+    const endingInvDelta = Math.round(comp.ending_inventory_change);
+    const daysBreachDelta = comp.days_below_safety_stock_change.toFixed(1);
+
+    const demandImpact = stockoutDelta < 0
+        ? `Stockout probability reduced by ${Math.abs(stockoutDelta)}% compared to baseline.`
+        : `Stockout probability changes by ${stockoutDelta}%.`;
+
+    const inventoryChange = endingInvDelta >= 0
+        ? `Ending inventory is projected to increase by +${endingInvDelta} units.`
+        : `Ending inventory decreases by ${endingInvDelta} units.`;
+
+    const riskShift = `Safety stock breach duration changes by ${daysBreachDelta} days. Overall score is ${Math.round(rd.score * 100)}/100.`;
+
+    const action = `Approve recommendation: ${rd.decision.title}. This action scores ${Math.round(rd.score * 100)}% on benefit/risk reduction metrics.`;
 
     return (
         <Dialog
@@ -1091,7 +915,7 @@ export function DecisionModal({
                                 Simulation Summary
                             </h4>
                             <p className="mt-2 text-sm text-slate-700 leading-relaxed font-medium">
-                                {res.summary}
+                                {summary}
                             </p>
                         </div>
 
@@ -1101,7 +925,7 @@ export function DecisionModal({
                                     Predicted Demand Impact
                                 </h5>
                                 <p className="mt-2 text-sm text-slate-700 leading-normal font-semibold">
-                                    {res.demandImpact}
+                                    {demandImpact}
                                 </p>
                             </div>
 
@@ -1110,7 +934,7 @@ export function DecisionModal({
                                     Inventory Change
                                 </h5>
                                 <p className="mt-2 text-sm text-slate-700 leading-normal font-semibold">
-                                    {res.inventoryChange}
+                                    {inventoryChange}
                                 </p>
                             </div>
 
@@ -1119,7 +943,7 @@ export function DecisionModal({
                                     Risk Level Shift
                                 </h5>
                                 <p className="mt-2 text-sm text-slate-700 leading-normal font-semibold">
-                                    {res.riskShift}
+                                    {riskShift}
                                 </p>
                             </div>
                         </div>
@@ -1130,7 +954,7 @@ export function DecisionModal({
                                 Recommended Action
                             </h4>
                             <p className="mt-2 text-sm text-slate-700 leading-relaxed font-medium">
-                                {res.action}
+                                {action}
                             </p>
                         </div>
                     </div>
@@ -1153,22 +977,302 @@ export function DecisionModal({
 // MAIN PAGE COMPONENT
 // ==========================================
 
+
 export default function Planning() {
     const [selectedCase, setSelectedCase] = useState<string | null>(null);
     const [selectedDecision, setSelectedDecision] = useState<string | null>(null);
     const [selectedStateCard, setSelectedStateCard] = useState<string | null>(null);
 
-    const [hubFilter, setHubFilter] = useState('ALL');
-    const [productFilter, setProductFilter] = useState('ALL');
-    const [categoryFilter, setCategoryFilter] = useState('ALL');
-    const [dateFilter, setDateFilter] = useState('2026-06-15');
+    const [hubFilter, setHubFilter] = useState('');
+    const [categoryFilter, setCategoryFilter] = useState('');
+    const [productFilter, setProductFilter] = useState('');
+    const [dateFilter, setDateFilter] = useState('2024-01-31');
+    const [planningWindow, setPlanningWindow] = useState(7);
 
-    const selectedScenario = scenarios.find(s => {
-        if (hubFilter !== 'ALL' && s.hubId !== hubFilter) return false;
-        if (productFilter !== 'ALL' && s.productId !== productFilter) return false;
-        if (categoryFilter !== 'ALL' && s.category !== categoryFilter) return false;
-        return true;
-    }) || scenarios[0];
+    const [runRequested, setRunRequested] = useState(false);
+    const requestIdRef = useRef(0);
+
+    // Integration States
+    const [simulationData, setSimulationData] = useState<any>(null);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    // Dynamic Fixtures Options
+    const [fixtures, setFixtures] = useState<PlanningFixtures | null>(null);
+
+    // Fetch unique categories, products, hubs, and dates from backend CSV data
+    useEffect(() => {
+        let active = true;
+
+        async function fetchFixtures() {
+            try {
+                const res = await getPlanningFixtures();
+
+                if (active) {
+                    setFixtures(res);
+                }
+            } catch (err: any) {
+                console.error("Failed to load planning fixtures:", err);
+            }
+        }
+
+        fetchFixtures();
+
+        return () => {
+            active = false;
+        };
+    }, []);
+
+    /* ----------------------------------------------------
+    HUBS
+    ---------------------------------------------------- */
+    const availableHubs = useMemo(() => {
+        if (!fixtures) return [];
+
+        return [
+            ...new Set(
+                fixtures.combinations.map(c => String(c.hub_id))
+            )
+        ].sort((a, b) => Number(a) - Number(b));
+    }, [fixtures]);
+
+    /* ----------------------------------------------------
+    CATEGORIES (filtered by hub)
+    ---------------------------------------------------- */
+    const availableCategories = useMemo(() => {
+        if (!fixtures) return [];
+
+        return [
+            ...new Set(
+                fixtures.combinations
+                    .filter(
+                        c => String(c.hub_id) === hubFilter
+                    )
+                    .map(c => c.category)
+            )
+        ].sort();
+    }, [fixtures, hubFilter]);
+
+    /* ----------------------------------------------------
+    PRODUCTS (filtered by hub + category)
+    ---------------------------------------------------- */
+    const availableProducts = useMemo(() => {
+        if (!fixtures) return [];
+
+        return [
+            ...new Set(
+                fixtures.combinations
+                    .filter(
+                        c =>
+                            String(c.hub_id) === hubFilter &&
+                            c.category === categoryFilter
+                    )
+                    .map(c => c.product_id)
+            )
+        ].sort();
+    }, [fixtures, hubFilter, categoryFilter]);
+
+    /* ----------------------------------------------------
+    DATES (filtered by hub + category + product)
+    ---------------------------------------------------- */
+    const availableDates = useMemo(() => {
+        if (!fixtures) return [];
+
+        const validCombination = fixtures.combinations.some(
+            c =>
+                String(c.hub_id) === hubFilter &&
+                c.category === categoryFilter &&
+                c.product_id === productFilter
+        );
+
+        if (!validCombination) {
+            return [];
+        }
+
+        return fixtures.dates ?? [];
+    }, [
+        fixtures,
+        hubFilter,
+        categoryFilter,
+        productFilter
+    ]);
+
+    /* ----------------------------------------------------
+    AUTO ALIGN HUB
+    ---------------------------------------------------- */
+    useEffect(() => {
+        if (
+            availableHubs.length > 0 &&
+            !availableHubs.includes(hubFilter)
+        ) {
+            setHubFilter(availableHubs[0]);
+        }
+    }, [availableHubs, hubFilter]);
+
+    /* ----------------------------------------------------
+    AUTO ALIGN CATEGORY
+    ---------------------------------------------------- */
+    useEffect(() => {
+        if (
+            availableCategories.length > 0 &&
+            !availableCategories.includes(categoryFilter)
+        ) {
+            setCategoryFilter(availableCategories[0]);
+        }
+    }, [availableCategories, categoryFilter]);
+
+    /* ----------------------------------------------------
+    AUTO ALIGN PRODUCT
+    ---------------------------------------------------- */
+    useEffect(() => {
+        if (
+            availableProducts.length > 0 &&
+            !availableProducts.includes(productFilter)
+        ) {
+            setProductFilter(availableProducts[0]);
+        }
+    }, [availableProducts, productFilter]);
+
+    /* ----------------------------------------------------
+    AUTO ALIGN DATE
+    ---------------------------------------------------- */
+    useEffect(() => {
+        if (
+            availableDates.length > 0 &&
+            !availableDates.includes(dateFilter)
+        ) {
+            setDateFilter(availableDates[0]);
+        }
+    }, [availableDates, dateFilter]);
+    // Call runPlanningSimulation when explicitly requested by user
+    useEffect(() => {
+        if (!runRequested) {
+            return;
+        }
+
+        // Prevent running with out-of-sync parameters before auto-alignment completes
+        if (!availableProducts.includes(productFilter) || !availableHubs.includes(hubFilter)) {
+            setRunRequested(false);
+            return;
+        }
+
+        const currentRequestId = ++requestIdRef.current;
+        let active = true;
+
+        async function fetchSimulation() {
+            setLoading(true);
+            setError(null);
+            try {
+                const res = await runPlanningSimulation({
+                    hub_id: hubFilter,
+                    product_id: productFilter,
+                    category: categoryFilter,
+                    simulation_date: dateFilter,
+                    planning_window_days: planningWindow,
+                    n_worlds: 100, // Balanced for lower latency
+                    random_seed: 42,
+                    skip_llm: true, // Speeds up the run significantly
+                });
+
+                if (active && currentRequestId === requestIdRef.current) {
+                    setSimulationData(res);
+                }
+            } catch (err: any) {
+                if (active && currentRequestId === requestIdRef.current) {
+                    setError(err.message || 'Simulation pipeline failed to run.');
+                }
+            } finally {
+                if (active && currentRequestId === requestIdRef.current) {
+                    setLoading(false);
+                    setRunRequested(false);
+                }
+            }
+        }
+        fetchSimulation();
+        return () => {
+            active = false;
+        };
+    }, [runRequested, hubFilter, productFilter, categoryFilter, dateFilter, planningWindow, availableProducts, availableHubs]);
+
+    // Map real backend SimulationState values to card items expected by subcomponents
+    const selectedScenario = useMemo(() => {
+        const state = simulationData?.scenario;
+        return {
+            id: 1,
+            title: state ? `${state.category} Projection — Hub ${state.hub_id} (${state.product_id})` : 'No Scenario Selected',
+            hubId: state ? String(state.hub_id) : '',
+            productId: state ? state.product_id : '',
+            category: state ? state.category : '',
+            riskLevel: (state?.risk?.risk_level || 'LOW') as RiskLevel,
+            riskScore: Math.round(state?.risk?.composite_risk_score || 0),
+            coverageDays: state?.inventory?.coverage_days || 0,
+            currentStock: state?.inventory?.current_stock || 0,
+            safetyStock: Math.round(state?.inventory?.safety_stock || 0),
+            forecastDemand: Math.round(state?.forecast?.predicted_demand || 0),
+            confidenceScore: Math.round((state?.forecast?.confidence_score || 0) * 100),
+            demandGrowth: Math.round((state?.demand?.demand_growth_pct || 0) * 100),
+            primaryRiskDriver: state?.risk?.primary_risk_driver || 'None',
+            replenishmentQty: state?.replenishment?.quantity_ordered || 0,
+            etaDays: state?.replenishment?.actual_delay_days || 0,
+            recommendation: simulationData?.recommendation_summary?.explanation || 'No recommendation summary generated.',
+            situation: state?.inventory?.inventory_status || 'Healthy',
+            analysis: state?.risk?.primary_risk_driver || 'Normal parameters',
+            inventory: {
+                current_stock: state?.inventory?.current_stock || 0,
+                coverage_days: state?.inventory?.coverage_days || 0,
+                safety_stock: Math.round(state?.inventory?.safety_stock || 0),
+                inventory_status: state?.inventory?.inventory_status || 'Healthy',
+            },
+            demand: {
+                demand_growth_pct: state?.demand?.demand_growth_pct || 0,
+            },
+            forecast: {
+                predicted_demand: Math.round(state?.forecast?.predicted_demand || 0),
+                confidence_score: state?.forecast?.confidence_score || 0,
+            },
+            risk: {
+                risk_level: state?.risk?.risk_level || 'LOW',
+                composite_risk_score: Math.round(state?.risk?.composite_risk_score || 0),
+                primary_risk_driver: state?.risk?.primary_risk_driver || 'None',
+            },
+            event: {
+                promotion: state?.event?.promotion || false,
+                seasonality: state?.event?.seasonality || 'Standard',
+            },
+            replenishment: {
+                quantity_ordered: state?.replenishment?.quantity_ordered || 0,
+                lead_time_days: state?.replenishment?.lead_time_days || 0,
+                actual_delay_days: state?.replenishment?.actual_delay_days || 0,
+            },
+        };
+    }, [simulationData]);
+
+    // Dynamically generate decision cards list based on backend ranked decisions
+    const decisionsList = useMemo(() => {
+        if (simulationData?.ranked_decisions) {
+            return simulationData.ranked_decisions.map((rd: any) => {
+                let icon = Package;
+                if (rd.decision.decision_type.includes('transfer')) {
+                    icon = Truck;
+                } else if (rd.decision.decision_type.includes('replenishment')) {
+                    icon = CalendarDays;
+                } else {
+                    icon = Activity;
+                }
+
+                return {
+                    name: rd.decision.title,
+                    desc: rd.decision.rationale,
+                    icon: icon,
+                    id: rd.decision.decision_id,
+                    score: rd.score,
+                    comparison: rd.comparison,
+                };
+            });
+        }
+
+        return [];
+    }, [simulationData]);
 
     return (
         <div className="min-h-screen bg-slate-50 flex flex-col">
@@ -1213,6 +1317,15 @@ export default function Planning() {
                     setCategoryFilter={setCategoryFilter}
                     dateFilter={dateFilter}
                     setDateFilter={setDateFilter}
+                    planningWindow={planningWindow}
+                    setPlanningWindow={setPlanningWindow}
+                    categoriesList={availableCategories}
+                    productsList={availableProducts}
+                    hubsList={availableHubs}
+                    datesList={availableDates}
+                    onRunSimulation={() => setRunRequested(true)}
+                    loading={loading || runRequested}
+                    disabled={!availableProducts.includes(productFilter) || !availableHubs.includes(hubFilter)}
                 />
 
                 {/* 2. Current State Cards */}
@@ -1220,6 +1333,23 @@ export default function Planning() {
                     selectedScenario={selectedScenario}
                     setSelectedStateCard={setSelectedStateCard}
                 />
+
+                {loading && (
+                    <div className="flex items-center justify-center p-8 bg-white border border-slate-200 rounded-[1.5rem] shadow-sm animate-pulse gap-3">
+                        <div className="w-6 h-6 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+                        <span className="text-sm font-semibold text-slate-600">Running Monte Carlo simulation pipeline...</span>
+                    </div>
+                )}
+
+                {error && (
+                    <div className="p-5 border border-rose-200 bg-rose-50 text-rose-700 rounded-[1.5rem] shadow-sm flex items-start gap-3">
+                        <div className="flex-shrink-0 w-5 h-5 rounded-full bg-rose-100 flex items-center justify-center font-bold text-xs font-mono">!</div>
+                        <div>
+                            <h4 className="font-bold text-sm">Simulation Error</h4>
+                            <p className="text-xs mt-1 text-rose-600">{error}</p>
+                        </div>
+                    </div>
+                )}
 
                 {/* 3. Copilot Input Bar */}
                 <CopilotInput />
@@ -1235,6 +1365,7 @@ export default function Planning() {
                     selectedCase={selectedCase}
                     selectedDecision={selectedDecision}
                     onSelectDecision={setSelectedDecision}
+                    decisionsList={decisionsList}
                 />
 
             </main>
@@ -1250,6 +1381,7 @@ export default function Planning() {
                 caseId={selectedCase}
                 onClose={() => setSelectedCase(null)}
                 scenario={selectedScenario}
+                simulationData={simulationData}
             />
 
             <DecisionModal
@@ -1257,6 +1389,7 @@ export default function Planning() {
                 setSelectedDecision={setSelectedDecision}
                 selectedScenario={selectedScenario}
                 selectedCase={selectedCase}
+                simulationData={simulationData}
             />
 
         </div>

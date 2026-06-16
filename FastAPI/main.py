@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 import os
-
 import bootstrap  # noqa: F401 — sets up sys.path before other imports
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -32,6 +31,7 @@ from routers import (
     eta_prediction,
     users,
     voice,
+    planning,
 )
 
 from services.registry import init_all_services
@@ -86,7 +86,7 @@ app.include_router(inventory.router)
 app.include_router(dashboard.router)
 app.include_router(notifications.router)
 app.include_router(voice.router)
-
+app.include_router(planning.router)
 
 # ✅ HEALTH CHECK
 @app.get("/health")

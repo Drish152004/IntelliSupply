@@ -25,6 +25,8 @@ for path in (
     str(RAG_ROOT),
     str(RAG_INVENTORY_ROOT),
     str(AGENTIC_ROOT),
+    str(REPO_ROOT / "Inventory_intelligence_agent"),
+    str(REPO_ROOT / "Inventory_intelligence_agent" / "simulation_pipeline"),
 ):
     if path not in sys.path:
         sys.path.insert(0, path)
