@@ -1,23 +1,23 @@
-Complete project tree (detailed)
+﻿Complete project tree (detailed)
 
 Top-level files:
+- .env
 - .env.example
 - .gitignore
 - ARCHITECTURE.md
-- docker-compose.yml
 - Dockerfile
-- pytest.ini
 - README.md
+- docker-compose.yml
+- pytest.ini
 - requirements.txt
 - structure.md
 
 Top-level directories:
+- FastAPI/
+- Inventory_intelligence_agent/
 - agentic_ai/
 - config/
-- data/
-- FastAPI/
 - frontend/
-- ml/
 - ml_services/
 - models/
 - rag/
@@ -25,128 +25,16 @@ Top-level directories:
 
 Detailed tree by directory:
 
-agentic_ai/
-- main.py
-- README.md
-- agents/
-    - base_agent.py
-    - inventory_agent.py
-    - inventory_agent_loop.py
-    - logistics_agent.py
-    - logistics_agent_loop.py
-- cache/
-    - __init__.py
-    - cache_key_builder.py
-    - cache_service.py
-    - memory_cache.py
-    - prediction_cache_config.py
-    - prediction_cache_key_builder.py
-    - semantic_cache.py
-    - ttl_config.py
-- context/
-    - __init__.py
-    - clarification_manager.py
-    - context_node.py
-    - entity_extractor.py
-    - field_source_registry.py
-    - graph_resolver.py
-    - missing_field_detector.py
-    - payload_builder.py
-    - query_completeness_checker.py
-    - resolver.py
-    - task_requirements.py
-- graph_retrieval/
-    - __init__.py
-    - cypher_generator.py
-    - entity_extractor.py
-    - graph_authorizer.py
-    - graph_node.py
-    - graph_retriever.py
-    - graph_service.py
-    - result_mapper.py
-- integrations/
-    - __init__.py
-    - aura_bridge.py
-    - language.py
-    - llm_client.py
-    - ml_bridge.py
-    - ml_payload.py
-    - parameter_collector.py
-    - sql_bridge.py
-- orchestrator/
-    - cache_node.py
-    - executor.py
-    - graph.py
-    - intent.py
-    - intent_task_classifier.py
-    - init_node.py
-    - ml_node.py
-    - prediction_cache_node.py
-    - rbac_coarse.py
-    - rbac_node.py
-    - resource_rbac.py
-    - response_formatter.py
-    - router.py
-    - state.py
-    - task_registry.py
-    - semantic_cache_node.py
-    - rag_executor.py
-    - param_resolver_node.py
-    - authorize_node.py
-    \- rbac/
-         - __init__.py
-         - courier_identity.py
-         - exceptions.py
-         - permissions.py
-         - rbac_service.py
-         - role_mapper.py
-         - session_context.py
-
-registry/
-- agent_registry.py
-
-agentic_ai/tests/
-- test_cache.py
-- test_context.py
-- test_context_integration.py
-- test_courier_resource_rbac.py
-- test_graph_retrieval.py
-- test_graph_retrieval_integration.py
-- test_identity_propagation.py
-- test_intent.py
-- test_intent_task_classifier.py
-- test_ml_payload.py
-- test_ml_resource_rbac.py
-- test_multiturn_rbac.py
-- test_orchestrator.py
-- test_parameter_collector.py
-- test_prediction_cache.py
-- test_prediction_cache_integration.py
-- test_rbac.py
-- test_role_mapping.py
-
-config/
-- __init__.py
-- env.py
-- ml_api.py
-- paths.py
-
-data/
-- assigned_routes.json
-- synthetic_couriers.json
-- synthetic_orders.json
-
 FastAPI/
 - .gitkeep
+- README.md
 - bootstrap.py
 - main.py
 - run.py
-- README.md
 - dependencies/
     - __init__.py
     - auth.py
 - routers/
-    - __init__.py
     - auth.py
     - copilot.py
     - dashboard.py
@@ -184,16 +72,105 @@ FastAPI/
     - route_prediction.py
     - voice.py
 
+Inventory_intelligence_agent/
+- env_setup.py
+- requirements.txt
+- technical_design_document.txt
+- data/
+    - Demand Forecasting Colab.docx
+- scripts/
+    - run_baseline_simulation.py
+    - run_decision_simulation.py
+    - run_planning_pipeline.py
+- simulation_pipeline/
+    - base_state.py
+    - baseline_des.py
+    - decision_application.py
+    - decision_comparison.py
+    - decision_generation.py
+    - decision_models.py
+    - decision_ranking.py
+    - decision_selection.py
+    - decision_simulation.py
+    - decision_simulation_models.py
+    - demand_reforecaster.py
+    - explainability_payload.py
+    - llm_explanation.py
+    - monte_carlo_world_generator.py
+    - outcome_discovery.py
+    - planning_pipeline.py
+    - recommendation_engine.py
+    - recommendation_models.py
+    - replenishment_delay_stats.py
+    - scenario_models.py
+    - scenario_state_builder.py
+    - scenario_understanding_agent.py
+    - simulation_models.py
+    - state_models.py
+    - test.py
+    - world_models.py
+
+agentic_ai/
+- README.md
+- main.py
+- cache/
+    - __init__.py
+    - cache_service.py
+    - memory_cache.py
+    - semantic_cache.py
+    - ttl_config.py
+- context/
+    - __init__.py
+    - clarification_manager.py
+    - entity_extractor.py
+    - query_completeness_checker.py
+    - task_requirements.py
+- integrations/
+    - __init__.py
+    - aura_bridge.py
+    - language.py
+    - llm_client.py
+    - sql_bridge.py
+- orchestrator/
+    - authorize_node.py
+    - graph.py
+    - init_node.py
+    - intent.py
+    - intent_task_classifier.py
+    - param_resolver_node.py
+    - rag_executor.py
+    - rbac_coarse.py
+    - rbac_node.py
+    - resource_rbac.py
+    - response_formatter.py
+    - semantic_cache_node.py
+    - state.py
+    - task_registry.py
+    - rbac/
+        - __init__.py
+        - courier_identity.py
+        - exceptions.py
+        - permissions.py
+        - rbac_service.py
+        - role_mapper.py
+        - session_context.py
+
+config/
+- __init__.py
+- env.py
+- ml_api.py
+- paths.py
+
 frontend/
 - .gitkeep
 - app/
+    - README.md
     - components.json
     - eslint.config.js
     - index.html
     - package-lock.json
     - package.json
     - postcss.config.js
-    - README.md
     - tailwind.config.js
     - tsconfig.app.json
     - tsconfig.json
@@ -201,19 +178,9 @@ frontend/
     - vite.config.ts
     - src/
         - App.tsx
-        - main.tsx
-        - index.css
-        - inventory.css
         - global.d.ts
-        - data/
-            - mockData.ts
-        - hooks/
-            - use-mobile.ts
-            - useLogisticsLocations.ts
-        - lib/
-            - api.ts
-            - auth.tsx
-            - utils.ts
+        - index.css
+        - main.tsx
         - components/
             - AICopilot.tsx
             - Navbar.tsx
@@ -223,8 +190,8 @@ frontend/
                 - LocationSelect.tsx
             - ui/
                 - accordion.tsx
-                - alert.tsx
                 - alert-dialog.tsx
+                - alert.tsx
                 - aspect-ratio.tsx
                 - avatar.tsx
                 - badge.tsx
@@ -246,9 +213,9 @@ frontend/
                 - field.tsx
                 - form.tsx
                 - hover-card.tsx
-                - input.tsx
-                - input-otp.tsx
                 - input-group.tsx
+                - input-otp.tsx
+                - input.tsx
                 - item.tsx
                 - kbd.tsx
                 - label.tsx
@@ -275,27 +242,34 @@ frontend/
                 - toggle.tsx
                 - toggle-group.tsx
                 - tooltip.tsx
-
-ml/
-- __init__.py
-- ml_executor.py
-- model_router.py
-- validators.py
-- adapters/
-    - __init__.py
-    - demand_adapter.py
-    - eta_adapter.py
-    - route_adapter.py
-- wrappers/
-    - __init__.py
-    - base.py
-    - demand_wrapper.py
-    - eta_wrapper.py
-    - route_wrapper.py
+        - data/
+            - mockData.ts
+        - hooks/
+            - use-mobile.ts
+            - useLogisticsLocations.ts
+        - lib/
+            - api.ts
+            - auth.tsx
+            - roadRouting.ts
+            - utils.ts
+        - pages/
+            - AdminAnalytics.tsx
+            - AdminUsers.tsx
+            - Courier.tsx
+            - Home.tsx
+            - Inventory.tsx
+            - Landing.tsx
+            - Login.tsx
+            - Notifications.tsx
+            - Overview.tsx
+            - Planning.tsx
+            - Profile.tsx
+            - RegisterUser.tsx
+            - RouteIntelligence.tsx
 
 ml_services/
-- __init__.py
 - .gitkeep
+- __init__.py
 - coordinate_mapping.py
 - eta-prediction/
     - README.md
@@ -306,20 +280,17 @@ ml_services/
         - schemas.py
     - full_pipeline/
         - __init__.py
+        - export_db_to_csv.py
         - feature_engineering.py
-        - preprocess.py
         - inference.py
+        - preprocess.py
         - run_pipeline.py
         - training.py
-        - export_db_to_csv.py
-    - models/
-        - eta_lightgbm_model.pkl
 - route_prediction/
     - README.md
     - route_predictor.py
     - schemas.py
     - full_pipeline/
-        - cluster_assigner.py
         - config.py
         - coordinates.py
         - courier_assigner.py
@@ -327,11 +298,19 @@ ml_services/
         - run_demo.py
         - data/
             - _generate_samples.py
+            - synthetic_couriers.json
+            - synthetic_orders.json
+        - outputs/
+            - assigned_routes.json
 
 models/
+- .gitignore
 - __init__.py
 - cluster_assignments.csv
+- eta_lightgbm_model.pkl
 - hf_client.py
+- lade_demand_forecaster.pkl
+- route_ranker.pkl
 - hf_space/
     - .gitattributes
     - Dockerfile
@@ -342,12 +321,10 @@ models/
         - app.py
 
 rag/
-- __init__.py
 - .gitkeep
+- __init__.py
 - aura_graphdb/
     - __init__.py
-    - readme.md
-    - shared_cypher.py
     - aura_auth.py
     - aura_clear.py
     - aura_connection.py
@@ -361,22 +338,26 @@ rag/
     - aura_route_queries.py
     - aura_seed_logistics.py
     - courier_assignment.py
-- supabase/
-    - supabase_connection.py
-    - supabase_auth.py
-    - supabase_inventory.py
-    - supabase_notifications.py
-    - backfill_notifications.py
+    - ensure_aarushi_demo.py
+    - readme.md
+    - shared_cypher.py
 - inventory/
     - chatbot/
         - chatbot.py
         - create_tables.py
         - database.py
         - env_setup.py
+        - inventory_notifications.py
         - load_data.py
         - models.py
         - query_executor.py
         - sql_generator.py
+- supabase/
+    - backfill_notifications.py
+    - supabase_auth.py
+    - supabase_connection.py
+    - supabase_inventory.py
+    - supabase_notifications.py
 
 tests/
 - conftest.py
