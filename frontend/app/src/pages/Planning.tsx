@@ -688,7 +688,7 @@ export function DecisionCards({ selectedCase, selectedDecision, onSelectDecision
                     },
                     {
                         name: 'Delay Replenishment',
-                        desc: 'Reschedule incoming delivery dates to match warehouse capacity constraints.',
+                        desc: 'Reschedule incoming delivery dates to match hub capacity constraints.',
                         icon: CalendarDays,
                         color: 'amber',
                     },

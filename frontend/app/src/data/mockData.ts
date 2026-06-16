@@ -46,16 +46,16 @@ export interface ChatMessage {
 }
 
 export const locations: Location[] = [
-  { id: 'loc-1', name: 'Bangalore Central WH', lat: 12.9716, lng: 77.5946, type: 'warehouse' },
-  { id: 'loc-2', name: 'Chennai Port Hub', lat: 13.0827, lng: 80.2707, type: 'port' },
-  { id: 'loc-3', name: 'Hyderabad Depot', lat: 17.3850, lng: 78.4867, type: 'hub' },
-  { id: 'loc-4', name: 'Pune Distribution', lat: 18.5204, lng: 73.8567, type: 'warehouse' },
-  { id: 'loc-5', name: 'Mumbai Logistics Park', lat: 19.0760, lng: 72.8777, type: 'port' },
-  { id: 'loc-6', name: 'Coimbatore Supplier', lat: 11.0168, lng: 76.9558, type: 'supplier' },
-  { id: 'loc-7', name: 'Kochi Customer Hub', lat: 9.9312, lng: 76.2673, type: 'customer' },
-  { id: 'loc-8', name: 'Vizag Industrial Zone', lat: 17.6868, lng: 83.2185, type: 'supplier' },
-  { id: 'loc-9', name: 'Nagpur Transit Hub', lat: 21.1458, lng: 79.0882, type: 'hub' },
-  { id: 'loc-10', name: 'Ahmedabad Warehouse', lat: 23.0225, lng: 72.5714, type: 'warehouse' },
+  { id: 'loc-1', name: 'Bangalore Central Hub', lat: 12.9716, lng: 77.5946, type: 'hub' },
+  { id: 'loc-2', name: 'Chennai Hub', lat: 13.0827, lng: 80.2707, type: 'hub' },
+  { id: 'loc-3', name: 'Hyderabad Hub', lat: 17.3850, lng: 78.4867, type: 'hub' },
+  { id: 'loc-4', name: 'Pune Hub', lat: 18.5204, lng: 73.8567, type: 'hub' },
+  { id: 'loc-5', name: 'Mumbai Hub', lat: 19.0760, lng: 72.8777, type: 'hub' },
+  { id: 'loc-6', name: 'Coimbatore Hub', lat: 11.0168, lng: 76.9558, type: 'hub' },
+  { id: 'loc-7', name: 'Kochi Hub', lat: 9.9312, lng: 76.2673, type: 'hub' },
+  { id: 'loc-8', name: 'Vizag Hub', lat: 17.6868, lng: 83.2185, type: 'hub' },
+  { id: 'loc-9', name: 'Nagpur Hub', lat: 21.1458, lng: 79.0882, type: 'hub' },
+  { id: 'loc-10', name: 'Ahmedabad Hub', lat: 23.0225, lng: 72.5714, type: 'hub' },
 ];
 
 export const routes: Route[] = [
@@ -192,8 +192,8 @@ export const routes: Route[] = [
 export const shipments: Shipment[] = [
   {
     id: 'SHP-78432',
-    origin: 'Bangalore Central WH',
-    destination: 'Chennai Port Hub',
+    origin: 'Bangalore Central Hub',
+    destination: 'Chennai Hub',
     vehicleType: 'Refrigerated Truck',
     driver: 'Rajesh Kumar',
     eta: '4h 30m',
@@ -206,8 +206,8 @@ export const shipments: Shipment[] = [
   },
   {
     id: 'SHP-78433',
-    origin: 'Bangalore Central WH',
-    destination: 'Hyderabad Depot',
+    origin: 'Bangalore Central Hub',
+    destination: 'Hyderabad Hub',
     vehicleType: 'Container Truck',
     driver: 'Suresh Reddy',
     eta: '8h 15m',
@@ -220,8 +220,8 @@ export const shipments: Shipment[] = [
   },
   {
     id: 'SHP-78434',
-    origin: 'Pune Distribution',
-    destination: 'Mumbai Logistics Park',
+    origin: 'Pune Hub',
+    destination: 'Mumbai Hub',
     vehicleType: 'Flatbed Truck',
     driver: 'Amit Patil',
     eta: '3h 45m',
@@ -234,8 +234,8 @@ export const shipments: Shipment[] = [
   },
   {
     id: 'SHP-78435',
-    origin: 'Coimbatore Supplier',
-    destination: 'Bangalore Central WH',
+    origin: 'Coimbatore Hub',
+    destination: 'Bangalore Central Hub',
     vehicleType: 'Container Truck',
     driver: 'Venkatesh Iyer',
     eta: '6h 20m',
@@ -248,8 +248,8 @@ export const shipments: Shipment[] = [
   },
   {
     id: 'SHP-78436',
-    origin: 'Chennai Port Hub',
-    destination: 'Kochi Customer Hub',
+    origin: 'Chennai Hub',
+    destination: 'Kochi Hub',
     vehicleType: 'Refrigerated Truck',
     driver: 'Thomas Mathew',
     eta: '10h 30m',
@@ -262,8 +262,8 @@ export const shipments: Shipment[] = [
   },
   {
     id: 'SHP-78437',
-    origin: 'Vizag Industrial Zone',
-    destination: 'Chennai Port Hub',
+    origin: 'Vizag Hub',
+    destination: 'Chennai Hub',
     vehicleType: 'Heavy Hauler',
     driver: 'Prasad Rao',
     eta: '14h 00m',
@@ -276,8 +276,8 @@ export const shipments: Shipment[] = [
   },
   {
     id: 'SHP-78438',
-    origin: 'Nagpur Transit Hub',
-    destination: 'Ahmedabad Warehouse',
+    origin: 'Nagpur Hub',
+    destination: 'Ahmedabad Hub',
     vehicleType: 'Container Truck',
     driver: 'Manoj Sharma',
     eta: '16h 45m',
@@ -290,8 +290,8 @@ export const shipments: Shipment[] = [
   },
   {
     id: 'SHP-78439',
-    origin: 'Bangalore Central WH',
-    destination: 'Pune Distribution',
+    origin: 'Bangalore Central Hub',
+    destination: 'Pune Hub',
     vehicleType: 'Box Truck',
     driver: 'Deepak Joshi',
     eta: '12h 30m',
@@ -321,7 +321,7 @@ export const suggestedPrompts = [
   'Reduce fuel cost',
   'Predict traffic delays',
   'Add new shipment',
-  'Show warehouse bottlenecks',
+  'Show hub bottlenecks',
 ];
 
 export const quickActionResponses: Record<string, string> = {
@@ -363,5 +363,5 @@ export const aiInsights = [
   'Rain near Chennai may increase ETA by 12% for route RT-2852.',
   'Bangalore-Hyderabad corridor showing 35% higher traffic than usual.',
   'Fuel prices dropped 3% in Maharashtra - optimal refuel window.',
-  'Warehouse capacity at Bangalore Central at 91% - consider redistribution.',
+  'Hub capacity at Bangalore Central at 91% - consider redistribution.',
 ];

@@ -7,7 +7,7 @@ import { useAuth, ROLE_HOME, type AppRole } from '@/lib/auth';
 const roleConfig: Record<string, { badge: string; description: string }> = {
   inventory: {
     badge: 'Inventory Manager Access',
-    description: 'Monitor stock health, warehouse inventory and reorder operations.',
+    description: 'Monitor stock health, hub inventory and reorder operations.',
   },
   logistics: {
     badge: 'Logistics Head Access',
@@ -142,7 +142,7 @@ useEffect(() => {
             </h1>
 
             <p className="mt-8 text-lg text-slate-200">
-              Unified operational visibility for warehouse intelligence,
+              Unified operational visibility for hub intelligence,
               shipment orchestration, fulfilment optimization and enterprise
               governance.
             </p>

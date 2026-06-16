@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router';
 const roles = [
   {
     title: 'Inventory Manager',
-    description: 'Warehouse inventory intelligence and stock monitoring.',
+    description: 'Hub inventory intelligence and stock monitoring.',
     icon: Boxes,
     color: 'from-sky-50 to-sky-100 border-sky-100',
     route: '/login/inventory',

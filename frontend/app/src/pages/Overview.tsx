@@ -1,4 +1,4 @@
-﻿import Navbar from '@/components/Navbar';
+import Navbar from '@/components/Navbar';
 import { motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
@@ -53,7 +53,7 @@ export default function Overview() {
     {
       label: 'Hardware uptime',
       value: `${summary.hardware_uptime_pct}%`,
-      detail: 'Warehouse devices',
+      detail: 'Hub devices',
       color: 'border-emerald-100 bg-emerald-50 text-emerald-900',
       icon: ShieldCheck,
     },

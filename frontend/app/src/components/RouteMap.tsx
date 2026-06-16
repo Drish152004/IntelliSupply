@@ -10,10 +10,6 @@ import {
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import {
-  Warehouse,
-  Ship,
-  Building2,
-  MapPin,
   TrendingUp,
   Route as RouteIcon,
   AlertTriangle,
@@ -48,22 +44,14 @@ const createCustomIcon = (type: string, isSelected: boolean) => {
     hub: 'bg-violet-500',
   };
   const color = colors[type] || 'bg-slate-500';
-  const border = isSelected ? 'ring-2 ring-primary ring-offset-2' : '';
+  const border = isSelected ? 'ring-2 ring-primary ring-offset-2 border-white' : 'border-white';
 
   return L.divIcon({
     className: 'custom-marker',
-    html: `<div class="w-8 h-8 ${color} ${border} rounded-lg flex items-center justify-center shadow-lg transition-all">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        ${type === 'warehouse' ? '<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>' : ''}
-        ${type === 'port' ? '<path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>' : ''}
-        ${type === 'supplier' ? '<rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>' : ''}
-        ${type === 'customer' ? '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>' : ''}
-        ${type === 'hub' ? '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>' : ''}
-      </svg>
-    </div>`,
-    iconSize: [32, 32],
-    iconAnchor: [16, 32],
-    popupAnchor: [0, -32],
+    html: `<div class="w-4.5 h-4.5 ${color} ${border} rounded-full border-2 shadow-lg transition-all" style="width: 18px; height: 18px;"></div>`,
+    iconSize: [18, 18],
+    iconAnchor: [9, 9],
+    popupAnchor: [0, -12],
   });
 };
 
@@ -397,9 +385,6 @@ export default function RouteMap({
                   {hub.city_name && (
                     <p className="text-muted-foreground mt-0.5">{hub.city_name}</p>
                   )}
-                  {hub.hub_type && (
-                    <p className="text-muted-foreground capitalize mt-0.5">{hub.hub_type}</p>
-                  )}
                 </div>
               </Popup>
             </Marker>
@@ -411,7 +396,6 @@ export default function RouteMap({
               <Popup>
                 <div className="text-xs">
                   <p className="font-semibold text-sm">{loc.name}</p>
-                  <p className="text-muted-foreground capitalize mt-0.5">{loc.type}</p>
                 </div>
               </Popup>
             </Marker>
@@ -838,20 +822,8 @@ export default function RouteMap({
                     <p className="text-[10px] font-semibold mb-1.5">Locations</p>
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
-                        <Warehouse className="w-3 h-3 text-black" />
-                        <span className="text-[10px] text-muted-foreground">Warehouse</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Ship className="w-3 h-3 text-black" />
-                        <span className="text-[10px] text-muted-foreground">Port</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Building2 className="w-3 h-3 text-black" />
-                        <span className="text-[10px] text-muted-foreground">Supplier</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <MapPin className="w-3 h-3 text-black" />
-                        <span className="text-[10px] text-muted-foreground">Customer</span>
+                        <div className="w-2.5 h-2.5 bg-violet-500 rounded-full border border-white shadow-sm" />
+                        <span className="text-[10px] text-muted-foreground">Hub</span>
                       </div>
                     </div>
                   </div>
