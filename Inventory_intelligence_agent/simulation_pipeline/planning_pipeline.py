@@ -12,7 +12,9 @@ from base_state import build_base_state
 from baseline_des import simulate_worlds
 from decision_comparison import compare_decisions
 from decision_generation import generate_decisions
-from decision_models import Decision
+from action_executors import execute_decision_if_auto_approved
+from automation_policy_store import append_action_audit_log, ensure_automation_csv_files
+from decision_models import ActionExecutionResult, Decision, ExecutionDecision
 from decision_ranking import rank_decisions
 from decision_selection import (
     build_decision_selection_request,
@@ -30,6 +32,7 @@ from recommendation_models import (
     PlanningPipelineConfig,
     PlanningPipelineResult,
 )
+from policy_evaluator import evaluate_policy
 from scenario_models import ScenarioPatch
 from scenario_state_builder import build_scenario_state
 from simulation_models import OutcomeSummary
@@ -81,6 +84,7 @@ def run_decision_evaluation_and_recommendation(
     selected_decision_ids: list[str],
     config: PlanningPipelineConfig,
 ) -> PlanningPipelineResult:
+    ensure_automation_csv_files()
     selected = resolve_selected_decisions(baseline.decisions, selected_decision_ids)
     data_dir = _resolve_data_dir(config)
     decision_results = simulate_decisions(
@@ -97,6 +101,30 @@ def run_decision_evaluation_and_recommendation(
         ranked,
         decision_results,
     )
+    policy_evaluations: list[ExecutionDecision] = []
+    execution_results: list[ActionExecutionResult] = []
+
+    recommended = recommendation.recommended_decision
+    if recommended is not None:
+        execution_decision = evaluate_policy(recommended.decision)
+        policy_evaluations.append(execution_decision)
+        execution_result = execute_decision_if_auto_approved(
+            execution_decision,
+            baseline.scenario,
+        )
+        execution_results.append(execution_result)
+
+        append_action_audit_log(
+            decision_id=recommended.decision.decision_id,
+            decision_type=recommended.decision.decision_type.value,
+            decision_parameters=recommended.decision.parameters,
+            policy_type=execution_decision.policy_type,
+            execution_status=execution_decision.status,
+            reason=execution_decision.reason,
+            before_state=execution_result.execution_details.get("before_state"),
+            after_state=execution_result.execution_details.get("after_state"),
+        )
+
     payload = build_explainability_payload(
         baseline.scenario,
         baseline.outcomes,
@@ -113,6 +141,8 @@ def run_decision_evaluation_and_recommendation(
         comparison_results=comparisons,
         ranked_decisions=ranked,
         recommendation_summary=recommendation,
+        policy_evaluations=policy_evaluations,
+        execution_results=execution_results,
         explainability_payload=payload,
         llm_explanation=explanation,
     )

@@ -26,11 +26,11 @@ from routers import (
     inventory,
     notifications,
     orders,
-    route_prediction,
     eta_prediction,
     users,
     voice,
     planning,
+    automation,
 )
 
 from services.registry import init_all_services
@@ -75,7 +75,6 @@ app.include_router(auth.router)
 
 # ✅ OTHER ROUTERS (UNCHANGED)
 app.include_router(copilot.router)
-app.include_router(route_prediction.router)
 app.include_router(eta_prediction.router)
 app.include_router(orders.router)
 app.include_router(orders.couriers_router)
@@ -85,6 +84,7 @@ app.include_router(dashboard.router)
 app.include_router(notifications.router)
 app.include_router(voice.router)
 app.include_router(planning.router)
+app.include_router(automation.router)
 
 # ✅ HEALTH CHECK
 @app.get("/health")

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from decision_models import Decision
+from decision_models import ActionExecutionResult, Decision, ExecutionDecision
 from decision_simulation_models import DecisionSimulationResult
 from scenario_models import ScenarioPatch
 from simulation_models import OutcomeSummary
@@ -92,5 +92,7 @@ class PlanningPipelineResult:
     comparison_results: list[DecisionComparison]
     ranked_decisions: list[RankedDecision]
     recommendation_summary: RecommendationSummary
+    policy_evaluations: list[ExecutionDecision]
+    execution_results: list[ActionExecutionResult]
     explainability_payload: ExplainabilityPayload
     llm_explanation: LLMExplanation

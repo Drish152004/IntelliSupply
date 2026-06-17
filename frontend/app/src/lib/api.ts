@@ -627,6 +627,8 @@ export async function markAllNotificationsRead() {
 }
 
 export type {
+  ActionAuditLog,
+  AutomationPolicy,
   ScenarioPatch,
   PlanningContext,
   ScenarioUnderstandingResult,
@@ -646,6 +648,8 @@ export {
 } from './planningTypes';
 
 import type {
+  ActionAuditLog,
+  AutomationPolicy,
   PlanningContext,
   PlanningSimulationResult,
   ScenarioUnderstandingResult,
@@ -691,6 +695,31 @@ export async function simulatePlanning(
     }
     throw err;
   }
+}
+
+export async function getAutomationPolicies(): Promise<AutomationPolicy[]> {
+  const data = await apiFetch<{ policies: AutomationPolicy[] }>('/automation/policies');
+  return data.policies;
+}
+
+export async function upsertAutomationPolicy(
+  policyType: string,
+  payload: Pick<AutomationPolicy, 'enabled' | 'auto_execute' | 'threshold_value'>,
+): Promise<AutomationPolicy> {
+  const data = await apiFetch<{ policy: AutomationPolicy }>(
+    `/automation/policies/${encodeURIComponent(policyType)}`,
+    {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    },
+  );
+  return data.policy;
+}
+
+export async function getPlanningAuditLogs(limit = 100): Promise<ActionAuditLog[]> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  const data = await apiFetch<{ logs: ActionAuditLog[] }>(`/automation/audit-logs?${params.toString()}`);
+  return data.logs;
 }
 
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Sparkles } from 'lucide-react';
+import { Settings2, Sparkles } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import EntityScopePanel, { deriveScopeOptions } from '@/components/planning/EntityScopePanel';
 import ScenarioInputPanel from '@/components/planning/ScenarioInputPanel';
@@ -12,13 +12,19 @@ import OutcomeDetailModal from '@/components/planning/OutcomeDetailModal';
 import InterventionRankingPanel from '@/components/planning/InterventionRankingPanel';
 import InterventionDetailModal from '@/components/planning/InterventionDetailModal';
 import ExplainabilityPanel from '@/components/planning/ExplainabilityPanel';
+import PlanningAutomationModal from '@/components/planning/PlanningAutomationModal';
 import {
+  getAutomationPolicies,
+  getPlanningAuditLogs,
   getPlanningContext,
   simulatePlanning,
+  upsertAutomationPolicy,
   understandPlanningScenario,
   PlanningClarificationError,
 } from '@/lib/api';
 import type {
+  ActionAuditLog,
+  AutomationPolicy,
   PlanningContext,
   PlanningSimulationResult,
   ScenarioPatch,
@@ -28,6 +34,12 @@ import type { PLANNING_EXAMPLE_SCENARIOS } from '@/lib/planningExamples';
 export default function Planning() {
   const [context, setContext] = useState<PlanningContext | null>(null);
   const [contextLoading, setContextLoading] = useState(true);
+  const [policies, setPolicies] = useState<AutomationPolicy[]>([]);
+  const [policiesLoading, setPoliciesLoading] = useState(false);
+  const [savingPolicyType, setSavingPolicyType] = useState<string | null>(null);
+  const [auditLogs, setAuditLogs] = useState<ActionAuditLog[]>([]);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [automationModalOpen, setAutomationModalOpen] = useState(false);
 
   const [hubId, setHubId] = useState('');
   const [category, setCategory] = useState('');
@@ -66,6 +78,29 @@ export default function Planning() {
       active = false;
     };
   }, []);
+
+  const loadAutomationData = useCallback(async () => {
+    setPoliciesLoading(true);
+    setAuditLoading(true);
+    try {
+      const [policyData, auditData] = await Promise.all([
+        getAutomationPolicies(),
+        getPlanningAuditLogs(100),
+      ]);
+      setPolicies(policyData);
+      setAuditLogs(auditData);
+    } catch (err) {
+      console.error('Failed to load automation data:', err);
+    } finally {
+      setPoliciesLoading(false);
+      setAuditLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!automationModalOpen) return;
+    loadAutomationData();
+  }, [automationModalOpen, loadAutomationData]);
 
   const { hubs, categories, products, dates } = useMemo(
     () => deriveScopeOptions(context, hubId, category, productId),
@@ -162,6 +197,10 @@ export default function Planning() {
 
       if (currentRequestId === requestIdRef.current) {
         setResult(data);
+        if (automationModalOpen) {
+          const updatedLogs = await getPlanningAuditLogs(100);
+          setAuditLogs(updatedLogs);
+        }
       }
     } catch (err) {
       if (currentRequestId !== requestIdRef.current) return;
@@ -188,7 +227,45 @@ export default function Planning() {
     category,
     simulationDate,
     planningWindowDays,
+    automationModalOpen,
   ]);
+
+  const handlePolicyChange = useCallback(
+    (policyType: string, patch: Partial<AutomationPolicy>) => {
+      setPolicies((prev) =>
+        prev.map((policy) =>
+          policy.policy_type === policyType
+            ? { ...policy, ...patch }
+            : policy,
+        ),
+      );
+    },
+    [],
+  );
+
+  const handleSavePolicy = useCallback(
+    async (policyType: string) => {
+      const policy = policies.find((item) => item.policy_type === policyType);
+      if (!policy) return;
+      setSavingPolicyType(policyType);
+      try {
+        const updated = await upsertAutomationPolicy(policyType, {
+          enabled: policy.enabled,
+          auto_execute: policy.auto_execute,
+          threshold_value: policy.threshold_value,
+        });
+        setPolicies((prev) =>
+          prev.map((item) => (item.policy_type === policyType ? updated : item)),
+        );
+      } catch (err) {
+        console.error('Failed to save policy:', err);
+        setError(err instanceof Error ? err.message : 'Failed to save policy.');
+      } finally {
+        setSavingPolicyType(null);
+      }
+    },
+    [policies],
+  );
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
@@ -198,16 +275,28 @@ export default function Planning() {
         <section className="relative overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-sm">
           <div className="absolute inset-0 bg-gradient-to-r from-emerald-50 via-cyan-50 to-white" />
           <div className="relative z-10 p-10">
-            <div className="inline-flex items-center gap-2 rounded-full bg-emerald-100 text-emerald-700 px-4 py-2 text-sm font-medium">
-              <Sparkles className="h-4 w-4" />
-              Inventory Scenario Simulation
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <div className="inline-flex items-center gap-2 rounded-full bg-emerald-100 text-emerald-700 px-4 py-2 text-sm font-medium">
+                  <Sparkles className="h-4 w-4" />
+                  Inventory Scenario Simulation
+                </div>
+                <h1 className="mt-6 text-4xl md:text-5xl font-bold tracking-tight text-slate-900">
+                  Planning Agent Workspace
+                </h1>
+                <p className="mt-4 max-w-3xl text-lg text-slate-600">
+                  Select entity scope, describe a what-if scenario, and run simulation to discover outcomes, rank interventions, and generate explainability output.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAutomationModalOpen(true)}
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 transition"
+              >
+                <Settings2 className="h-4 w-4 text-indigo-600" />
+                Automation Settings
+              </button>
             </div>
-            <h1 className="mt-6 text-4xl md:text-5xl font-bold tracking-tight text-slate-900">
-              Planning Agent Workspace
-            </h1>
-            <p className="mt-4 max-w-3xl text-lg text-slate-600">
-              Select entity scope, describe a what-if scenario, and run Monte Carlo + DES simulation to discover outcomes, rank interventions, and generate explainability output.
-            </p>
           </div>
         </section>
 
@@ -286,7 +375,20 @@ export default function Planning() {
             <ExplainabilityPanel explanation={result.llm_explanation} />
           </>
         )}
+
       </main>
+
+      <PlanningAutomationModal
+        open={automationModalOpen}
+        onOpenChange={setAutomationModalOpen}
+        policies={policies}
+        policiesLoading={policiesLoading}
+        auditLogs={auditLogs}
+        auditLoading={auditLoading}
+        onPolicyChange={handlePolicyChange}
+        onSavePolicy={handleSavePolicy}
+        savingPolicyType={savingPolicyType}
+      />
 
       <InventoryStateModal
         cardId={selectedStateCard}

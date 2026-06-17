@@ -184,6 +184,40 @@ export interface RecommendationSummary {
   explanation: string;
 }
 
+export interface ExecutionDecision {
+  decision: Decision;
+  status: 'AUTO_APPROVED' | 'APPROVAL_REQUIRED' | 'DISABLED';
+  reason: string;
+  policy_type: string;
+  threshold_value?: number | null;
+  observed_value?: number | null;
+}
+
+export interface ActionExecutionResult {
+  decision: Decision;
+  success: boolean;
+  execution_details: Record<string, unknown>;
+}
+
+export interface AutomationPolicy {
+  policy_type: string;
+  enabled: boolean;
+  auto_execute: boolean;
+  threshold_value: number;
+}
+
+export interface ActionAuditLog {
+  timestamp: string;
+  decision_id: string;
+  decision_type: string;
+  decision_parameters: Record<string, unknown> | null;
+  policy_type: string;
+  execution_status: string;
+  reason: string;
+  before_state: Record<string, unknown> | null;
+  after_state: Record<string, unknown> | null;
+}
+
 export interface LLMExplanation {
   executive_summary: string;
   recommended_action: string;
@@ -201,6 +235,8 @@ export interface PlanningSimulationResult {
   outcomes: OutcomeSummary;
   ranked_decisions: RankedDecision[];
   recommendation_summary: RecommendationSummary;
+  policy_evaluations?: ExecutionDecision[];
+  execution_results?: ActionExecutionResult[];
   llm_explanation: LLMExplanation;
   decisions?: Decision[];
 }
