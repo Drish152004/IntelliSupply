@@ -132,22 +132,37 @@ export interface LoginResponse {
 // ✅ AUTH API
 // =======================
 
-export async function login(email: string, password: string): Promise<LoginResponse> {
-  const data = await apiFetch<LoginResponse>('/api/login', {
+export async function loginApi(email: string, password: string): Promise<LoginResponse> {
+  return apiFetch<LoginResponse>('/api/login', {
     method: 'POST',
     body: JSON.stringify({ email, password }),
     auth: false,
   });
+}
 
-  if (data.access_token) {
-    setAccessToken(data.access_token);
-  }
+export async function googleLoginApi(idToken: string, role: string): Promise<LoginResponse> {
+  return apiFetch<LoginResponse>('/api/google-login', {
+    method: 'POST',
+    body: JSON.stringify({
+      id_token: idToken,
+      role,
+    }),
+    auth: false,
+  });
+}
 
-  if (data.user) {
-    localStorage.setItem('intellisupply_user', JSON.stringify(data.user));
-  }
+export async function refreshSessionApi(): Promise<LoginResponse> {
+  return apiFetch<LoginResponse>('/api/refresh', {
+    method: 'POST',
+    auth: false,
+  });
+}
 
-  return data;
+export async function logoutApi(): Promise<{ success: boolean; message?: string }> {
+  return apiFetch<{ success: boolean; message?: string }>('/api/logout', {
+    method: 'POST',
+    auth: false,
+  });
 }
 
 export async function fetchCurrentUser(): Promise<AuthUserResponse> {
@@ -161,28 +176,6 @@ export async function updateCurrentUser(payload: { name?: string }): Promise<Aut
     body: JSON.stringify(payload),
   });
   return data.user;
-}
-
-// ✅ ✅ FIXED GOOGLE LOGIN
-export async function googleLogin(idToken: string, role: string): Promise<LoginResponse> {
-  const data = await apiFetch<LoginResponse>('/api/google-login', {
-    method: 'POST',
-    body: JSON.stringify({
-      id_token: idToken,
-      role, // ✅ CRITICAL FIX
-    }),
-    auth: false,
-  });
-
-  if (data.access_token) {
-    setAccessToken(data.access_token);
-  }
-
-  if (data.user) {
-    localStorage.setItem('intellisupply_user', JSON.stringify(data.user));
-  }
-
-  return data;
 }
 
 // =======================

@@ -1,11 +1,14 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import {
   ApiError,
-  getApiBase,
   getAccessToken,
   setAccessToken,
   fetchCurrentUser,
   updateCurrentUser,
+  loginApi,
+  googleLoginApi,
+  refreshSessionApi,
+  logoutApi,
   type AuthUserResponse,
   type LoginResponse
 } from '@/lib/api';
@@ -102,19 +105,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   /* Restore session from refresh cookie (OAuth / cookie-based sessions). */
   const performSilentRefresh = useCallback(async (): Promise<boolean> => {
     try {
-      const res = await fetch(`${getApiBase()}/api/refresh`, {
-        method: 'POST',
-        credentials: 'include',
-      });
-
-      if (res.ok) {
-        const data = (await res.json()) as LoginResponse;
-
-        if (data.success && data.user && data.access_token) {
-          const authUser = toAuthUser(data.user);
-          persistSession(authUser, data.access_token);
-          return true;
-        }
+      const data = await refreshSessionApi();
+      if (data.success && data.user && data.access_token) {
+        const authUser = toAuthUser(data.user);
+        persistSession(authUser, data.access_token);
+        return true;
       }
     } catch (err) {
       console.error('Silent refresh failed:', err);
@@ -190,16 +185,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     password: string,
   ): Promise<{ success: boolean; message?: string; role?: AppRole }> => {
     try {
-      const res = await fetch(`${getApiBase()}/api/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-        credentials: 'include',
-      });
-
-      const data = (await res.json()) as LoginResponse & { message?: string };
-
-      if (res.ok && data.success && data.user && data.access_token) {
+      const data = await loginApi(email, password);
+      if (data.success && data.user && data.access_token) {
         const authUser = toAuthUser(data.user);
         persistSession(authUser, data.access_token);
 
@@ -207,8 +194,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       return { success: false, message: data.message ?? 'Invalid credentials.' };
-    } catch {
-      return { success: false, message: 'Unable to reach authentication service.' };
+    } catch (error) {
+      const message = error instanceof ApiError ? error.message : 'Unable to reach authentication service.';
+      return { success: false, message };
     }
   };
 
@@ -218,19 +206,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     role: AppRole,
   ): Promise<{ success: boolean; message?: string; role?: AppRole }> => {
     try {
-      const res = await fetch(`${getApiBase()}/api/google-login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id_token: idToken,
-          role,
-        }),
-        credentials: 'include',
-      });
-
-      const data = (await res.json()) as LoginResponse & { message?: string };
-
-      if (res.ok && data.success && data.user && data.access_token) {
+      const data = await googleLoginApi(idToken, role);
+      if (data.success && data.user && data.access_token) {
         const authUser = toAuthUser(data.user);
         persistSession(authUser, data.access_token);
 
@@ -238,17 +215,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       return { success: false, message: data.message ?? 'Google login failed.' };
-    } catch {
-      return { success: false, message: 'Unable to reach authentication service.' };
+    } catch (error) {
+      const message = error instanceof ApiError ? error.message : 'Unable to reach authentication service.';
+      return { success: false, message };
     }
   };
 
   const logout = useCallback(async () => {
     try {
-      await fetch(`${getApiBase()}/api/logout`, {
-        method: 'POST',
-        credentials: 'include',
-      });
+      await logoutApi();
     } catch (err) {
       console.error('Logout request failed:', err);
     } finally {

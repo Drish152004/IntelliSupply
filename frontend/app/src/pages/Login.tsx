@@ -51,6 +51,11 @@ export default function Login() {
   // ✅ Resolve selected role (important for Google login)
   const selectedRole: AppRole = ROLE_MAP[role ?? 'courier'] || 'courier';
 
+  const selectedRoleRef = useRef(selectedRole);
+  useEffect(() => {
+    selectedRoleRef.current = selectedRole;
+  }, [selectedRole]);
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -58,45 +63,46 @@ export default function Login() {
 
   const googleButtonRef = useRef<HTMLDivElement | null>(null);
 
-  /* ✅ GOOGLE LOGIN (FIXED WITH ROLE) */
-useEffect(() => {
-  if (!window.google || !googleButtonRef.current) return;
+  /* ✅ GOOGLE LOGIN (FIXED WITH ROLE & HMR SAFE) */
+  useEffect(() => {
+    if (!window.google || !googleButtonRef.current) return;
 
-  // ✅ Prevent multiple init
-  if ((window as any)._googleInitialized) return;
-  (window as any)._googleInitialized = true;
+    // ✅ Initialize Google Sign-In only once
+    if (!(window as any)._googleInitialized) {
+      window.google.accounts.id.initialize({
+        client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
+        callback: async (response: any) => {
+          setSubmitting(true);
+          setError(null);
 
-  window.google.accounts.id.initialize({
-    client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
-    callback: async (response: any) => {
-      setSubmitting(true);
-      setError(null);
+          try {
+            const result = await googleLogin(response.credential, selectedRoleRef.current);
 
-      try {
-        const result = await googleLogin(response.credential, selectedRole);
-
-        if (result.success && result.role) {
-          navigate(ROLE_HOME[result.role], { replace: true });
-        } else {
-          setError(result.message ?? 'Google login failed');
-        }
-      } catch {
-        setError('Google login failed.');
-      } finally {
-        setSubmitting(false);
-      }
-    },
-  });
-
-  window.google.accounts.id.renderButton(
-    googleButtonRef.current,
-    {
-      theme: 'outline',
-      size: 'large',
-      width: 360,
+            if (result.success && result.role) {
+              navigate(ROLE_HOME[result.role], { replace: true });
+            } else {
+              setError(result.message ?? 'Google login failed');
+            }
+          } catch {
+            setError('Google login failed.');
+          } finally {
+            setSubmitting(false);
+          }
+        },
+      });
+      (window as any)._googleInitialized = true;
     }
-  );
-}, [selectedRole]);
+
+    // ✅ Render the button on every mount/render
+    window.google.accounts.id.renderButton(
+      googleButtonRef.current,
+      {
+        theme: 'outline',
+        size: 'large',
+        width: 360,
+      }
+    );
+  }, [googleLogin, navigate]);
   /* ✅ NORMAL LOGIN */
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
