@@ -629,6 +629,9 @@ export async function markAllNotificationsRead() {
 export type {
   ActionAuditLog,
   AutomationPolicy,
+  ExecutePlanningDecisionPayload,
+  ExecutePlanningDecisionResult,
+  ManualExecutionStatus,
   ScenarioPatch,
   PlanningContext,
   ScenarioUnderstandingResult,
@@ -650,6 +653,8 @@ export {
 import type {
   ActionAuditLog,
   AutomationPolicy,
+  ExecutePlanningDecisionPayload,
+  ExecutePlanningDecisionResult,
   PlanningContext,
   PlanningSimulationResult,
   ScenarioUnderstandingResult,
@@ -720,6 +725,15 @@ export async function getPlanningAuditLogs(limit = 100): Promise<ActionAuditLog[
   const params = new URLSearchParams({ limit: String(limit) });
   const data = await apiFetch<{ logs: ActionAuditLog[] }>(`/automation/audit-logs?${params.toString()}`);
   return data.logs;
+}
+
+export async function executePlanningDecision(
+  payload: ExecutePlanningDecisionPayload,
+): Promise<ExecutePlanningDecisionResult> {
+  return apiFetch<ExecutePlanningDecisionResult>('/automation/execute', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
 }
 
 
