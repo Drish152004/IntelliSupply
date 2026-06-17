@@ -47,15 +47,14 @@ class AgentState(TypedDict):
     # FIXED
     clarification_stage: NotRequired[str | None]
 
-    cache_hit: NotRequired[bool]
-    cache_key: NotRequired[str | None]
-    cached_result: NotRequired[dict[str, Any] | None]
-
     entities: NotRequired[dict[str, str]]
     prefetched_order_route: NotRequired[dict[str, Any]]
 
     missing_fields: NotRequired[list[str]]
     missing_required_parameters: NotRequired[bool]
+
+    function_name: NotRequired[str | None]
+    payload: NotRequired[dict[str, Any]]
 
     clarification_needed: NotRequired[bool]
     clarification_failed: NotRequired[bool]

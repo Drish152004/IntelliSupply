@@ -36,27 +36,18 @@ def extract_node_input(node_name: str, state: AgentState) -> dict[str, Any]:
             "coarse_domain": state.get("coarse_domain"),
         }
 
-    if node_name == "parameter_validation":
+    if node_name == "entity_resolution":
+        entities = state.get("entities") or {}
         return {
             "task": state.get("task", ""),
             "domain": state.get("domain", ""),
-            "entities": state.get("entities") or {},
+            "entities": entities,
         }
 
-    if node_name == "semantic_cache_lookup":
-        return {
-            "query": state.get("user_query", ""),
-            "role": state.get("user_role"),
-            "domain": state.get("domain"),
-            "task": state.get("task", ""),
-            "entities": state.get("entities") or {},
-        }
-
-    if node_name == "authorize":
+    if node_name == "parameter_preparation":
         return {
             "task": state.get("task", ""),
             "domain": state.get("domain", ""),
-            "role": state.get("user_role"),
             "entities": state.get("entities") or {},
         }
 
@@ -65,26 +56,17 @@ def extract_node_input(node_name: str, state: AgentState) -> dict[str, Any]:
             "query": state.get("user_query", ""),
             "task": state.get("task", ""),
             "domain": state.get("domain", ""),
-            "entities": state.get("entities") or {},
+            "function_name": state.get("function_name"),
+            "payload": state.get("payload") or {},
         }
 
     if node_name == "response_formatter":
         return {
             "task": state.get("task", ""),
-            "cache_hit": state.get("cache_hit", False),
             "execution_status": state.get("execution_status"),
             "clarification_needed": state.get("clarification_needed", False),
             "authorization_denied": state.get("authorization_denied", False),
             "access_denied": state.get("access_denied", False),
-        }
-
-    if node_name == "semantic_cache_store":
-        return {
-            "query": state.get("user_query", ""),
-            "task": state.get("task", ""),
-            "domain": state.get("domain", ""),
-            "cache_key": state.get("cache_key"),
-            "execution_status": state.get("execution_status"),
         }
 
     return {"node": node_name}
@@ -120,24 +102,27 @@ def extract_node_output(node_name: str, before: AgentState, after: AgentState) -
             "classification_source": after.get("classification_source"),
         }
 
-    if node_name == "parameter_validation":
+    if node_name == "entity_resolution":
+        from orchestrator.entity_resolution_node import get_entity_resolution_records
+
+        before_entities = before.get("entities") or {}
+        after_entities = after.get("entities") or {}
+        resolutions = get_entity_resolution_records()
+        if not resolutions:
+            resolutions = _entity_resolution_diff(before_entities, after_entities)
+        return {
+            "entities_before": before_entities,
+            "entities_after": after_entities,
+            "resolutions": resolutions,
+        }
+
+    if node_name == "parameter_preparation":
         return {
             "complete": not after.get("missing_required_parameters", False),
             "missing_fields": after.get("missing_fields") or [],
             "clarification_needed": after.get("clarification_needed", False),
-        }
-
-    if node_name == "semantic_cache_lookup":
-        return {
-            "hit": after.get("cache_hit", False),
-            "cache_key": after.get("cache_key"),
-        }
-
-    if node_name == "authorize":
-        return {
-            "authorized": not after.get("authorization_denied", False),
-            "authorization_denied": after.get("authorization_denied", False),
-            "prefetched_order_route": bool(after.get("prefetched_order_route")),
+            "function_name": after.get("function_name"),
+            "payload": after.get("payload") or {},
         }
 
     if node_name == "rag_executor":
@@ -152,13 +137,38 @@ def extract_node_output(node_name: str, before: AgentState, after: AgentState) -
             "final_response_chars": len(after.get("final_response") or ""),
         }
 
-    if node_name == "semantic_cache_store":
-        return {
-            "cache_key": after.get("cache_key"),
-            "stored": bool(after.get("cache_key")),
-        }
-
     return {"node": node_name}
+
+
+def _entity_resolution_diff(
+    before: dict[str, Any],
+    after: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Summarize per-key entity resolution outcomes for NODE_OUTPUT."""
+    keys = sorted(set(before) | set(after))
+    resolutions: list[dict[str, Any]] = []
+    for key in keys:
+        old_val = before.get(key)
+        new_val = after.get(key)
+        if old_val is None or not str(old_val).strip():
+            continue
+        before_text = str(old_val).strip()
+        after_text = str(new_val).strip() if new_val is not None else None
+        if before_text == after_text:
+            status = "unchanged"
+        elif after_text:
+            status = "success"
+        else:
+            status = "failure"
+        resolutions.append(
+            {
+                "entity_key": key,
+                "before": before_text,
+                "after": after_text,
+                "status": status,
+            }
+        )
+    return resolutions
 
 
 def _response_status(state: AgentState) -> str:
@@ -170,8 +180,6 @@ def _response_status(state: AgentState) -> str:
         return "access_denied"
     if state.get("clarification_needed"):
         return "clarification_required"
-    if state.get("cache_hit"):
-        return "cache_hit"
     if state.get("execution_status") == "error":
         return "error"
     return "success"

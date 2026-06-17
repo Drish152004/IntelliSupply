@@ -113,15 +113,20 @@ export default function AICopilot({ compact = false, expanded = false, domain = 
           logisticsSession: domain === 'logistics' ? logisticsSession : null,
           inventorySession: domain === 'inventory' ? inventorySession : null,
         });
-        if (response.data && typeof response.data === 'object') {
-          const session = (response.data as Record<string, unknown>).session;
-          if (session && typeof session === 'object') {
-            if (domain === 'inventory') {
-              setInventorySession(session as Record<string, unknown>);
-            } else {
-              setLogisticsSession(session as Record<string, unknown>);
+        if (response.status === 'clarification_required') {
+          if (response.data && typeof response.data === 'object') {
+            const session = (response.data as Record<string, unknown>).session;
+            if (session && typeof session === 'object') {
+              if (domain === 'inventory') {
+                setInventorySession(session as Record<string, unknown>);
+              } else {
+                setLogisticsSession(session as Record<string, unknown>);
+              }
             }
           }
+        } else {
+          setLogisticsSession(null);
+          setInventorySession(null);
         }
         const aiMsg: ChatMessage = {
           id: `msg-${Date.now() + 1}`,

@@ -15,19 +15,18 @@ from orchestrator.hitl_session import (
     should_clear_hitl_sessions,
 )
 from orchestrator.rbac.session_context import build_session_for_response
+from orchestrator.response_synthesis import synthesize_answer
 from orchestrator.state import AgentState
 
 logger = logging.getLogger(__name__)
 
 _GRAPH_MESSAGES: dict[str, str] = {
-    "eta_lookup": "ETA retrieved from knowledge graph",
-    "shipment_lookup": "Shipment details retrieved from knowledge graph",
-    "courier_lookup": "Courier details retrieved from knowledge graph",
-    "route_lookup": "Route retrieved from knowledge graph",
-    "next_stop_lookup": "Next stop retrieved from knowledge graph",
-    "courier_route_lookup": "Courier route retrieved from knowledge graph",
-    "hub_lookup": "Hub listing retrieved from knowledge graph",
-    "city_lookup": "City listing retrieved from knowledge graph",
+    "order_lookup": "Order details retrieved from knowledge graph",
+    "courier_orders": "Courier orders retrieved from knowledge graph",
+    "courier_route": "Courier route retrieved from knowledge graph",
+    "recent_routes": "Recent deliveries retrieved from knowledge graph",
+    "delivery_days": "Delivery schedules retrieved from knowledge graph",
+    "hub_route": "Hub route retrieved from knowledge graph",
     "inventory_nlsql": "Inventory query completed",
 }
 
@@ -47,9 +46,6 @@ class ResponseFormatter:
 
         if state.get("clarification_needed"):
             return self._format_clarification(state)
-
-        if state.get("cache_hit"):
-            return self._format_cache(state)
 
         if state.get("execution_status") == "error":
             return self._format_execution_error(state)
@@ -147,18 +143,6 @@ class ResponseFormatter:
             response["data"] = data
         return response
 
-    def _format_cache(self, state: AgentState) -> dict[str, Any]:
-        task = state.get("task", "")
-        raw = self._parse_agent_response(state.get("agent_response", "")) or {}
-        data = state.get("cached_result") or raw.get("result") or {}
-        return {
-            "status": "success",
-            "source": "cache",
-            "task": task,
-            "message": "Cached result returned",
-            "data": data,
-        }
-
     def _format_from_agent_payload(
         self,
         state: AgentState,
@@ -201,16 +185,20 @@ class ResponseFormatter:
             }
 
         if status in {"complete", "success"}:
+            source = "inventory" if domain == "inventory" else "graph"
+
+            if source == "graph":
+                return self._format_graph_success(state, raw, task)
+
             result = raw.get("result") or {}
             answer = raw.get("answer") or result.get("answer") or "Request completed successfully"
-            source = "inventory" if domain == "inventory" else "graph"
             data: dict[str, Any] = {"answer": answer}
             if isinstance(result, dict):
                 data.update({k: v for k, v in result.items() if k != "answer"})
 
             return {
                 "status": "success",
-                "source": source,
+                "source": "inventory",
                 "task": task,
                 "message": _GRAPH_MESSAGES.get(task, answer),
                 "data": data,
@@ -221,6 +209,36 @@ class ResponseFormatter:
             message="Unrecognized agent response format",
             details={"task": task, "raw_status": status},
         )
+
+    def _format_graph_success(
+        self,
+        state: AgentState,
+        raw: dict[str, Any],
+        task: str,
+    ) -> dict[str, Any]:
+        """Preserve the full Aura Bridge payload and synthesize the answer.
+
+        The raw GraphDB result is kept intact under ``data.graph_result`` so
+        no fields are dropped or flattened. The human-readable answer is
+        generated here from ``user_query`` + ``task`` + raw graph data.
+        """
+        graph_result = raw.get("graph_result")
+        if graph_result is None:
+            graph_result = raw.get("result") or {}
+
+        graph_data = graph_result.get("data") if isinstance(graph_result, dict) else None
+        answer = synthesize_answer(state.get("user_query", ""), task, graph_data)
+
+        return {
+            "status": "success",
+            "source": "graph",
+            "task": task,
+            "message": _GRAPH_MESSAGES.get(task, answer),
+            "data": {
+                "graph_result": graph_result,
+                "answer": answer,
+            },
+        }
 
     @staticmethod
     def _format_generic_error(

@@ -12,6 +12,9 @@ SELF_SCOPED_PATTERNS: tuple[str, ...] = (
     "my eta",
     "my next stop",
     "next stop",
+    "assigned to me",
+    "to me",
+    "for me",
 )
 
 _MY_PATTERN = re.compile(r"\b(?:my|mine)\b", re.I)

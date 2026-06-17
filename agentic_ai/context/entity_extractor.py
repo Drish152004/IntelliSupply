@@ -26,8 +26,14 @@ _CONTEXT_LOGISTICS_ORDER_ID = (
     r"ORD[-_]?\d+[A-Za-z0-9-]*"
 )
 
+# Self-identifying logistics order IDs (e.g. sh-b-000, hz-b-000, cq-b-002):
+# two letters, a single-letter segment, then a numeric segment. Specific enough
+# to be recognized anywhere in a query without surrounding logistics keywords.
+_DIRECT_LOGISTICS_ID = r"[A-Za-z]{2}-[A-Za-z]-\d{2,4}"
+
 _ENTITY_PATTERNS: dict[str, list[re.Pattern[str]]] = {
     "order_id": [
+        re.compile(rf"\b({_DIRECT_LOGISTICS_ID})\b", re.I),
         re.compile(r"\b(ORD[-_]?\d+[A-Za-z0-9-]*)\b", re.I),
         re.compile(
             rf"\b(?:order|ord)(?:\s+id)?[\s#:_-]+({_LOGISTICS_ORDER_ID})\b",
@@ -46,10 +52,6 @@ _ENTITY_PATTERNS: dict[str, list[re.Pattern[str]]] = {
         re.compile(r"\b(SH\d+[A-Za-z0-9-]*)\b", re.I),
         re.compile(r"\bshipment[\s#:_-]+([A-Za-z0-9-]{3,})\b", re.I),
         re.compile(r"\b(ord-[A-Za-z0-9-]+)\b", re.I),
-    ],
-    "courier_id": [
-        re.compile(r"\b(C\d+)\b", re.I),
-        re.compile(r"\bcourier[\s#:_-]*([A-Za-z0-9]+)\b", re.I),
     ],
     "hub_id": [
         re.compile(r"\bhub[\s#:_-]*(\d+)\b", re.I),
@@ -192,17 +194,17 @@ def _normalize_whitespace(value: str) -> str:
 
 
 def _normalize_order_id(value: str) -> str:
-    cleaned = _normalize_whitespace(value).upper()
-    if cleaned in _ORDER_ID_STOP_WORDS:
+    cleaned = _normalize_whitespace(value).lower()
+    if cleaned.upper() in _ORDER_ID_STOP_WORDS:
         return ""
-    if cleaned.startswith("ORD-"):
+    if cleaned.startswith("ord-"):
         return cleaned
-    if re.fullmatch(r"ORD[A-Z0-9-]+", cleaned):
+    if re.fullmatch(r"ord[a-z0-9-]+", cleaned):
         return cleaned
-    if re.fullmatch(r"[A-Z0-9]+(?:-[A-Z0-9]+)+", cleaned):
+    if re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)+", cleaned):
         return cleaned
-    if re.fullmatch(r"[A-Z0-9-]+", cleaned) and not cleaned.startswith("ORD"):
-        return f"ORD{cleaned}" if cleaned.isalnum() and len(cleaned) >= 3 else cleaned
+    if re.fullmatch(r"[a-z0-9-]+", cleaned) and not cleaned.startswith("ord"):
+        return f"ord{cleaned}" if cleaned.isalnum() and len(cleaned) >= 3 else cleaned
     return cleaned
 
 
@@ -220,21 +222,62 @@ def _normalize_last_completed_order(value: str) -> str:
 
 
 def _normalize_shipment_id(value: str) -> str:
-    cleaned = _normalize_whitespace(value)
-    if cleaned.lower().startswith("sh"):
-        return cleaned.upper()
-    if cleaned.lower().startswith("ord-"):
-        return cleaned.lower()
-    return cleaned
+    return _normalize_whitespace(value).lower()
 
 
-def _normalize_courier_id(value: str) -> str:
-    cleaned = _normalize_whitespace(value).upper()
-    if re.fullmatch(r"\d+", cleaned):
-        return f"C{cleaned}"
-    if re.fullmatch(r"C\d+", cleaned, re.I):
-        return cleaned.upper()
-    return cleaned.upper()
+_COURIER_TITLED_NUMERIC = re.compile(r"\bCourier\s+(\d+)\b")
+_COURIER_CODE = re.compile(r"\bC(\d+)\b", re.I)
+_COURIER_NUMERIC_REF = re.compile(r"\bcourier[\s#:_-]+(\d+)\b", re.I)
+_COURIER_NAMED_REF = re.compile(
+    r"\bcourier[\s#:_-]+([A-Za-z][A-Za-z0-9]*(?:\s+[A-Za-z][A-Za-z0-9]+)?)\b",
+    re.I,
+)
+_COURIER_CANONICAL_ID = re.compile(
+    r"\bcourier[\s#:_-]*("
+    r"[0-9a-f]{32}|"
+    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|"
+    r"[0-9a-f]{24}"
+    r")\b",
+    re.I,
+)
+
+
+def has_courier_entity(entities: dict[str, str]) -> bool:
+    """Return True when entities contain any unresolved or resolved courier reference."""
+    return bool(
+        entities.get("courier_id")
+        or entities.get("courier_reference")
+        or entities.get("courier_name")
+    )
+
+
+def _extract_courier_entities(user_query: str) -> dict[str, str]:
+    """
+    Extract raw courier references from user text.
+
+    Does not normalize to business IDs (e.g. C11) or resolve graph identifiers.
+    """
+    canonical = _COURIER_CANONICAL_ID.search(user_query)
+    if canonical:
+        return {"courier_id": canonical.group(1).strip()}
+
+    titled = _COURIER_TITLED_NUMERIC.search(user_query)
+    if titled:
+        return {"courier_name": f"Courier {titled.group(1)}"}
+
+    code = _COURIER_CODE.search(user_query)
+    if code:
+        return {"courier_reference": code.group(1)}
+
+    numeric = _COURIER_NUMERIC_REF.search(user_query)
+    if numeric:
+        return {"courier_reference": numeric.group(1)}
+
+    named = _COURIER_NAMED_REF.search(user_query)
+    if named:
+        return {"courier_name": _normalize_whitespace(named.group(1))}
+
+    return {}
 
 
 def _normalize_hub_ref(value: str) -> str:
@@ -273,7 +316,6 @@ def _normalize_city_name(value: str) -> str:
 _ENTITY_NORMALIZERS: dict[str, callable] = {
     "order_id": _normalize_order_id,
     "shipment_id": _normalize_shipment_id,
-    "courier_id": _normalize_courier_id,
     "hub_id": _normalize_hub_ref,
     "from_hub": _normalize_hub_ref,
     "to_hub": _normalize_hub_ref,
@@ -282,6 +324,24 @@ _ENTITY_NORMALIZERS: dict[str, callable] = {
     "warehouse_id": _normalize_warehouse_id,
     "product_name": _normalize_product_name,
 }
+
+# Identifier fields stored lowercase to match GraphDB-stored IDs (e.g. "sh-b-000").
+# Text entities (courier_name, city_name, hub_name) are intentionally excluded.
+_LOWERCASE_ID_FIELDS: frozenset[str] = frozenset({
+    "order_id",
+    "shipment_id",
+    "courier_id",
+    "hub_id",
+    "route_prediction_id",
+})
+
+
+def _lowercase_identifier_fields(entities: dict[str, str]) -> None:
+    """Lowercase identifier values in place so lookups match stored IDs."""
+    for field in _LOWERCASE_ID_FIELDS:
+        value = entities.get(field)
+        if value:
+            entities[field] = value.lower()
 
 
 def _is_valid_hub_id(value: str) -> bool:
@@ -395,7 +455,7 @@ class EntityExtractor:
 
     @staticmethod
     def extract(user_query: str) -> dict[str, str]:
-        """Return extracted entity identifiers keyed by entity type in canonical form."""
+        """Return extracted entity identifiers keyed by entity type."""
         entities: dict[str, str] = {}
         for entity_name, patterns in _ENTITY_PATTERNS.items():
             match = _best_match(user_query, patterns)
@@ -436,11 +496,15 @@ class EntityExtractor:
         if delivery_day:
             entities["delivery_day"] = delivery_day
 
+        entities.update(_extract_courier_entities(user_query))
+
+        _lowercase_identifier_fields(entities)
+
         return entities
 
     @staticmethod
     def extract_next_stop_position(user_query: str) -> dict[str, str]:
-        """Extract position context for next_stop_lookup HITL resume answers."""
+        """Extract position context for courier_route HITL resume answers."""
         current_stop_patterns = [
             re.compile(
                 r"\bcurrent\s+stop\s+(Hub[\s#:_-]*\d+|Hub_\d+)\b",

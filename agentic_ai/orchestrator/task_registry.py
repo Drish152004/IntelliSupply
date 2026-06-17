@@ -1,5 +1,5 @@
 """
-Single source of truth for domains, tasks, keywords, RBAC, and cache TTL.
+Single source of truth for domains, tasks, keywords, and RBAC.
 """
 
 from __future__ import annotations
@@ -16,14 +16,12 @@ VALID_DOMAINS: frozenset[str] = frozenset({"inventory", "logistics"})
 INVENTORY_TASKS: frozenset[str] = frozenset({"inventory_nlsql"})
 
 LOGISTICS_RETRIEVAL_TASKS: frozenset[str] = frozenset({
-    "shipment_lookup",
-    "courier_lookup",
-    "eta_lookup",
-    "route_lookup",
-    "next_stop_lookup",
-    "courier_route_lookup",
-    "hub_lookup",
-    "city_lookup",
+    "order_lookup",
+    "courier_orders",
+    "courier_route",
+    "recent_routes",
+    "delivery_days",
+    "hub_route",
 })
 
 # Reserved for future ML orchestrator wiring (LOGISTICS / ADMIN may execute when implemented).
@@ -111,27 +109,27 @@ ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
     "LOGISTICS": LOGISTICS_TASKS,
     "INVENTORY": INVENTORY_TASKS,
     "COURIER": frozenset({
-        "route_lookup",
-        "courier_lookup",
-        "shipment_lookup",
-        "eta_lookup",
-        "next_stop_lookup",
-        "courier_route_lookup",
+        "order_lookup",
+        "courier_orders",
+        "courier_route",
+        "recent_routes",
     }),
 }
 
 VALID_ROLES: frozenset[str] = frozenset(ROLE_PERMISSIONS)
 
 COURIER_SELF_SCOPED_TASKS: frozenset[str] = frozenset({
-    "courier_lookup",
-    "route_lookup",
-    "shipment_lookup",
-    "eta_lookup",
-    "next_stop_lookup",
-    "courier_route_lookup",
+    "order_lookup",
+    "courier_orders",
+    "courier_route",
 })
 
-COURIER_RESOURCE_SCOPED_TASKS: frozenset[str] = COURIER_SELF_SCOPED_TASKS
+# Tasks where a COURIER must be confined to their own data. recent_routes is
+# resource-scoped (not self-only phrasing) so couriers cannot list other
+# couriers' deliveries.
+COURIER_RESOURCE_SCOPED_TASKS: frozenset[str] = COURIER_SELF_SCOPED_TASKS | frozenset({
+    "recent_routes",
+})
 
 # --- Clarification ---
 
@@ -140,46 +138,7 @@ EXTREME_LOW_CONFIDENCE_THRESHOLD = 0.30
 
 TASKS_BYPASS_INTENT_CLARIFICATION: frozenset[str] = frozenset({
     "inventory_nlsql",
-    "city_lookup",
 })
-
-# --- Entity requirements (logistics lookups) ---
-
-QUERY_ENTITY_REQUIREMENTS: dict[str, tuple[tuple[str, ...], ...]] = {
-    "shipment_lookup": (("order_id",), ("shipment_id",), ("courier_id",), ("self_scoped",)),
-    "courier_lookup": (("courier_id",), ("self_scoped",)),
-    "eta_lookup": (("order_id",), ("shipment_id",), ("self_scoped",), ("courier_id",)),
-    "route_lookup": (("order_id",), ("from_hub", "to_hub"), ("self_scoped",), ("courier_id",)),
-    "next_stop_lookup": (
-        ("courier_id", "current_stop"),
-        ("courier_id", "last_completed_order"),
-        ("self_scoped", "current_stop"),
-        ("self_scoped", "last_completed_order"),
-    ),
-    "courier_route_lookup": (("courier_id",), ("self_scoped",)),
-    "hub_lookup": ((), ("city_name",)),
-    "city_lookup": ((),),
-}
-
-# --- Cache TTL (seconds) ---
-
-CACHE_TTL_BY_TASK: dict[str, int] = {
-    "inventory_nlsql": 300,
-    "shipment_lookup": 120,
-    "courier_lookup": 120,
-    "eta_lookup": 120,
-    "route_lookup": 120,
-    "next_stop_lookup": 120,
-    "courier_route_lookup": 120,
-    "hub_lookup": 300,
-    "city_lookup": 300,
-}
-
-CACHEABLE_TASKS: frozenset[str] = frozenset(CACHE_TTL_BY_TASK)
-
-
-def ttl_for_task(task: str) -> int | None:
-    return CACHE_TTL_BY_TASK.get(task)
 
 
 def is_task_allowed(role: str, task: str) -> bool:

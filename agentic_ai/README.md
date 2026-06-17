@@ -12,7 +12,8 @@ LangGraph orchestrator with retrieval-only RAG: inventory NL-SQL and logistics A
 ## Pipeline
 
 ```
-init_state → rbac_coarse → semantic_cache → intent → rbac_fine → param_resolver → rag_executor → format
+init_state → rbac_coarse → entity_extraction → intent → entity_resolution
+  → parameter_preparation → rag_executor → response_formatter
 ```
 
 ## Layout
@@ -20,17 +21,14 @@ init_state → rbac_coarse → semantic_cache → intent → rbac_fine → param
 | Folder | Role |
 |--------|------|
 | `orchestrator/` | LangGraph workflow, RBAC, intent, RAG executor, response formatting |
-| `orchestrator/task_registry.py` | Domains, tasks, keywords, permissions, cache TTL |
+| `orchestrator/task_registry.py` | Domains, tasks, keywords, permissions |
 | `integrations/` | SQL bridge, Aura bridge, LLM client, language detection |
-| `context/` | Entity extraction, query completeness, clarification |
-| `cache/` | Semantic similarity cache |
+| `context/` | Entity extraction, clarification |
 
 ## Configuration
 
 Secrets live in the repo root [`.env`](../.env.example). Optional:
 
-- `SEMANTIC_CACHE_ENABLED` — default `true`
-- `SEMANTIC_CACHE_THRESHOLD` — cosine similarity threshold (default `0.88`)
 - `HF_TOKEN` — for multilingual detection/translation in `init_state`
 
 ## Further reading

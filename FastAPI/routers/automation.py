@@ -6,18 +6,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from dependencies.auth import TokenUser, require_roles
-from action_executors import execute_decision
-from automation_execute import decision_from_payload, scenario_from_payload
 from automation_policy_store import (
-    append_action_audit_log,
     list_action_audit_logs,
     list_automation_policies,
     upsert_automation_policy,
-)
-from decision_models import (
-    DECISION_TYPE_TO_POLICY_TYPE,
-    MANUAL_EXECUTED,
-    MANUAL_EXECUTION_FAILED,
 )
 
 router = APIRouter(prefix="/automation", tags=["automation"])
@@ -32,11 +24,6 @@ class UpdateAutomationPolicyRequest(BaseModel):
     enabled: bool
     auto_execute: bool
     threshold_value: float = Field(..., ge=0)
-
-
-class ExecuteDecisionRequest(BaseModel):
-    decision: dict[str, Any]
-    scenario: dict[str, Any]
 
 
 @router.get("/policies")
@@ -81,50 +68,3 @@ def get_action_audit_logs(
         return {"logs": logs}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to fetch audit logs: {exc}") from exc
-
-
-@router.post("/execute")
-def execute_planning_decision(
-    body: ExecuteDecisionRequest,
-    current_user: AutomationUser,
-):
-    del current_user
-    try:
-        decision = decision_from_payload(body.decision)
-        scenario = scenario_from_payload(body.scenario)
-        execution_result = execute_decision(decision, scenario)
-
-        policy_type = DECISION_TYPE_TO_POLICY_TYPE.get(decision.decision_type, "unknown")
-        execution_status = (
-            MANUAL_EXECUTED if execution_result.success else MANUAL_EXECUTION_FAILED
-        )
-        audit_log = append_action_audit_log(
-            decision_id=decision.decision_id,
-            decision_type=decision.decision_type.value,
-            decision_parameters=decision.parameters,
-            policy_type=policy_type,
-            execution_status=execution_status,
-            reason="USER_APPROVED",
-            before_state=execution_result.execution_details.get("before_state"),
-            after_state=execution_result.execution_details.get("after_state")
-            or execution_result.execution_details,
-        )
-
-        return {
-            "execution_result": {
-                "decision": {
-                    "decision_id": execution_result.decision.decision_id,
-                    "decision_type": execution_result.decision.decision_type.value,
-                    "title": execution_result.decision.title,
-                    "rationale": execution_result.decision.rationale,
-                    "parameters": execution_result.decision.parameters,
-                },
-                "success": execution_result.success,
-                "execution_details": execution_result.execution_details,
-            },
-            "audit_log": audit_log,
-        }
-    except (KeyError, ValueError, TypeError) as exc:
-        raise HTTPException(status_code=422, detail=f"Invalid execute payload: {exc}") from exc
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to execute decision: {exc}") from exc

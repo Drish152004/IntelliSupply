@@ -39,12 +39,6 @@ class ShipmentTransferExecutor(ActionExecutor):
             return f"Hub {hub_id}"
         return str(row.iloc[0]["hub_name"])
 
-    def _hub_city_id(self, hub_id: str | int) -> int | None:
-        row = self._hubs[self._hubs["hub_id"].astype(str) == str(hub_id)]
-        if row.empty:
-            return None
-        return int(row.iloc[0]["city_id"])
-
     def execute(self, decision: Decision, scenario: ScenarioState) -> ActionExecutionResult:
         source_hub = decision.parameters.get("source_hub_id")
         target_hub = decision.parameters.get("target_hub_id")
@@ -53,34 +47,6 @@ class ShipmentTransferExecutor(ActionExecutor):
                 decision=decision,
                 success=False,
                 execution_details={"error": "Missing source/target hub."},
-            )
-
-        source_city_id = self._hub_city_id(source_hub)
-        target_city_id = self._hub_city_id(target_hub)
-        if source_city_id is None or target_city_id is None:
-            return ActionExecutionResult(
-                decision=decision,
-                success=False,
-                execution_details={
-                    "error": "Unable to resolve hub city for source or target hub.",
-                    "source_hub_id": source_hub,
-                    "target_hub_id": target_hub,
-                },
-            )
-        if source_city_id != target_city_id:
-            return ActionExecutionResult(
-                decision=decision,
-                success=False,
-                execution_details={
-                    "error": (
-                        "Inventory transfers require source and target hubs "
-                        "in the same city."
-                    ),
-                    "source_hub_id": source_hub,
-                    "target_hub_id": target_hub,
-                    "source_city_id": source_city_id,
-                    "target_city_id": target_city_id,
-                },
             )
 
         delivery_date = scenario.simulation_date
@@ -233,20 +199,6 @@ def _executor_for(decision: Decision) -> ActionExecutor | None:
     return None
 
 
-def execute_decision(decision: Decision, scenario: ScenarioState) -> ActionExecutionResult:
-    executor = _executor_for(decision)
-    if executor is None:
-        return ActionExecutionResult(
-            decision=decision,
-            success=False,
-            execution_details={"error": "No executor found for decision type."},
-        )
-
-    result = executor.execute(decision, scenario)
-    result.execution_details["scenario_snapshot"] = _safe_snapshot(scenario)
-    return result
-
-
 def execute_decision_if_auto_approved(
     execution_decision: ExecutionDecision,
     scenario: ScenarioState,
@@ -263,4 +215,14 @@ def execute_decision_if_auto_approved(
             },
         )
 
-    return execute_decision(decision, scenario)
+    executor = _executor_for(decision)
+    if executor is None:
+        return ActionExecutionResult(
+            decision=decision,
+            success=False,
+            execution_details={"error": "No executor found for decision type."},
+        )
+
+    result = executor.execute(decision, scenario)
+    result.execution_details["scenario_snapshot"] = _safe_snapshot(scenario)
+    return result

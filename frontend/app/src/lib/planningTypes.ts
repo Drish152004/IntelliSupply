@@ -218,18 +218,6 @@ export interface ActionAuditLog {
   after_state: Record<string, unknown> | null;
 }
 
-export type ManualExecutionStatus = 'idle' | 'executing' | 'success' | 'failed';
-
-export interface ExecutePlanningDecisionPayload {
-  decision: Decision;
-  scenario: ScenarioState;
-}
-
-export interface ExecutePlanningDecisionResult {
-  execution_result: ActionExecutionResult;
-  audit_log: ActionAuditLog;
-}
-
 export interface LLMExplanation {
   executive_summary: string;
   recommended_action: string;

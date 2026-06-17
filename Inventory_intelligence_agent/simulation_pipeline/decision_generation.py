@@ -10,15 +10,7 @@ from simulation_models import OutcomeSummary
 from state_models import ScenarioState, SimulationState
 
 DEFAULT_DATA_DIR = Path(__file__).resolve().parent.parent / "data"
-HUBS_CSV = DEFAULT_DATA_DIR / "hubs_simple_import.csv"
 MAX_DECISIONS = 5
-
-
-def _hub_city_id(hub_id: str | int, hubs: pd.DataFrame) -> int | None:
-    row = hubs[hubs["hub_id"].astype(str) == str(hub_id)]
-    if row.empty:
-        return None
-    return int(row.iloc[0]["city_id"])
 
 
 def _high_stockout_risk(outcomes: OutcomeSummary) -> bool:
@@ -78,16 +70,10 @@ def _load_peer_hub_states(
     data_dir: Path,
 ) -> list[SimulationState]:
     health_path = data_dir / "inventory_health_daily.csv"
-    hubs_path = data_dir / "hubs_simple_import.csv"
     health = pd.read_csv(
         health_path,
         usecols=["hub_id", "product_id", "category", "health_date"],
     )
-    hubs = pd.read_csv(hubs_path, usecols=["hub_id", "city_id"])
-    scenario_city_id = _hub_city_id(scenario.hub_id, hubs)
-    if scenario_city_id is None:
-        return []
-
     eligible = health[
         (health["product_id"] == scenario.product_id)
         & (health["category"] == scenario.category)
@@ -100,18 +86,11 @@ def _load_peer_hub_states(
         eligible.sort_values("health_date", ascending=False)
         .drop_duplicates(subset=["hub_id"], keep="first")
     )
-    same_city_hub_ids = {
-        str(hub_id)
-        for hub_id in latest_by_hub["hub_id"]
-        if _hub_city_id(hub_id, hubs) == scenario_city_id
-    }
 
     current_hub = str(scenario.hub_id)
     peer_states: list[SimulationState] = []
     for hub_id in latest_by_hub["hub_id"]:
         if str(hub_id) == current_hub:
-            continue
-        if str(hub_id) not in same_city_hub_ids:
             continue
         try:
             peer_states.append(

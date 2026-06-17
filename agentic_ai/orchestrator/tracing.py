@@ -137,7 +137,6 @@ def end_trace(trace_id: str, result: AgentState, run_start: float) -> None:
         (
             "RUN END\n"
             f"task={result.get('task', '')}\n"
-            f"cache_hit={result.get('cache_hit', False)}\n"
             f"authorized={authorized}\n"
             f"duration_ms={duration_ms}\n"
             f"final_node={last_node}\n"
@@ -149,6 +148,36 @@ def end_trace(trace_id: str, result: AgentState, run_start: float) -> None:
 def log_route(trace_id: str, current_node: str, next_node: str, reason: str) -> None:
     """Log a conditional routing decision."""
     _trace_log(trace_id, f"ROUTE {current_node} -> {next_node}\nreason={reason}")
+
+
+def log_entity_resolution(
+    trace_id: str,
+    *,
+    entity_type: str,
+    entity_key: str,
+    before: str,
+    after: str | None,
+    status: str,
+) -> None:
+    """
+    Log a human-readable entity resolution line for courier or hub lookups.
+
+    status is one of: success, failure, unchanged.
+    """
+    if status == "success":
+        _trace_log(
+            trace_id,
+            f"Resolved {entity_type} ({entity_key}):\n{before}\n→\n{after}",
+        )
+        return
+    if status == "unchanged":
+        _trace_log(trace_id, f"{entity_type} ({entity_key}) already canonical: {before}")
+        return
+    _trace_log(
+        trace_id,
+        f"{entity_type} resolution failed ({entity_key}): {before}",
+        level=logging.WARNING,
+    )
 
 
 def _resolve_trace_id(state: AgentState) -> str:
@@ -207,25 +236,19 @@ def _route_reason(current_node: str, state: AgentState, next_node: str) -> str:
     if current_node == "entity_extraction":
         return "entities_extracted"
     if current_node == "response_formatter":
-        return "cache_persist" if next_node == "semantic_cache_store" else "terminal"
+        return "terminal"
     if current_node == "intent":
         if next_node == "response_formatter":
             if state.get("clarification_needed"):
                 return "clarification_needed"
             return "intent_clarification_needed"
         return "intent_resolved"
-    if current_node == "semantic_cache_lookup":
-        if next_node == "response_formatter":
-            return "cache_hit"
-        return "cache_miss"
-    if current_node == "parameter_validation":
+    if current_node == "entity_resolution":
+        return "entities_resolved"
+    if current_node == "parameter_preparation":
         if next_node == "response_formatter":
             return "clarification_needed"
-        return "parameters_valid"
-    if current_node == "authorize":
-        if next_node == "response_formatter":
-            return "authorization_denied"
-        return "authorized"
+        return "parameters_prepared"
     return "unknown"
 
 

@@ -8,12 +8,6 @@ from integrations.aura_bridge import fetch_order_route
 from orchestrator.task_registry import COURIER_RESOURCE_SCOPED_TASKS, is_task_allowed
 from orchestrator.state import AgentState
 
-COURIER_ORDER_OWNERSHIP_TASKS: frozenset[str] = frozenset({
-    "shipment_lookup",
-    "route_lookup",
-    "eta_lookup",
-})
-
 
 def authorize_task_and_resources(
     state: AgentState,
@@ -21,8 +15,15 @@ def authorize_task_and_resources(
     """
     Authorize after intent classification and entity extraction.
 
-    Order: role present -> task allowed for role -> domain boundary -> courier resource scope
-    -> courier order ownership (order_id tasks).
+    Order: role present -> task allowed for role -> courier resource ownership.
+
+    Courier ownership is resource-based, not task-based:
+      * any ``order_id`` present is verified against the JWT/session courier,
+        regardless of which task is executing;
+      * any requested ``courier_id`` must equal the JWT/session courier;
+      * when no specific resource is requested, the courier is confined to their
+        own data by binding the JWT/session courier_id.
+
     Consumes state["entities"] as produced by entity extraction; does not infer self_scoped.
     """
     role = state.get("user_role")
@@ -40,7 +41,7 @@ def authorize_task_and_resources(
     if not is_task_allowed(role, task):
         return False, f"Role {role} is not allowed to execute {task}", entities, None
 
-    if role != "COURIER" or task not in COURIER_RESOURCE_SCOPED_TASKS:
+    if role != "COURIER":
         return True, None, entities, None
 
     session = state.get("logistics_session") or {}
@@ -48,6 +49,7 @@ def authorize_task_and_resources(
     if not bound_courier:
         return False, "Courier identity is not bound to this session", entities, None
 
+    # Resource ownership (courier_id): a courier may only target their own id.
     requested = entities.get("courier_id")
     if requested and str(requested) != str(bound_courier):
         return (
@@ -57,8 +59,10 @@ def authorize_task_and_resources(
             None,
         )
 
+    # Resource ownership (order_id): verify the order belongs to this courier,
+    # independent of the task name. Any task carrying an order_id is checked.
     order_id = entities.get("order_id")
-    if task in COURIER_ORDER_OWNERSHIP_TASKS and order_id:
+    if order_id:
         entities.pop("courier_id", None)
         order_route = fetch_order_route(order_id)
         assigned_courier_id = (order_route or {}).get("assigned_courier_id")
@@ -71,12 +75,10 @@ def authorize_task_and_resources(
             )
         prefetched_order_route = order_route
 
-    if task in {"courier_lookup", "next_stop_lookup", "courier_route_lookup", "shipment_lookup"}:
-        if (
-            entities.get("self_scoped") == "true"
-            and not requested
-            and not order_id
-        ):
-            entities["courier_id"] = str(bound_courier)
+    # Confine the courier to their own data: when no specific resource was
+    # requested, force the bound courier_id so scoped tasks (recent_routes,
+    # courier_orders, courier_route) never execute unscoped.
+    if not requested and not order_id and task in COURIER_RESOURCE_SCOPED_TASKS:
+        entities["courier_id"] = str(bound_courier)
 
     return True, None, entities, prefetched_order_route

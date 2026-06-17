@@ -22,7 +22,7 @@ def extract_entities_node(state: AgentState) -> AgentState:
 
     """
 
-    Extract entities from the user query and populate state["entities"].
+    Extract raw entity references from the user query and populate state["entities"].
 
 
 
@@ -33,12 +33,8 @@ def extract_entities_node(state: AgentState) -> AgentState:
     """
 
     user_query = state["user_query"]
-
     session = get_active_hitl_session(state) or {}
-    if is_hitl_resume(state) and session.get("task") == "next_stop_lookup":
-        entities = EntityExtractor.extract_next_stop_position(user_query)
-    else:
-        entities = EntityExtractor.extract(user_query)
+    entities = EntityExtractor.extract(user_query)
 
     entities = apply_self_scoped_entities(
 

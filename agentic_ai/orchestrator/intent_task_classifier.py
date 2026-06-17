@@ -1,5 +1,8 @@
 """
 Domain and task classification for the orchestration layer.
+
+Pipeline:
+  Entity extraction → candidate narrowing → LLM intent classification
 """
 
 from __future__ import annotations
@@ -10,9 +13,13 @@ import re
 from typing import Any
 
 from integrations.llm_client import get_client, get_model
+from orchestrator.intent_routing import (
+    domain_for_task,
+    infer_domain,
+    narrow_candidate_tasks,
+)
 from orchestrator.task_registry import (
     CONFIDENCE_THRESHOLD,
-    DOMAIN_TASK_MAP,
     EXTREME_LOW_CONFIDENCE_THRESHOLD,
     INVENTORY_KEYWORDS,
     LOGISTICS_KEYWORDS,
@@ -23,86 +30,148 @@ from orchestrator.task_registry import (
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """You classify user messages for IntelliSupply's orchestrator.
+INTENT_SYSTEM_PROMPT = """You are IntelliSupply's logistics intent classifier.
 
-Return ONLY valid JSON with exactly these keys:
-{"domain": "...", "task": "...", "confidence": 0.0-1.0}
+Return ONLY valid JSON.
 
-Domains:
-- inventory: products, stock levels, warehouse analytics (Postgres inventory DB)
-- logistics: shipments, routes, ETAs, couriers, hubs, cities (Aura graph)
+Schema:
 
-Inventory task:
-- inventory_nlsql
+{
+"task": "<task>",
+"confidence": <0.0-1.0>
+}
 
-Logistics retrieval tasks:
-- shipment_lookup: shipment/order status or location
-- route_lookup: assigned route for an order or hub pair
-- eta_lookup: delivery timing / receipt time for order or courier
-- courier_lookup: courier profile, hub assignment
-- next_stop_lookup: next stop on a courier's saved route
-- courier_route_lookup: full saved route sequence for a courier/day
-- hub_lookup: list hubs (optionally filtered by city); not single-hub detail lookup
-- city_lookup: list cities with hubs
+Allowed tasks:
+
+inventory_nlsql
+order_lookup
+courier_orders
+courier_route
+recent_routes
+delivery_days
+hub_route
+
+Definitions:
+
+inventory_nlsql:
+inventory, stock, products, warehouse inventory, analytics
+
+order_lookup:
+order status, route, courier assignment, ETA, order details
+
+courier_orders:
+orders assigned to courier, courier deliveries, courier workload
+
+courier_route:
+next stop, today's route, remaining stops, route sequence, optimized route
+
+recent_routes:
+recent deliveries, latest orders, newest routes
+
+delivery_days:
+available delivery dates or schedules
+
+hub_route:
+route between source and destination hubs
 
 Rules:
-- Inventory excludes shipments, couriers, routes, ETAs.
-- Use confidence < 0.70 when the query is too vague.
-- confidence must be between 0 and 1."""
 
-_ETA_QUERY_SIGNALS: tuple[str, ...] = (
-    "eta",
-    "arrival time",
-    "delivery time",
-    "expected delivery",
-    "expected arrival",
-    "when will",
-    "how long",
-    "receipt time",
-    "delivery estimate",
-    "arrival estimate",
-    "delivered by",
-    "arriving",
-    "arrive",
-    "arrival",
-    "delivers",
-)
+* Choose exactly one task.
+* Never invent tasks.
+* Use extracted entities as context.
+* "next stop" ALWAYS means courier_route.
+* "remaining stops" ALWAYS means courier_route.
+* "today's route" ALWAYS means courier_route.
+* "assigned orders" ALWAYS means courier_orders.
+* "latest deliveries" ALWAYS means recent_routes.
+* "available delivery dates" ALWAYS means delivery_days.
+* Route between hubs ALWAYS means hub_route.
+* Order ID questions generally mean order_lookup.
+* Confidence should be below 0.70 only if genuinely ambiguous.
 
-_CITY_LIST_QUERY_PATTERN = re.compile(
-    r"\b(?:"
-    r"city\s+list|list\s+cities|all\s+cities|which\s+cities|get\s+cities|"
-    r"enumerate\s+cities|show\s+cities|cities\s+pls"
-    r")\b",
-    re.I,
-)
+Return JSON only."""
 
-_COURIER_ORDERS_QUERY_PHRASES: tuple[str, ...] = (
-    "assigned orders",
-    "courier orders",
-)
-
-_COURIER_ORDERS_QUERY_PATTERN = re.compile(r"\b(?:orders?|shipments?)\b", re.I)
-
-_COURIER_ROUTE_QUERY_PHRASES: tuple[str, ...] = (
-    "route for",
-    "courier route",
-    "show route",
-    "planned route",
-    "assigned route",
-)
-
-_COURIER_ROUTE_QUERY_PATTERN = re.compile(r"\broute\b", re.I)
-
-_HUB_LIST_QUERY_PATTERN = re.compile(
-    r"\b(?:"
-    r"list\s+hubs|show\s+hubs|which\s+hubs|get\s+hubs|enumerate\s+hubs"
-    r")\b",
-    re.I,
-)
+FEW_SHOT_EXAMPLES: list[tuple[str, dict[str, str], dict[str, Any]]] = [
+    (
+        "Where is order ORD123?",
+        {"order_id": "ORD123"},
+        {"task": "order_lookup", "confidence": 0.99},
+    ),
+    (
+        "Who is handling ORD123?",
+        {"order_id": "ORD123"},
+        {"task": "order_lookup", "confidence": 0.99},
+    ),
+    (
+        "What is the ETA for ORD123?",
+        {"order_id": "ORD123"},
+        {"task": "order_lookup", "confidence": 0.99},
+    ),
+    (
+        "Show route for ORD123",
+        {"order_id": "ORD123"},
+        {"task": "order_lookup", "confidence": 0.99},
+    ),
+    (
+        "What orders does John have?",
+        {"courier_name": "John"},
+        {"task": "courier_orders", "confidence": 0.98},
+    ),
+    (
+        "Show deliveries assigned to courier C123",
+        {"courier_id": "C123"},
+        {"task": "courier_orders", "confidence": 0.98},
+    ),
+    (
+        "What is John's next stop?",
+        {"courier_name": "John"},
+        {"task": "courier_route", "confidence": 0.99},
+    ),
+    (
+        "Show today's route for John",
+        {"courier_name": "John"},
+        {"task": "courier_route", "confidence": 0.99},
+    ),
+    (
+        "What deliveries remain for courier C123?",
+        {"courier_id": "C123"},
+        {"task": "courier_route", "confidence": 0.98},
+    ),
+    (
+        "Show recent deliveries",
+        {},
+        {"task": "recent_routes", "confidence": 0.95},
+    ),
+    (
+        "Show latest orders",
+        {},
+        {"task": "recent_routes", "confidence": 0.95},
+    ),
+    (
+        "Which delivery dates exist?",
+        {},
+        {"task": "delivery_days", "confidence": 0.95},
+    ),
+    (
+        "Show available delivery schedules",
+        {},
+        {"task": "delivery_days", "confidence": 0.95},
+    ),
+    (
+        "Route from Bangalore Hub to Whitefield Hub",
+        {"from_hub": "Bangalore Hub", "to_hub": "Whitefield Hub"},
+        {"task": "hub_route", "confidence": 0.99},
+    ),
+    (
+        "How many iPhones are in Shanghai?",
+        {"product_name": "iPhone", "warehouse_id": "Shanghai"},
+        {"task": "inventory_nlsql", "confidence": 0.95},
+    ),
+]
 
 
 def _normalize_logistics_abbreviations(user_query: str) -> str:
-    """Expand obvious logistics abbreviations before deterministic routing."""
+    """Expand obvious logistics abbreviations before classification."""
     normalized = user_query
     normalized = re.sub(r"\bnxt\s+stop\b", "next stop", normalized, flags=re.I)
     normalized = re.sub(r"\bnext\s+stp\b", "next stop", normalized, flags=re.I)
@@ -111,213 +180,46 @@ def _normalize_logistics_abbreviations(user_query: str) -> str:
     return normalized
 
 
-def _is_eta_query(query: str) -> bool:
-    lowered = query.lower()
-    return any(signal in lowered for signal in _ETA_QUERY_SIGNALS)
+def _keyword_domain_scores(query: str) -> tuple[int, int]:
+    inventory_score = sum(1 for keyword in INVENTORY_KEYWORDS if keyword in query)
+    logistics_score = sum(1 for keyword in LOGISTICS_KEYWORDS if keyword in query)
+    return inventory_score, logistics_score
 
 
-def _is_city_list_query(query: str) -> bool:
-    lowered = query.lower().strip()
-    if lowered == "cities":
-        return True
-    return _CITY_LIST_QUERY_PATTERN.search(lowered) is not None
-
-
-def _is_hub_list_query(query: str) -> bool:
-    """True when the user asks to list hubs (all or in a city), not a single hub."""
-    lowered = query.lower().strip()
-    if lowered == "hubs":
-        return True
-    if _HUB_LIST_QUERY_PATTERN.search(lowered):
-        return True
-    return "hubs" in lowered and " in " in lowered
-
-
-def _is_courier_orders_query(query: str) -> bool:
-    """True when the user asks for orders/shipments assigned to a courier."""
-    lowered = query.lower()
-    if any(phrase in lowered for phrase in _COURIER_ORDERS_QUERY_PHRASES):
-        return True
-    return _COURIER_ORDERS_QUERY_PATTERN.search(lowered) is not None
-
-
-def _is_courier_route_query(query: str) -> bool:
-    """True when the user asks for a courier's route."""
-    lowered = query.lower()
-    if "next stop" in lowered:
-        return False
-    if any(phrase in lowered for phrase in _COURIER_ROUTE_QUERY_PHRASES):
-        return True
-    return _COURIER_ROUTE_QUERY_PATTERN.search(lowered) is not None
-
-
-def _is_courier_route_entity_match(query: str, entities: dict[str, str]) -> bool:
-    """Courier route when courier_id is present without order or hub-pair scope."""
-    if not entities.get("courier_id"):
-        return False
-    if entities.get("order_id") or entities.get("shipment_id"):
-        return False
-    if entities.get("from_hub") or entities.get("to_hub"):
-        return False
-    return _is_courier_route_query(query)
-
-
-FEW_SHOT_EXAMPLES: list[tuple[str, dict[str, Any]]] = [
-    ("How many iPhones are in Shanghai?", {"domain": "inventory", "task": "inventory_nlsql", "confidence": 0.95}),
-    ("Where is shipment ord-abc?", {"domain": "logistics", "task": "shipment_lookup", "confidence": 0.93}),
-    ("What route was assigned for order ord-abc?", {"domain": "logistics", "task": "route_lookup", "confidence": 0.91}),
-    ("What is the ETA for order ord-abc?", {"domain": "logistics", "task": "eta_lookup", "confidence": 0.94}),
-    ("Which hub is courier C55 assigned to?", {"domain": "logistics", "task": "courier_lookup", "confidence": 0.92}),
-    ("What is my next stop?", {"domain": "logistics", "task": "next_stop_lookup", "confidence": 0.90}),
-    ("Show my route for today", {"domain": "logistics", "task": "courier_route_lookup", "confidence": 0.90}),
-    ("List hubs in Chongqing", {"domain": "logistics", "task": "hub_lookup", "confidence": 0.88}),
-    ("List all cities", {"domain": "logistics", "task": "city_lookup", "confidence": 0.87}),
-]
-
-
-def _deterministic_entity_routing(
+def _build_intent_messages(
     user_query: str,
     entities: dict[str, str],
-    domain_hint: str | None = None,
-) -> dict[str, Any] | None:
-    """Route using extracted entities before keyword or LLM classification."""
-    query = user_query.lower()
+    candidate_tasks: list[str],
+) -> list[dict[str, str]]:
+    candidate_block = "\n".join(f"- {task}" for task in candidate_tasks)
+    messages: list[dict[str, str]] = [{"role": "system", "content": INTENT_SYSTEM_PROMPT}]
 
-    if domain_hint == "inventory" or any(
-        entities.get(key) for key in ("sku_id", "warehouse_id", "product_name")
-    ):
-        inventory_score = sum(1 for keyword in INVENTORY_KEYWORDS if keyword in query)
-        logistics_score = sum(1 for keyword in LOGISTICS_KEYWORDS if keyword in query)
-        if domain_hint == "inventory" or inventory_score >= logistics_score:
-            return {
-                "domain": "inventory",
-                "task": "inventory_nlsql",
-                "confidence": 0.92,
-                "source": "entity_routing",
+    for question, example_entities, label in FEW_SHOT_EXAMPLES:
+        if label["task"] not in candidate_tasks and label["task"] != "inventory_nlsql":
+            continue
+        messages.append(
+            {
+                "role": "user",
+                "content": (
+                    f"Query:\n{question}\n\n"
+                    f"Entities:\n{json.dumps(example_entities)}\n\n"
+                    f"Candidate tasks:\n{candidate_block}"
+                ),
             }
-
-    if entities.get("order_id") or entities.get("shipment_id"):
-        if _is_eta_query(query):
-            return {
-                "domain": "logistics",
-                "task": "eta_lookup",
-                "confidence": 0.94,
-                "source": "entity_routing",
-            }
-        if "route" in query:
-            return {
-                "domain": "logistics",
-                "task": "route_lookup",
-                "confidence": 0.91,
-                "source": "entity_routing",
-            }
-        return {
-            "domain": "logistics",
-            "task": "shipment_lookup",
-            "confidence": 0.95,
-            "source": "entity_routing",
-        }
-
-    if entities.get("courier_id") and _is_courier_orders_query(query):
-        return {
-            "domain": "logistics",
-            "task": "shipment_lookup",
-            "confidence": 0.93,
-            "source": "entity_routing",
-        }
-
-    if entities.get("courier_id") and "hub" in query:
-        return {
-            "domain": "logistics",
-            "task": "courier_lookup",
-            "confidence": 0.92,
-            "source": "entity_routing",
-        }
-
-    if entities.get("courier_id") and _is_eta_query(query):
-        return {
-            "domain": "logistics",
-            "task": "eta_lookup",
-            "confidence": 0.92,
-            "source": "entity_routing",
-        }
-
-    if (
-        entities.get("courier_id")
-        and "courier" in query
-        and not _is_courier_orders_query(query)
-        and "route" not in query
-        and not (entities.get("from_hub") or entities.get("to_hub"))
-    ):
-        return {
-            "domain": "logistics",
-            "task": "courier_lookup",
-            "confidence": 0.91,
-            "source": "entity_routing",
-        }
-
-    if entities.get("from_hub") and entities.get("to_hub"):
-        return {
-            "domain": "logistics",
-            "task": "route_lookup",
-            "confidence": 0.93,
-            "source": "entity_routing",
-        }
-
-    if entities.get("to_hub") and (
-        entities.get("from_hub") or entities.get("hub_id") or "route" in query
-    ):
-        return {
-            "domain": "logistics",
-            "task": "route_lookup",
-            "confidence": 0.93,
-            "source": "entity_routing",
-        }
-
-    if entities.get("self_scoped") == "true" and "next stop" in query:
-        return {
-            "domain": "logistics",
-            "task": "next_stop_lookup",
-            "confidence": 0.90,
-            "source": "entity_routing",
-        }
-
-    if _is_courier_route_entity_match(query, entities):
-        return {
-            "domain": "logistics",
-            "task": "courier_route_lookup",
-            "confidence": 0.92,
-            "source": "entity_routing",
-        }
-
-    if entities.get("self_scoped") == "true" and "route" in query:
-        return {
-            "domain": "logistics",
-            "task": "courier_route_lookup",
-            "confidence": 0.90,
-            "source": "entity_routing",
-        }
-
-    if entities.get("city_name") and _is_hub_list_query(query):
-        return {
-            "domain": "logistics",
-            "task": "hub_lookup",
-            "confidence": 0.88,
-            "source": "entity_routing",
-        }
-
-    return None
-
-
-def _build_messages(user_query: str, domain_hint: str | None = None) -> list[dict[str, str]]:
-    hint = ""
-    if domain_hint in VALID_DOMAINS:
-        hint = f"\nRouting hint: the query likely concerns the {domain_hint} domain."
-    messages: list[dict[str, str]] = [{"role": "system", "content": SYSTEM_PROMPT + hint}]
-    for question, label in FEW_SHOT_EXAMPLES:
-        messages.append({"role": "user", "content": question})
+        )
         messages.append({"role": "assistant", "content": json.dumps(label)})
-    messages.append({"role": "user", "content": user_query})
+
+    messages.append(
+        {
+            "role": "user",
+            "content": (
+                f"Query:\n{user_query}\n\n"
+                f"Entities:\n{json.dumps(entities)}\n\n"
+                f"Candidate tasks:\n{candidate_block}\n\n"
+                "Choose exactly one task from the candidate list."
+            ),
+        }
+    )
     return messages
 
 
@@ -327,18 +229,6 @@ def _coerce_confidence(value: Any) -> float:
     except (TypeError, ValueError):
         return 0.5
     return max(0.0, min(1.0, score))
-
-
-def _normalize_result(raw: dict[str, Any]) -> dict[str, Any] | None:
-    domain = str(raw.get("domain", "")).strip().lower()
-    task = str(raw.get("task", "")).strip().lower()
-    confidence = _coerce_confidence(raw.get("confidence", 0.5))
-
-    if domain not in VALID_DOMAINS or task not in VALID_TASKS:
-        return None
-    if task not in DOMAIN_TASK_MAP[domain]:
-        return None
-    return {"domain": domain, "task": task, "confidence": confidence}
 
 
 def _extract_json_object(text: str) -> dict[str, Any] | None:
@@ -365,69 +255,115 @@ def _extract_json_object(text: str) -> dict[str, Any] | None:
     return None
 
 
-def _parse_classifier_response(text: str) -> dict[str, Any] | None:
+def _normalize_task_result(
+    raw: dict[str, Any],
+    *,
+    candidate_tasks: list[str],
+) -> dict[str, Any] | None:
+    task = str(raw.get("task", "")).strip().lower()
+    confidence = _coerce_confidence(raw.get("confidence", 0.5))
+
+    if task not in VALID_TASKS:
+        return None
+    if task not in candidate_tasks:
+        logger.warning("LLM chose task %s outside candidates %s", task, candidate_tasks)
+        if len(candidate_tasks) == 1:
+            task = candidate_tasks[0]
+            confidence = min(confidence, 0.65)
+        else:
+            confidence = min(confidence, 0.55)
+
+    domain = domain_for_task(task)
+    return {"domain": domain, "task": task, "confidence": confidence}
+
+
+def _parse_intent_response(
+    text: str,
+    *,
+    candidate_tasks: list[str],
+) -> dict[str, Any] | None:
     payload = _extract_json_object(text)
     if not payload:
         return None
-    return _normalize_result(payload)
+    return _normalize_task_result(payload, candidate_tasks=candidate_tasks)
 
 
-def _keyword_fallback(user_query: str, domain_hint: str | None = None) -> dict[str, Any]:
+def _keyword_fallback_task(
+    user_query: str,
+    *,
+    candidate_tasks: list[str],
+    domain: str,
+) -> dict[str, Any]:
+    """Last-resort task guess when LLM classification fails."""
     query = user_query.lower().strip()
-    words = query.split()
+    candidates = set(candidate_tasks)
 
-    if "next stop" in query or "my next stop" in query:
-        return {"domain": "logistics", "task": "next_stop_lookup", "confidence": 0.85}
+    def _pick(task: str, confidence: float) -> dict[str, Any]:
+        if task not in candidates:
+            if len(candidate_tasks) == 1:
+                task = candidate_tasks[0]
+                confidence = min(confidence, 0.55)
+            else:
+                task = candidate_tasks[0]
+                confidence = 0.45
+        return {
+            "domain": domain,
+            "task": task,
+            "confidence": confidence,
+        }
 
-    if "my route" in query or "courier route" in query:
-        return {"domain": "logistics", "task": "courier_route_lookup", "confidence": 0.85}
+    if domain == "inventory":
+        return _pick("inventory_nlsql", 0.80)
 
-    if _is_city_list_query(query):
-        return {"domain": "logistics", "task": "city_lookup", "confidence": 0.88}
+    if "next stop" in query and "courier_route" in candidates:
+        return _pick("courier_route", 0.85)
 
-    if _is_hub_list_query(query):
-        return {"domain": "logistics", "task": "hub_lookup", "confidence": 0.85}
+    if any(phrase in query for phrase in ("remaining stops", "today's route", "my route")):
+        if "courier_route" in candidates:
+            return _pick("courier_route", 0.80)
 
-    if "courier" in query and _is_courier_orders_query(query):
-        return {"domain": "logistics", "task": "shipment_lookup", "confidence": 0.88}
+    if any(phrase in query for phrase in ("assigned orders", "orders assigned", "courier workload")):
+        if "courier_orders" in candidates:
+            return _pick("courier_orders", 0.78)
 
-    if "courier" in query and _is_courier_route_query(query):
-        return {"domain": "logistics", "task": "courier_route_lookup", "confidence": 0.88}
+    if any(phrase in query for phrase in ("recent deliveries", "latest orders", "newest routes")):
+        if "recent_routes" in candidates:
+            return _pick("recent_routes", 0.78)
 
-    if "courier" in query and "hub" in query:
-        return {"domain": "logistics", "task": "courier_lookup", "confidence": 0.78}
+    if any(phrase in query for phrase in ("delivery dates", "delivery schedules", "available delivery")):
+        if "delivery_days" in candidates:
+            return _pick("delivery_days", 0.78)
 
-    if "courier" in query:
-        return {"domain": "logistics", "task": "courier_lookup", "confidence": 0.78}
+    if "route" in query and "hub_route" in candidates and (" from " in query or " to " in query):
+        return _pick("hub_route", 0.72)
 
-    inventory_score = sum(1 for keyword in INVENTORY_KEYWORDS if keyword in query)
-    logistics_score = sum(1 for keyword in LOGISTICS_KEYWORDS if keyword in query)
+    if any(signal in query for signal in ("eta", "arrival", "delivery time", "order ")):
+        if "order_lookup" in candidates:
+            return _pick("order_lookup", 0.62)
 
-    if domain_hint == "inventory" and inventory_score >= logistics_score:
-        return {"domain": "inventory", "task": "inventory_nlsql", "confidence": 0.80}
+    if "courier" in query and "courier_orders" in candidates:
+        return _pick("courier_orders", 0.55)
 
-    if domain_hint == "logistics" and logistics_score >= inventory_score and logistics_score > 0:
-        return {"domain": "logistics", "task": "shipment_lookup", "confidence": 0.75}
+    return _pick(candidate_tasks[0], 0.45)
 
-    if inventory_score > logistics_score and inventory_score > 0:
-        return {"domain": "inventory", "task": "inventory_nlsql", "confidence": 0.82}
 
-    if "shipment" in query and any(p in query for p in ("where is", "status", "track", "my")):
-        return {"domain": "logistics", "task": "shipment_lookup", "confidence": 0.82}
-
-    if re.search(r"\bshipment\b", query) and len(words) <= 3:
-        return {"domain": "logistics", "task": "shipment_lookup", "confidence": 0.55}
-
-    if _is_eta_query(query) or "my eta" in query:
-        return {"domain": "logistics", "task": "eta_lookup", "confidence": 0.82}
-
-    if "route" in query:
-        return {"domain": "logistics", "task": "route_lookup", "confidence": 0.72}
-
-    if logistics_score > 0:
-        return {"domain": "logistics", "task": "shipment_lookup", "confidence": 0.60}
-
-    return {"domain": "logistics", "task": "shipment_lookup", "confidence": 0.50}
+def _classify_with_llm(
+    user_query: str,
+    entities: dict[str, str],
+    candidate_tasks: list[str],
+) -> dict[str, Any] | None:
+    try:
+        response = get_client().chat.completions.create(
+            model=get_model(),
+            messages=_build_intent_messages(user_query, entities, candidate_tasks),
+            temperature=0.0,
+            max_tokens=128,
+        )
+        raw = response.choices[0].message.content or ""
+        return _parse_intent_response(raw, candidate_tasks=candidate_tasks)
+    except Exception:
+        logger.exception("Intent classifier LLM call failed")
+        return None
 
 
 def needs_intent_clarification(task: str, confidence: float) -> bool:
@@ -447,20 +383,23 @@ def build_clarification_question(user_query: str, classification: dict[str, Any]
 
     query = user_query.lower().strip()
 
-    if "next stop" in query:
-        return "Are you asking for your next stop or a specific courier's next stop?"
+    if "next stop" in query or "remaining stops" in query:
+        return "Are you asking for a courier's next stop or their full route for today?"
 
-    if re.search(r"\bshipment\b", query):
-        return "Are you looking for shipment status, ETA, route, or courier assignment?"
+    if re.search(r"\border\b", query):
+        return (
+            "Are you looking for order details, orders assigned to a courier, "
+            "or recent deliveries?"
+        )
 
     if "courier" in query:
-        return "Do you need courier details, their route, shipments, or next stop?"
+        return "Do you need orders assigned to a courier, their route, or recent deliveries?"
 
-    if "route" in query and "eta" not in query:
-        return "Do you want an order route, your courier route, or a next stop?"
+    if "route" in query:
+        return "Do you want an order route, a courier route, or a route between hubs?"
 
-    if "hub" in query or "city" in query:
-        return "Do you want a list of cities, hubs in a city, or logistics status for an order?"
+    if "delivery" in query:
+        return "Do you want recent deliveries, delivery schedules, or order details?"
 
     if classification and classification.get("domain") == "inventory":
         return "Could you clarify which product or warehouse you want inventory information for?"
@@ -473,33 +412,53 @@ def classify_domain_task(
     entities: dict[str, str] | None = None,
     domain_hint: str | None = None,
 ) -> dict[str, Any]:
-    resolved_entities = entities or {}
+    """
+    Classify domain and task using entity narrowing and LLM intent.
+
+    Routing order:
+      1. Entity extraction (provided by caller)
+      2. Candidate intent narrowing
+      3. LLM task classification
+      4. Keyword fallback only when LLM fails
+    """
+    resolved_entities = dict(entities or {})
     routing_query = _normalize_logistics_abbreviations(user_query)
+    lowered_query = routing_query.lower()
 
-    entity_route = _deterministic_entity_routing(
-        routing_query,
-        resolved_entities,
+    inventory_score, logistics_score = _keyword_domain_scores(lowered_query)
+    domain = infer_domain(
+        entities=resolved_entities,
         domain_hint=domain_hint,
+        inventory_keyword_score=inventory_score,
+        logistics_keyword_score=logistics_score,
     )
-    if entity_route:
-        return entity_route
 
-    keyword_route = _keyword_fallback(routing_query, domain_hint=domain_hint)
-    if keyword_route.get("confidence", 0) >= CONFIDENCE_THRESHOLD:
-        return {**keyword_route, "source": "keyword_fallback"}
+    candidate_tasks = narrow_candidate_tasks(resolved_entities, domain=domain)
 
-    try:
-        response = get_client().chat.completions.create(
-            model=get_model(),
-            messages=_build_messages(user_query, domain_hint=domain_hint),
-            temperature=0.0,
-            max_tokens=128,
-        )
-        raw = response.choices[0].message.content or ""
-        parsed = _parse_classifier_response(raw)
-        if parsed:
-            return {**parsed, "source": "llm_classifier"}
-    except Exception:
-        logger.exception("Classifier LLM call failed; using keyword fallback")
+    if domain == "inventory" and candidate_tasks == ["inventory_nlsql"]:
+        return {
+            "domain": "inventory",
+            "task": "inventory_nlsql",
+            "confidence": 0.92,
+            "source": "inventory_domain",
+            "candidate_tasks": candidate_tasks,
+        }
 
-    return {**_keyword_fallback(routing_query, domain_hint=domain_hint), "source": "keyword_fallback"}
+    llm_result = _classify_with_llm(user_query, resolved_entities, candidate_tasks)
+    if llm_result:
+        return {
+            **llm_result,
+            "source": "llm_intent_classifier",
+            "candidate_tasks": candidate_tasks,
+        }
+
+    fallback = _keyword_fallback_task(
+        routing_query,
+        candidate_tasks=candidate_tasks,
+        domain=domain,
+    )
+    return {
+        **fallback,
+        "source": "keyword_fallback",
+        "candidate_tasks": candidate_tasks,
+    }

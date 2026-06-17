@@ -162,6 +162,16 @@ def trace_llm_output(payload: dict[str, Any], *, trace_id: str | None = None) ->
     _emit(trace_id=trace_id, node_name="llm", event_type="LLM_SUMMARY_OUTPUT", payload=payload)
 
 
+def trace_entity_resolution(payload: dict[str, Any], *, trace_id: str | None = None) -> None:
+    """Emit a structured ENTITY_RESOLUTION event for courier or hub lookup."""
+    _emit(
+        trace_id=trace_id,
+        node_name="entity_resolution",
+        event_type="ENTITY_RESOLUTION",
+        payload=payload,
+    )
+
+
 def trace_cache_lookup(payload: dict[str, Any], *, trace_id: str | None = None) -> None:
     _emit(
         trace_id=trace_id,

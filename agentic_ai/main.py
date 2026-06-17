@@ -42,12 +42,8 @@ def _print_result(payload: dict | None, raw: str) -> None:
 
     status = payload.get("status")
     if status == "success":
-        source = payload.get("source", "")
         data = payload.get("data", {})
-        if source == "cache":
-            print(f"\nAssistant (cached): {data.get('answer', data)}")
-        else:
-            print(f"\nAssistant: {data.get('answer', payload.get('message', raw))}")
+        print(f"\nAssistant: {data.get('answer', payload.get('message', raw))}")
         return
     if status == "clarification_required":
         return

@@ -1,10 +1,13 @@
 """
+
 Main LangGraph orchestration workflow.
 
-init → coarse_authorization → entity_extraction → intent → parameter_validation
-  → cache lookup → authorize → RAG → response_formatter
-  → [cache store on success] → END
+init → coarse_authorization → entity_extraction → intent → entity_resolution
+  → authorize → parameter_preparation → rag_executor → response_formatter → END
+
 """
+
+from __future__ import annotations
 
 import time
 
@@ -12,18 +15,14 @@ from langgraph.graph import END, START, StateGraph
 
 from orchestrator.authorize_node import authorize_request
 from orchestrator.entity_extraction_node import extract_entities_node
+from orchestrator.entity_resolution_node import resolve_entities_node
 from orchestrator.init_node import build_initial_state, init_state
 from orchestrator.intent import detect_intent
 from orchestrator.intent_task_classifier import needs_intent_clarification
-from orchestrator.parameter_validation_node import validate_parameters
+from orchestrator.parameter_preparation_node import prepare_parameters
 from orchestrator.rag_executor import execute_rag
 from orchestrator.rbac_coarse import coarse_authorization
 from orchestrator.response_formatter import format_response
-from orchestrator.semantic_cache_node import (
-    lookup_semantic_cache,
-    should_persist_to_cache,
-    store_semantic_cache,
-)
 from orchestrator.state import AgentState
 from orchestrator.tracing import (
     begin_trace,
@@ -56,33 +55,21 @@ def _route_after_intent(state: AgentState) -> str:
         state.get("confidence", 1.0),
     ):
         return "response_formatter"
-    return "parameter_validation"
+    return "entity_resolution"
 
 
-def _route_after_cache_lookup(state: AgentState) -> str:
-    if state.get("cache_hit"):
+def _route_after_authorize(state: AgentState) -> str:
+    if state.get("authorization_denied") or state.get("access_denied"):
         return "response_formatter"
-    return "authorize"
+    return "parameter_preparation"
 
 
-def _route_after_parameter_validation(state: AgentState) -> str:
+def _route_after_parameter_preparation(state: AgentState) -> str:
     if state.get("clarification_failed"):
         return "response_formatter"
     if state.get("clarification_needed") or state.get("missing_required_parameters"):
         return "response_formatter"
-    return "semantic_cache_lookup"
-
-
-def _route_after_authorize(state: AgentState) -> str:
-    if state.get("authorization_denied"):
-        return "response_formatter"
     return "rag_executor"
-
-
-def _route_after_response_formatter(state: AgentState) -> str:
-    if should_persist_to_cache(state):
-        return "semantic_cache_store"
-    return END
 
 
 def build_graph():
@@ -100,22 +87,18 @@ def build_graph():
     )
     graph.add_node("intent", traced_node("intent", detect_intent))
     graph.add_node(
-        "semantic_cache_lookup",
-        traced_node("semantic_cache_lookup", lookup_semantic_cache),
-    )
-    graph.add_node(
-        "parameter_validation",
-        traced_node("parameter_validation", validate_parameters),
+        "entity_resolution",
+        traced_node("entity_resolution", resolve_entities_node),
     )
     graph.add_node("authorize", traced_node("authorize", authorize_request))
+    graph.add_node(
+        "parameter_preparation",
+        traced_node("parameter_preparation", prepare_parameters),
+    )
     graph.add_node("rag_executor", traced_node("rag_executor", rag_executor_node))
     graph.add_node(
         "response_formatter",
         traced_node("response_formatter", format_response),
-    )
-    graph.add_node(
-        "semantic_cache_store",
-        traced_node("semantic_cache_store", store_semantic_cache),
     )
 
     graph.add_edge(START, "init_state")
@@ -129,24 +112,17 @@ def build_graph():
         "intent",
         traced_route("intent", _route_after_intent),
     )
-    graph.add_conditional_edges(
-        "parameter_validation",
-        traced_route("parameter_validation", _route_after_parameter_validation),
-    )
-    graph.add_conditional_edges(
-        "semantic_cache_lookup",
-        traced_route("semantic_cache_lookup", _route_after_cache_lookup),
-    )
+    graph.add_edge("entity_resolution", "authorize")
     graph.add_conditional_edges(
         "authorize",
         traced_route("authorize", _route_after_authorize),
     )
-    graph.add_edge("rag_executor", "response_formatter")
     graph.add_conditional_edges(
-        "response_formatter",
-        traced_route("response_formatter", _route_after_response_formatter),
+        "parameter_preparation",
+        traced_route("parameter_preparation", _route_after_parameter_preparation),
     )
-    graph.add_edge("semantic_cache_store", END)
+    graph.add_edge("rag_executor", "response_formatter")
+    graph.add_edge("response_formatter", END)
 
     return graph.compile()
 

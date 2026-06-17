@@ -78,18 +78,25 @@ def detect_intent(state: AgentState) -> AgentState:
     if is_parameter_resume(state):
         session = get_active_hitl_session(state) or {}
         domain = session.get("domain") or state.get("domain", "logistics")
+        original_query = (
+            session.get("original_query")
+            or state.get("original_query")
+            or state["user_query"]
+        )
         classification = {
             "domain": domain,
-            "task": session.get("task") or state.get("task") or "shipment_lookup",
+            "task": session.get("task") or state.get("task") or "order_lookup",
             "confidence": 1.0,
             "source": "parameter_resume",
         }
         logger.info(
-            "Intent parameter resume: domain=%s task=%s",
+            "Intent parameter resume: domain=%s task=%s query=%r",
             classification["domain"],
             classification["task"],
+            original_query,
         )
-        return _apply_classification(state, classification)
+        resumed_state: AgentState = {**state, "user_query": original_query}
+        return _apply_classification(resumed_state, classification)
 
     if is_intent_resume(state):
         session = get_active_hitl_session(state) or {}

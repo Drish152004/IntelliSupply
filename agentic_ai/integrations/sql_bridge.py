@@ -6,7 +6,9 @@ Uses the same flow as chatbot.py without modifying that module.
 
 from __future__ import annotations
 
+import logging
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -28,9 +30,13 @@ from observability.trace_events import (
 from openai import OpenAI
 from sqlalchemy import create_engine, text
 
+logger = logging.getLogger(__name__)
+
 CHATBOT_ROOT = REPO_ROOT / "rag" / "inventory" / "chatbot"
 
 INVENTORY_SCHEMA_TABLES = ("planning_dataset", "product_catalog", "hubs")
+
+MAX_SUMMARY_ROWS = 50
 
 _engine = None
 _client: OpenAI | None = None
@@ -99,6 +105,51 @@ def _extract_tables_from_sql(sql: str) -> list[str]:
     return [table for table in INVENTORY_SCHEMA_TABLES if table in lowered]
 
 
+# Statement-modifying / DDL keywords that must never run in this read-only path.
+_FORBIDDEN_SQL_KEYWORDS = (
+    "INSERT",
+    "UPDATE",
+    "DELETE",
+    "DROP",
+    "ALTER",
+    "TRUNCATE",
+    "CREATE",
+    "EXECUTE",
+    "CALL",
+    "MERGE",
+    "COPY",
+    "GRANT",
+    "REVOKE",
+)
+
+
+def _validate_read_only_sql(sql: str) -> str | None:
+    """
+    Read-only safety validator.
+
+    Returns the name of the rule that rejected the query, or None if the query
+    is allowed. Permits single read-only statements that begin with SELECT or a
+    WITH ... SELECT CTE, while still blocking data-modifying / DDL statements
+    (including data-modifying CTEs) and stacked statements.
+    """
+    normalized = sql.strip().upper()
+
+    # Disallow stacked statements; a single optional trailing semicolon is fine.
+    if ";" in normalized.rstrip(";"):
+        return "multiple_statements"
+
+    # Read-only entrypoints only: SELECT or WITH (CTE).
+    if not (normalized.startswith("SELECT") or normalized.startswith("WITH")):
+        return "must_start_with_select_or_with"
+
+    # Block data-modifying / DDL keywords anywhere (e.g. WITH x AS (...) DELETE ...).
+    for keyword in _FORBIDDEN_SQL_KEYWORDS:
+        if re.search(rf"\b{keyword}\b", normalized):
+            return f"forbidden_keyword:{keyword}"
+
+    return None
+
+
 def ask_inventory_sql(
     question: str,
     *,
@@ -155,7 +206,9 @@ def ask_inventory_sql(
             "error": "invalid_domain",
         }
 
-    if not generated_sql.strip().lower().startswith("select"):
+    unsafe_rule = _validate_read_only_sql(generated_sql)
+    if unsafe_rule is not None:
+        logger.warning("sql_safety_rejected rule=%s", unsafe_rule)
         return {
             "question": question,
             "sql": generated_sql,
@@ -177,18 +230,29 @@ def ask_inventory_sql(
             trace_id=resolved_trace_id,
         )
 
+        if len(rows) > MAX_SUMMARY_ROWS:
+            rows_for_summary = rows[:MAX_SUMMARY_ROWS]
+        else:
+            rows_for_summary = rows
+
+        logger.info(
+            "summary_rows_sent=%s total_rows=%s",
+            len(rows_for_summary),
+            len(rows),
+        )
+
         formatted_prompt = f"""
         User Question:
         {question}
 
         SQL Result:
-        {rows}
+        {rows_for_summary}
 
         Generate a short natural language response.
         """
 
         trace_llm_input(
-            llm_input_payload(context=formatted_prompt, row_count=len(rows)),
+            llm_input_payload(context=formatted_prompt, row_count=len(rows_for_summary)),
             trace_id=resolved_trace_id,
             prompt=formatted_prompt,
         )

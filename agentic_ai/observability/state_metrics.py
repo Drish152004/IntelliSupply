@@ -19,7 +19,7 @@ def compute_state_metrics(state: dict[str, Any]) -> dict[str, Any]:
     """Compute lightweight size metrics for an orchestrator state snapshot."""
     keys = sorted(state.keys())
     message_count = 0
-    for key in ("agent_response", "final_response", "cached_result"):
+    for key in ("agent_response", "final_response"):
         if state.get(key):
             message_count += 1
 

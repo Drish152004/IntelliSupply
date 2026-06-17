@@ -1,5 +1,4 @@
 import { CheckCircle2, Sparkles } from 'lucide-react';
-import DecisionExecuteButton from '@/components/planning/DecisionExecuteButton';
 import {
   Dialog,
   DialogContent,
@@ -7,12 +6,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import type {
-  ExecutionDecision,
-  ManualExecutionStatus,
-  RankedDecision,
-  RecommendationSummary,
-} from '@/lib/planningTypes';
+import type { RankedDecision, RecommendationSummary } from '@/lib/planningTypes';
 import { formatPercentFraction, formatUtilityScore } from '@/lib/planningTypes';
 
 interface InterventionDetailModalProps {
@@ -20,9 +14,6 @@ interface InterventionDetailModalProps {
   rankedDecisions: RankedDecision[];
   recommendation: RecommendationSummary | null;
   onClose: () => void;
-  policyEvaluations?: ExecutionDecision[];
-  manualExecutionState?: Record<string, ManualExecutionStatus>;
-  onExecuteDecision?: (decisionId: string) => void;
 }
 
 export default function InterventionDetailModal({
@@ -30,9 +21,6 @@ export default function InterventionDetailModal({
   rankedDecisions,
   recommendation,
   onClose,
-  policyEvaluations = [],
-  manualExecutionState = {},
-  onExecuteDecision,
 }: InterventionDetailModalProps) {
   if (!decisionId) return null;
 
@@ -42,9 +30,6 @@ export default function InterventionDetailModal({
   const comp = rd.comparison;
   const isRecommended =
     recommendation?.recommended_decision?.decision.decision_id === decisionId;
-  const policyEvaluation = policyEvaluations.find(
-    (item) => item.decision.decision_id === decisionId,
-  );
 
   return (
     <Dialog open={decisionId !== null} onOpenChange={onClose}>
@@ -92,25 +77,6 @@ export default function InterventionDetailModal({
                 Recommended Action
               </h4>
               <p className="mt-2 text-sm text-slate-700">{recommendation.explanation}</p>
-            </div>
-          )}
-
-          {isRecommended && onExecuteDecision && (
-            <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50/50 p-4">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                  Manual Approval
-                </p>
-                <p className="mt-1 text-sm text-slate-600">
-                  This action requires human approval before execution.
-                </p>
-              </div>
-              <DecisionExecuteButton
-                decisionId={rd.decision.decision_id}
-                policyEvaluation={policyEvaluation}
-                manualStatus={manualExecutionState[rd.decision.decision_id] ?? 'idle'}
-                onExecute={onExecuteDecision}
-              />
             </div>
           )}
         </div>

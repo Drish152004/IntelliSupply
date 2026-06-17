@@ -13,18 +13,10 @@ class ClarificationType(str, Enum):
 
 
 _ENTITY_QUESTIONS: dict[str, str] = {
-    "shipment_lookup": "Which shipment, order ID, or courier should I look up?",
-    "courier_lookup": "Which courier ID are you asking about?",
-    "eta_lookup": "Which order, shipment, or courier should I check the ETA for?",
-    "route_lookup": (
-        "Which order should I look up the route for, or which hubs "
-        "(from and to) should the route connect?"
-    ),
-    "next_stop_lookup": (
-        "What is your current stop, hub, or most recently completed order?"
-    ),
-    "courier_route_lookup": "Which courier and delivery day should I use for the route?",
-    "hub_lookup": "Which city should I list hubs for?",
+    "order_lookup": "Which order ID should I look up?",
+    "courier_orders": "Which courier should I check orders for?",
+    "courier_route": "Which courier should I use?",
+    "hub_route": "Which source and destination hubs should I use?",
 }
 
 
@@ -49,5 +41,6 @@ class ClarificationManager:
     def intent_question() -> str:
         return (
             "Could you clarify what you want to do — for example inventory stock, "
-            "shipment status, route, ETA, courier details, or hub/city listings?"
+            "order details, courier orders, courier route, recent deliveries, "
+            "delivery schedules, or hub routes?"
         )
