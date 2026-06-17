@@ -1,114 +1,26 @@
-﻿Complete project tree (detailed)
+Complete project tree (detailed)
 
 Top-level files:
 - .env
 - .env.example
 - .gitignore
-- ARCHITECTURE.md
-- Dockerfile
 - README.md
-- docker-compose.yml
 - pytest.ini
 - requirements.txt
 - structure.md
 
 Top-level directories:
-- FastAPI/
-- Inventory_intelligence_agent/
 - agentic_ai/
 - config/
+- FastAPI/
 - frontend/
+- Inventory_intelligence_agent/
 - ml_services/
 - models/
 - rag/
 - tests/
 
 Detailed tree by directory:
-
-FastAPI/
-- .gitkeep
-- README.md
-- bootstrap.py
-- main.py
-- run.py
-- dependencies/
-    - __init__.py
-    - auth.py
-- routers/
-    - auth.py
-    - copilot.py
-    - dashboard.py
-    - demand_forecasting.py
-    - eta_prediction.py
-    - inventory.py
-    - notifications.py
-    - orders.py
-    - route_prediction.py
-    - users.py
-    - voice.py
-- schemas/
-    - __init__.py
-    - copilot.py
-    - eta.py
-    - orders.py
-    - voice.py
-- security/
-    - __init__.py
-    - injection.py
-    - logging.py
-    - pii.py
-    - rate_limit.py
-    - validation.py
-- services/
-    - __init__.py
-    - courier_route.py
-    - dashboard.py
-    - demand_forecasting.py
-    - eta_prediction.py
-    - inventory.py
-    - notifications.py
-    - orders.py
-    - registry.py
-    - route_prediction.py
-    - voice.py
-
-Inventory_intelligence_agent/
-- env_setup.py
-- requirements.txt
-- technical_design_document.txt
-- data/
-    - Demand Forecasting Colab.docx
-- scripts/
-    - run_baseline_simulation.py
-    - run_decision_simulation.py
-    - run_planning_pipeline.py
-- simulation_pipeline/
-    - base_state.py
-    - baseline_des.py
-    - decision_application.py
-    - decision_comparison.py
-    - decision_generation.py
-    - decision_models.py
-    - decision_ranking.py
-    - decision_selection.py
-    - decision_simulation.py
-    - decision_simulation_models.py
-    - demand_reforecaster.py
-    - explainability_payload.py
-    - llm_explanation.py
-    - monte_carlo_world_generator.py
-    - outcome_discovery.py
-    - planning_pipeline.py
-    - recommendation_engine.py
-    - recommendation_models.py
-    - replenishment_delay_stats.py
-    - scenario_models.py
-    - scenario_state_builder.py
-    - scenario_understanding_agent.py
-    - simulation_models.py
-    - state_models.py
-    - test.py
-    - world_models.py
 
 agentic_ai/
 - README.md
@@ -161,6 +73,54 @@ config/
 - ml_api.py
 - paths.py
 
+FastAPI/
+- .gitkeep
+- README.md
+- bootstrap.py
+- main.py
+- run.py
+- dependencies/
+    - __init__.py
+    - auth.py
+- routers/
+    - auth.py
+    - copilot.py
+    - dashboard.py
+    - demand_forecasting.py
+    - eta_prediction.py
+    - inventory.py
+    - notifications.py
+    - orders.py
+    - planning.py
+    - route_prediction.py
+    - users.py
+    - voice.py
+- schemas/
+    - __init__.py
+    - copilot.py
+    - eta.py
+    - orders.py
+    - voice.py
+- security/
+    - __init__.py
+    - injection.py
+    - logging.py
+    - pii.py
+    - rate_limit.py
+    - validation.py
+- services/
+    - __init__.py
+    - courier_route.py
+    - dashboard.py
+    - demand_forecasting.py
+    - eta_prediction.py
+    - inventory.py
+    - notifications.py
+    - orders.py
+    - registry.py
+    - route_prediction.py
+    - voice.py
+
 frontend/
 - .gitkeep
 - app/
@@ -188,6 +148,20 @@ frontend/
             - RouteMap.tsx
             - logistics/
                 - LocationSelect.tsx
+            - planning/
+                - EntityScopePanel.tsx
+                - ExampleScenarioChips.tsx
+                - ExplainabilityPanel.tsx
+                - InterventionDetailModal.tsx
+                - InterventionRankingPanel.tsx
+                - InventoryStateModal.tsx
+                - InventoryStatePanel.tsx
+                - OutcomeDetailModal.tsx
+                - OutcomeDiscoveryPanel.tsx
+                - PlanningIdleState.tsx
+                - RunSimulationBar.tsx
+                - ScenarioInputPanel.tsx
+                - TimelineTable.tsx
             - ui/
                 - accordion.tsx
                 - alert-dialog.tsx
@@ -250,6 +224,8 @@ frontend/
         - lib/
             - api.ts
             - auth.tsx
+            - planningExamples.ts
+            - planningTypes.ts
             - roadRouting.ts
             - utils.ts
         - pages/
@@ -266,6 +242,44 @@ frontend/
             - Profile.tsx
             - RegisterUser.tsx
             - RouteIntelligence.tsx
+
+Inventory_intelligence_agent/
+- dataset_analysis.md
+- env_setup.py
+- technical_design_document.txt
+- data/
+    - Demand Forecasting Colab.docx
+- scripts/
+    - run_baseline_simulation.py
+    - run_decision_simulation.py
+    - run_planning_pipeline.py
+- simulation_pipeline/
+    - base_state.py
+    - baseline_des.py
+    - decision_application.py
+    - decision_comparison.py
+    - decision_generation.py
+    - decision_models.py
+    - decision_ranking.py
+    - decision_selection.py
+    - decision_simulation.py
+    - decision_simulation_models.py
+    - demand_reforecaster.py
+    - explainability_payload.py
+    - llm_explanation.py
+    - monte_carlo_world_generator.py
+    - outcome_discovery.py
+    - planning_pipeline.py
+    - recommendation_engine.py
+    - recommendation_models.py
+    - replenishment_delay_stats.py
+    - scenario_models.py
+    - scenario_state_builder.py
+    - scenario_understanding_agent.py
+    - simulation_models.py
+    - state_models.py
+    - test.py
+    - world_models.py
 
 ml_services/
 - .gitkeep
@@ -378,7 +392,3 @@ tests/
     - test_config_paths.py
     - test_coordinate_mapping.py
     - test_fastapi_health.py
-    - test_fastapi_ml_endpoints.py
-    - test_full_pipeline_demo.py
-    - test_graph_bridge.py
-    - test_inventory_sql_bridge.py

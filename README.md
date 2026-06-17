@@ -2,7 +2,7 @@
 
 **AI-native supply chain intelligence** — unified inventory, demand forecasting, last-mile dispatch, and conversational operations across databases, knowledge graphs, and ML models.
 
-IntelliSupply connects warehouse and hub data with logistics ML (clustering, courier assignment, route sequencing, ETA) and agentic copilots that answer operational questions in plain English. It is built for real dispatch workflows: learned delivery sequences (not only shortest-path routing), leakage-safe models, and optional Neo4j GraphRAG over your network.
+IntelliSupply connects warehouse and hub data with logistics ML (clustering, courier assignment, route sequencing, ETA) and agentic copilots that answer operational questions. It is built for real dispatch workflows: learned delivery sequences (not only shortest-path routing), leakage-safe models, and optional Neo4j GraphRAG over your network.
 
 ---
 
@@ -99,7 +99,7 @@ IntelliSupply/
 | **Python 3.12+** | Recommended for agents, RAG, and ML |
 | **Node.js 18+** | Frontend (`frontend/app`) |
 | **NVIDIA API key** | Agents and GraphRAG use [NVIDIA NIM](https://build.nvidia.com/) (`integrate.api.nvidia.com`) |
-| **Postgres** | Inventory NL-to-SQL (Neon / Supabase direct URL) |
+| **Postgres** | Inventory NL-to-SQL (Supabase direct URL) |
 | **Neo4j 5.x** (optional) | Logistics GraphRAG; agents fall back to route/ETA ML without it |
 | **Supabase** (optional) | One-time load of logistics tables into Neo4j |
 | **Trained artifacts** | `route_ranker.pkl`, demand/ETA pickles (see workflows below) |
@@ -134,7 +134,6 @@ See [Configuration](#configuration).
 ### 3. Start the unified ML API
 
 ```powershell
-pip install -r FastAPI/requirements.txt
 python FastAPI/run.py
 ```
 
@@ -153,8 +152,6 @@ Open the URL Vite prints (typically http://localhost:5173). Default route: `/rou
 ### 5. Run the agent CLI (optional)
 
 ```powershell
-pip install -r agentic_ai/requirements.txt
-pip install -r rag/requirements.txt
 cd agentic_ai
 python main.py
 ```
@@ -168,7 +165,6 @@ python main.py
 Single gateway for all inference.
 
 ```powershell
-pip install -r FastAPI/requirements.txt
 python FastAPI/run.py
 ```
 
@@ -208,7 +204,6 @@ Interactive CLI with intent routing and tool-calling agents:
 - **Logistics:** `graphrag_query`, `predict_eta`, `predict_next_stop`, `predict_route_sequence`
 
 ```powershell
-pip install -r agentic_ai/requirements.txt
 cd agentic_ai
 python main.py
 ```
@@ -220,7 +215,6 @@ Agents call ML inference in-process via `agentic_ai/integrations/ml_bridge.py` (
 Requires root `.env` with `DATABASE_URL` and `NVIDIA_API_KEY`.
 
 ```powershell
-pip install -r rag/requirements.txt
 cd rag\inventory
 python -m chatbot.chatbot
 ```
@@ -230,7 +224,6 @@ python -m chatbot.chatbot
 One-time setup (Windows example):
 
 ```powershell
-pip install -r rag/requirements.txt
 cd rag
 python -m graphdb.create_constraints
 python -m graphdb.load_graph
@@ -317,7 +310,6 @@ Phase-1 clustering produces `cluster_assignments.csv` under `models/` used by `C
 Install dev dependencies and run the full suite from repo root:
 
 ```powershell
-pip install -r FastAPI/requirements.txt -r agentic_ai/requirements.txt -r requirements-dev.txt
 pytest -v
 ```
 
