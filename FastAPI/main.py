@@ -23,7 +23,6 @@ from routers import (
     auth,
     copilot,
     dashboard,
-    demand_forecasting,
     inventory,
     notifications,
     orders,
@@ -77,7 +76,6 @@ app.include_router(auth.router)
 # ✅ OTHER ROUTERS (UNCHANGED)
 app.include_router(copilot.router)
 app.include_router(route_prediction.router)
-app.include_router(demand_forecasting.router)
 app.include_router(eta_prediction.router)
 app.include_router(orders.router)
 app.include_router(orders.couriers_router)

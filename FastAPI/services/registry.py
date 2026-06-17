@@ -59,12 +59,6 @@ def get_eta_predictor():
     return _eta_predictor
 
 
-def init_demand_service() -> None:
-    from services import demand_forecasting as demand_svc
-
-    demand_svc.check_health()
-
-
 def init_eta_service() -> None:
     global _eta_ready
     get_eta_predictor()
@@ -83,12 +77,6 @@ def init_all_services() -> dict[str, str]:
         status["route_prediction"] = "ok"
     except Exception as exc:
         status["route_prediction"] = f"error: {exc}"
-
-    try:
-        init_demand_service()
-        status["demand_forecasting"] = "ok"
-    except Exception as exc:
-        status["demand_forecasting"] = f"error: {exc}"
 
     try:
         init_eta_service()
