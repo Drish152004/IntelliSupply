@@ -23,7 +23,7 @@ router = APIRouter(prefix="/planning", tags=["planning"])
 
 PlanningUser = Annotated[
     TokenUser,
-    Depends(require_roles("admin", "inventory_manager", "logistics_manager")),
+    Depends(require_roles("admin", "inventory_manager")),
 ]
 
 
