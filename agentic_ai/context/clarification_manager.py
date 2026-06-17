@@ -20,9 +20,11 @@ _ENTITY_QUESTIONS: dict[str, str] = {
         "Which order should I look up the route for, or which hubs "
         "(from and to) should the route connect?"
     ),
-    "next_stop_lookup": "Which courier's next stop should I look up?",
+    "next_stop_lookup": (
+        "What is your current stop, hub, or most recently completed order?"
+    ),
     "courier_route_lookup": "Which courier and delivery day should I use for the route?",
-    "hub_lookup": "Which city or hub should I list hubs for?",
+    "hub_lookup": "Which city should I list hubs for?",
 }
 
 

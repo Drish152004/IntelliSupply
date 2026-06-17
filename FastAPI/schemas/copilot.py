@@ -23,6 +23,10 @@ class CopilotRequest(BaseModel):
         default=None,
         description="Multi-turn inventory session state from a prior response.",
     )
+    pending_clarification_session: dict[str, Any] | None = Field(
+        default=None,
+        description="Neutral session for in-progress domain clarification.",
+    )
 
     model_config = {
         "json_schema_extra": {

@@ -182,7 +182,8 @@ def get_order_route(order_id: str):
     conn = AuraConnection()
 
     query = """
-    MATCH (o:Order {order_id: $order_id})
+    MATCH (o:Order)
+    WHERE toLower(o.order_id) = toLower($order_id)
     OPTIONAL MATCH (o)-[:FROM_HUB]->(fromHub:Hub)
     OPTIONAL MATCH (o)-[:TO_HUB]->(toHub:Hub)
     OPTIONAL MATCH (o)-[:ASSIGNED_TO]->(courier:Courier)
@@ -219,6 +220,33 @@ def get_order_route(order_id: str):
     try:
         result = conn.execute_query(query, {"order_id": order_id})
         return result[0] if result else None
+    finally:
+        conn.close()
+
+
+def get_route_between_hubs(from_hub_id: int, to_hub_id: int):
+    """Fetch direct hub-to-hub route metadata from CONNECTED_TO edges."""
+    conn = AuraConnection()
+    query = """
+    MATCH (fromHub:Hub {hub_id: $from_hub_id})-[rel:CONNECTED_TO]->(toHub:Hub {hub_id: $to_hub_id})
+    OPTIONAL MATCH (fromHub)-[:LOCATED_IN]->(city:City)
+    RETURN
+        fromHub.hub_id AS from_hub_id,
+        coalesce(fromHub.name, fromHub.hub_name) AS from_hub_name,
+        toHub.hub_id AS to_hub_id,
+        coalesce(toHub.name, toHub.hub_name) AS to_hub_name,
+        city.city_name AS city_name,
+        rel.raw_distance_km AS raw_distance_km,
+        rel.map_distance_km AS map_distance_km,
+        rel.estimated_time_min AS estimated_time_min
+    LIMIT 1
+    """
+    try:
+        rows = conn.execute_query(
+            query,
+            {"from_hub_id": int(from_hub_id), "to_hub_id": int(to_hub_id)},
+        )
+        return rows[0] if rows else None
     finally:
         conn.close()
 

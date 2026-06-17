@@ -32,6 +32,7 @@ def _invoke_orchestrator(body: CopilotRequest, current_user: TokenUser) -> dict[
         body.query,
         logistics_session=body.logistics_session,
         inventory_session=body.inventory_session,
+        pending_clarification_session=body.pending_clarification_session,
         authenticated_user=authenticated_user,
     )
 

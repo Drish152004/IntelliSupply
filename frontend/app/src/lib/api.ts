@@ -513,12 +513,37 @@ export async function createInventoryStockEntry(
 // ✅ COPILOT
 // =======================
 
-export async function queryCopilot(query: string, sessions?: any) {
-  return apiFetch('/copilot/query', {
+export interface CopilotResponse {
+  status: string;
+  message?: string;
+  question?: string;
+  answer?: string;
+  reason?: string;
+  role?: string;
+  task?: string;
+  source?: string;
+  clarification_type?: string;
+  missing_fields?: string[];
+  data?: Record<string, unknown>;
+}
+
+export interface CopilotSessionPayload {
+  logisticsSession?: Record<string, unknown> | null;
+  inventorySession?: Record<string, unknown> | null;
+  pendingClarificationSession?: Record<string, unknown> | null;
+}
+
+export async function queryCopilot(
+  query: string,
+  sessions?: CopilotSessionPayload,
+): Promise<CopilotResponse> {
+  return apiFetch<CopilotResponse>('/copilot/query', {
     method: 'POST',
     body: JSON.stringify({
       query,
-      ...sessions,
+      logistics_session: sessions?.logisticsSession ?? undefined,
+      inventory_session: sessions?.inventorySession ?? undefined,
+      pending_clarification_session: sessions?.pendingClarificationSession ?? undefined,
     }),
   });
 }

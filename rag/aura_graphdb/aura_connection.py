@@ -112,6 +112,15 @@ def _format_neo4j_error(exc: Exception, backend: str) -> str:
     return f"{backend} error: {message}"
 
 
+_graph_query_observer = None
+
+
+def register_graph_query_observer(observer):
+    """Register an optional callback invoked before each graph query executes."""
+    global _graph_query_observer
+    _graph_query_observer = observer
+
+
 class AuraConnection:
     def __init__(self):
         self.uri, self.user, self.password, self.database, self._backend = _resolve_config()
@@ -133,6 +142,11 @@ class AuraConnection:
         self.driver.close()
 
     def execute_query(self, query, parameters=None):
+        if _graph_query_observer is not None:
+            try:
+                _graph_query_observer(query, parameters or {})
+            except Exception:
+                pass
         try:
             with self.driver.session(database=self.database) as session:
                 result = session.run(query, parameters or {})

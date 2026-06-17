@@ -1,4 +1,4 @@
-"""Semantic similarity cache using normalized token vectors and cosine similarity."""
+"""Semantic similarity cache with scoped metadata filters and cosine validation."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import math
 import os
 import re
 import threading
+import time
 from collections import Counter
 from typing import Any
 
@@ -60,7 +61,17 @@ def _cosine(a: dict[str, float], b: dict[str, float]) -> float:
 
 
 class _CacheEntry:
-    __slots__ = ("key", "vector", "value", "task", "role", "domain", "expires_at")
+    __slots__ = (
+        "key",
+        "vector",
+        "value",
+        "task",
+        "role",
+        "domain",
+        "entity_signature",
+        "identity_scope",
+        "expires_at",
+    )
 
     def __init__(
         self,
@@ -70,6 +81,8 @@ class _CacheEntry:
         task: str,
         role: str,
         domain: str,
+        entity_signature: str,
+        identity_scope: str,
         expires_at: float,
     ) -> None:
         self.key = key
@@ -78,19 +91,32 @@ class _CacheEntry:
         self.task = task
         self.role = role
         self.domain = domain
+        self.entity_signature = entity_signature
+        self.identity_scope = identity_scope
         self.expires_at = expires_at
 
 
 class SemanticCache:
-    """In-memory semantic cache with TTL per task."""
+    """In-memory semantic cache with scoped metadata filters and TTL per task."""
 
     def __init__(self) -> None:
         self._entries: list[_CacheEntry] = []
         self._lock = threading.Lock()
         self._max_entries = int(os.getenv("SEMANTIC_CACHE_MAX_ENTRIES", str(_DEFAULT_MAX_ENTRIES)))
 
-    def _build_key(self, query: str, role: str, domain: str) -> str:
-        raw = f"{_normalize(query)}|{role}|{domain}"
+    def _build_key(
+        self,
+        query: str,
+        role: str,
+        domain: str,
+        task: str,
+        entity_signature: str,
+        identity_scope: str,
+    ) -> str:
+        raw = (
+            f"{_normalize(query)}|{role}|{domain}|{task}|"
+            f"{entity_signature}|{identity_scope}"
+        )
         return hashlib.sha256(raw.encode()).hexdigest()[:32]
 
     def lookup(
@@ -100,12 +126,14 @@ class SemanticCache:
         role: str = "",
         domain: str = "",
         task: str = "",
-    ) -> tuple[bool, str | None, Any | None]:
+        entity_signature: str = "global",
+        identity_scope: str = "global",
+    ) -> tuple[bool, str | None, Any | None, float]:
         if not _enabled():
-            return False, None, None
+            return False, None, None, 0.0
 
         vector = _token_vector(query)
-        now = __import__("time").time()
+        now = time.time()
         threshold = _threshold()
 
         with self._lock:
@@ -117,10 +145,18 @@ class SemanticCache:
                 if entry.expires_at <= now:
                     continue
                 alive.append(entry)
+
                 if role and entry.role and entry.role != role:
                     continue
                 if domain and entry.domain and entry.domain != domain:
                     continue
+                if task and entry.task != task:
+                    continue
+                if entity_signature != entry.entity_signature:
+                    continue
+                if identity_scope != entry.identity_scope:
+                    continue
+
                 score = _cosine(vector, entry.vector)
                 if score >= threshold and score > best_score:
                     best_score = score
@@ -129,10 +165,17 @@ class SemanticCache:
             self._entries = alive
 
             if best_entry:
-                logger.debug("Semantic cache hit score=%.3f key=%s", best_score, best_entry.key)
-                return True, best_entry.key, best_entry.value
+                logger.info(
+                    "cache hit task=%s entity=%s identity=%s score=%.3f key=%s",
+                    best_entry.task,
+                    best_entry.entity_signature,
+                    best_entry.identity_scope,
+                    best_score,
+                    best_entry.key,
+                )
+                return True, best_entry.key, best_entry.value, best_score
 
-        return False, None, None
+        return False, None, None, 0.0
 
     def store(
         self,
@@ -142,6 +185,8 @@ class SemanticCache:
         role: str = "",
         domain: str = "",
         task: str = "",
+        entity_signature: str = "global",
+        identity_scope: str = "global",
     ) -> str | None:
         if not _enabled():
             return None
@@ -150,9 +195,16 @@ class SemanticCache:
         if ttl is None:
             return None
 
-        key = self._build_key(query, role, domain)
+        key = self._build_key(
+            query,
+            role,
+            domain,
+            task,
+            entity_signature,
+            identity_scope,
+        )
         vector = _token_vector(query)
-        now = __import__("time").time()
+        now = time.time()
 
         entry = _CacheEntry(
             key=key,
@@ -161,6 +213,8 @@ class SemanticCache:
             task=task,
             role=role,
             domain=domain,
+            entity_signature=entity_signature,
+            identity_scope=identity_scope,
             expires_at=now + ttl,
         )
 
@@ -171,7 +225,14 @@ class SemanticCache:
                 self._entries.sort(key=lambda e: e.expires_at)
                 self._entries = self._entries[-self._max_entries :]
 
-        logger.debug("Semantic cache store key=%s task=%s", key, task)
+        logger.info(
+            "cache store task=%s domain=%s entity=%s identity=%s key=%s",
+            task,
+            domain,
+            entity_signature,
+            identity_scope,
+            key,
+        )
         return key
 
 

@@ -2,98 +2,51 @@
 
 from __future__ import annotations
 
-import re
+from typing import Any
 
-from orchestrator.task_registry import (
-    COURIER_RESOURCE_SCOPED_TASKS,
-    INVENTORY_TASKS,
-    LOGISTICS_RETRIEVAL_TASKS,
-    SELF_SCOPED_PHRASES,
-    is_task_allowed,
-)
-from context.entity_extractor import EntityExtractor
+from integrations.aura_bridge import fetch_order_route
+from orchestrator.task_registry import COURIER_RESOURCE_SCOPED_TASKS, is_task_allowed
 from orchestrator.state import AgentState
 
-
-def detect_self_scoped_task(user_query: str) -> str | None:
-    """Map first-person logistics phrases to a suggested task."""
-    q = user_query.lower()
-    for phrase, task in SELF_SCOPED_PHRASES:
-        if phrase in q:
-            return task
-    if re.search(r"\b(?:my|mine)\b", q):
-        return None
-    return None
+COURIER_ORDER_OWNERSHIP_TASKS: frozenset[str] = frozenset({
+    "shipment_lookup",
+    "route_lookup",
+    "eta_lookup",
+})
 
 
-def apply_self_scoped_entities(
-    *,
-    entities: dict[str, str],
-    user_query: str,
-    user_role: str | None,
-    session: dict | None,
-) -> dict[str, str]:
-    """Bind courier identity for 'my route' / 'my shipments' style queries."""
-    resolved = dict(entities)
-    q = user_query.lower()
-
-    if any(phrase in q for phrase, _ in SELF_SCOPED_PHRASES) or re.search(r"\bmy\b", q):
-        resolved["self_scoped"] = "true"
-
-    bound = (session or {}).get("courier_id")
-    if user_role == "COURIER" and bound:
-        if resolved.get("self_scoped") == "true" or not resolved.get("courier_id"):
-            resolved["courier_id"] = str(bound)
-
-    if resolved.get("self_scoped") == "true" and bound and "courier_id" not in resolved:
-        resolved["courier_id"] = str(bound)
-
-    return resolved
-
-
-def authorize_task_and_resources(state: AgentState) -> tuple[bool, str | None, dict[str, str]]:
+def authorize_task_and_resources(
+    state: AgentState,
+) -> tuple[bool, str | None, dict[str, str], dict[str, Any] | None]:
     """
     Authorize after intent classification and entity extraction.
 
-    Order: role present -> task allowed for role -> domain boundary -> courier resource scope.
+    Order: role present -> task allowed for role -> domain boundary -> courier resource scope
+    -> courier order ownership (order_id tasks).
+    Consumes state["entities"] as produced by entity extraction; does not infer self_scoped.
     """
     role = state.get("user_role")
     task = state.get("task", "")
-    domain = state.get("domain", "")
 
     entities = dict(state.get("entities") or {})
-    if not entities and domain == "logistics":
-        entities = EntityExtractor.extract(state["user_query"])
-
-    entities = apply_self_scoped_entities(
-        entities=entities,
-        user_query=state["user_query"],
-        user_role=role,
-        session=state.get("logistics_session"),
-    )
+    prefetched_order_route: dict[str, Any] | None = None
 
     if not role:
-        return False, "User identity not provided", entities
+        return False, "User identity not provided", entities, None
 
     if role == "ADMIN":
-        return True, None, entities
+        return True, None, entities, None
 
     if not is_task_allowed(role, task):
-        return False, f"Role {role} is not allowed to execute {task}", entities
-
-    if role == "INVENTORY" and (domain == "logistics" or task in LOGISTICS_RETRIEVAL_TASKS):
-        return False, f"Role {role} cannot access logistics tasks", entities
-
-    if role == "COURIER" and (domain == "inventory" or task in INVENTORY_TASKS):
-        return False, "Couriers cannot access inventory queries", entities
+        return False, f"Role {role} is not allowed to execute {task}", entities, None
 
     if role != "COURIER" or task not in COURIER_RESOURCE_SCOPED_TASKS:
-        return True, None, entities
+        return True, None, entities, None
 
     session = state.get("logistics_session") or {}
     bound_courier = session.get("courier_id")
     if not bound_courier:
-        return False, "Courier identity is not bound to this session", entities
+        return False, "Courier identity is not bound to this session", entities, None
 
     requested = entities.get("courier_id")
     if requested and str(requested) != str(bound_courier):
@@ -101,10 +54,29 @@ def authorize_task_and_resources(state: AgentState) -> tuple[bool, str | None, d
             False,
             f"You are not authorized to access courier {requested}'s data",
             entities,
+            None,
         )
 
+    order_id = entities.get("order_id")
+    if task in COURIER_ORDER_OWNERSHIP_TASKS and order_id:
+        entities.pop("courier_id", None)
+        order_route = fetch_order_route(order_id)
+        assigned_courier_id = (order_route or {}).get("assigned_courier_id")
+        if not assigned_courier_id or str(assigned_courier_id) != str(bound_courier):
+            return (
+                False,
+                f"Order {order_id} is not assigned to you",
+                entities,
+                None,
+            )
+        prefetched_order_route = order_route
+
     if task in {"courier_lookup", "next_stop_lookup", "courier_route_lookup", "shipment_lookup"}:
-        if not requested:
+        if (
+            entities.get("self_scoped") == "true"
+            and not requested
+            and not order_id
+        ):
             entities["courier_id"] = str(bound_courier)
 
-    return True, None, entities
+    return True, None, entities, prefetched_order_route

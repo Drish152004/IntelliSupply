@@ -6,6 +6,7 @@ import logging
 from typing import Any
 
 from integrations.language import normalize_query
+from orchestrator.hitl_session import attempts_exceeded, get_active_hitl_session
 from orchestrator.rbac.courier_identity import resolve_courier_identity
 from orchestrator.rbac.session_context import merge_logistics_session, restore_user_role
 from orchestrator.state import AgentState
@@ -19,7 +20,9 @@ def _bootstrap_identity(
     authenticated_user: dict | None,
     logistics_session: dict | None,
     inventory_session: dict | None,
-) -> tuple[str | None, dict | None]:
+    pending_clarification_session: dict | None,
+) -> tuple[str | None, dict | None, dict[str, Any]]:
+    identity_fields: dict[str, Any] = {}
     if authenticated_user:
         identity = resolve_courier_identity(authenticated_user)
         resolved_role = identity["user_role"]
@@ -27,14 +30,25 @@ def _bootstrap_identity(
             logistics_session,
             identity.get("logistics_session"),
         )
-        return resolved_role, resolved_logistics
+        courier_id = authenticated_user.get("courier_id")
+        if courier_id is None and resolved_logistics:
+            courier_id = resolved_logistics.get("courier_id")
+        identity_fields = {
+            "authenticated_user_id": identity.get("user_id"),
+            "authenticated_email": identity.get("email"),
+            "authenticated_name": identity.get("name"),
+            "authenticated_role_id": identity.get("role_id"),
+            "authenticated_courier_id": str(courier_id).strip() if courier_id else None,
+        }
+        return resolved_role, resolved_logistics, identity_fields
 
     resolved_role = restore_user_role(
         user_role=user_role,
         logistics_session=logistics_session,
         inventory_session=inventory_session,
+        pending_clarification_session=pending_clarification_session,
     )
-    return resolved_role, logistics_session
+    return resolved_role, logistics_session, identity_fields
 
 
 def init_state(state: AgentState) -> AgentState:
@@ -44,15 +58,17 @@ def init_state(state: AgentState) -> AgentState:
 
     normalized = normalize_query(user_query, language_hint=language_hint)
 
-    resolved_role, resolved_logistics = _bootstrap_identity(
+    resolved_role, resolved_logistics, identity_fields = _bootstrap_identity(
         user_role=state.get("user_role"),
         authenticated_user=state.get("authenticated_user"),
         logistics_session=state.get("logistics_session"),
         inventory_session=state.get("inventory_session"),
+        pending_clarification_session=state.get("pending_clarification_session"),
     )
 
     updated: AgentState = {
         **state,
+        **identity_fields,
         "original_query": normalized["original_query"],
         "user_query": normalized["user_query"],
         "detected_language": normalized["detected_language"],
@@ -61,17 +77,31 @@ def init_state(state: AgentState) -> AgentState:
         "authorization_denied": False,
         "cache_hit": False,
         "clarification_needed": False,
+        "clarification_failed": False,
     }
+
+    active_hitl = get_active_hitl_session(updated)
+    if active_hitl and active_hitl.get("original_query"):
+        updated["original_query"] = active_hitl["original_query"]
+    if active_hitl and attempts_exceeded(active_hitl):
+        updated["clarification_failed"] = True
+        updated["agent_response"] = (
+            '{"status": "clarification_failed", '
+            '"message": "Clarification attempt limit reached."}'
+        )
 
     if resolved_logistics:
         updated["logistics_session"] = resolved_logistics
     if state.get("inventory_session"):
         updated["inventory_session"] = state["inventory_session"]
+    if state.get("pending_clarification_session"):
+        updated["pending_clarification_session"] = state["pending_clarification_session"]
 
-    logger.debug(
-        "init_state: lang=%s role=%s",
-        updated.get("detected_language"),
-        updated.get("user_role"),
+    logger.info(
+        "init_state: user_id=%s role=%s courier_id=%s",
+        updated.get("authenticated_user_id", ""),
+        updated.get("user_role", ""),
+        updated.get("authenticated_courier_id", ""),
     )
     return updated
 
@@ -82,6 +112,7 @@ def build_initial_state(
     ml_payload_partial: dict | None = None,
     logistics_session: dict | None = None,
     inventory_session: dict | None = None,
+    pending_clarification_session: dict | None = None,
     user_role: str | None = None,
     authenticated_user: dict | None = None,
     language_hint: str | None = None,
@@ -105,6 +136,7 @@ def build_initial_state(
         "entities": {},
         "missing_fields": [],
         "clarification_needed": False,
+        "clarification_failed": False,
         "clarification_type": None,
         "clarification_question": None,
         "execution_status": None,
@@ -116,6 +148,8 @@ def build_initial_state(
         initial["logistics_session"] = logistics_session
     if inventory_session:
         initial["inventory_session"] = inventory_session
+    if pending_clarification_session:
+        initial["pending_clarification_session"] = pending_clarification_session
     if user_role:
         initial["user_role"] = user_role
     if authenticated_user:

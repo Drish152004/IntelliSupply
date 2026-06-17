@@ -12,32 +12,63 @@ class AgentState(TypedDict):
     original_query: NotRequired[str]
     detected_language: NotRequired[str]
     language_hint: NotRequired[str]
+
     domain: str
     coarse_domain: NotRequired[str]
+
     task: str
     confidence: float
+
     agent_response: str
     final_response: str
 
     authenticated_user: NotRequired[dict[str, Any]]
+    authenticated_user_id: NotRequired[str]
+    authenticated_email: NotRequired[str]
+    authenticated_name: NotRequired[str]
+    authenticated_role_id: NotRequired[int | None]
+    authenticated_courier_id: NotRequired[str]
+
     logistics_session: NotRequired[dict[str, Any]]
     inventory_session: NotRequired[dict[str, Any]]
+    pending_clarification_session: NotRequired[dict[str, Any] | None]
+
     user_role: NotRequired[str]
 
     access_denied: NotRequired[bool]
     authorization_denied: NotRequired[bool]
+    authorized: NotRequired[bool]
+
+    # FIXED
+    authorized_domain: NotRequired[str | None]
+
+    classification_source: NotRequired[str]
+
+    # FIXED
+    clarification_stage: NotRequired[str | None]
 
     cache_hit: NotRequired[bool]
     cache_key: NotRequired[str | None]
     cached_result: NotRequired[dict[str, Any] | None]
 
     entities: NotRequired[dict[str, str]]
+    prefetched_order_route: NotRequired[dict[str, Any]]
+
     missing_fields: NotRequired[list[str]]
+    missing_required_parameters: NotRequired[bool]
+
     clarification_needed: NotRequired[bool]
+    clarification_failed: NotRequired[bool]
+
+    # ALREADY CORRECT
     clarification_type: NotRequired[str | None]
+
+    # ALREADY CORRECT
     clarification_question: NotRequired[str | None]
 
     execution_status: NotRequired[str | None]
     execution_error: NotRequired[str | None]
 
     ml_payload_partial: NotRequired[dict[str, Any]]
+
+    trace_id: NotRequired[str]

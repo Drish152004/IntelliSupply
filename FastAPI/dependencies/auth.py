@@ -188,7 +188,11 @@ def require_roles(*roles: str) -> Callable[..., TokenUser]:
 
 def user_to_authenticated_payload(user: TokenUser) -> dict:
     """Build orchestrator identity from a validated JWT user."""
-    payload: dict = {"role": user.role}
-    if user.courier_id:
-        payload["courier_id"] = user.courier_id
-    return payload
+    return {
+        "user_id": user.id,
+        "email": user.email,
+        "name": user.name,
+        "role": user.role,
+        "role_id": user.role_id,
+        "courier_id": user.courier_id,
+    }

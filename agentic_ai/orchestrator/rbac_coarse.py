@@ -1,4 +1,4 @@
-"""Domain routing hints — not a final authorization layer."""
+"""Coarse authorization: domain detection, domain HITL, and domain-level RBAC."""
 
 from __future__ import annotations
 
@@ -6,70 +6,200 @@ import json
 import logging
 
 from context.clarification_manager import ClarificationManager, ClarificationType
-from orchestrator.task_registry import detect_coarse_domain
+from orchestrator.hitl_session import (
+    STAGE_DOMAIN,
+    STAGE_PARAMETER,
+    apply_domain_session_to_state,
+    attach_clarification_session,
+    build_clarification_session,
+    clarification_type_for_stage,
+    get_active_hitl_session,
+    is_domain_resume,
+    is_parameter_resume,
+    parse_domain_answer,
+)
+from orchestrator.task_registry import (
+    VALID_DOMAINS,
+    coarse_domain_from_matches,
+    match_coarse_domain_keywords,
+)
 from orchestrator.state import AgentState
 
 logger = logging.getLogger(__name__)
 
-_ROLE_DEFAULT_DOMAIN: dict[str, str] = {
-    "INVENTORY": "inventory",
-    "COURIER": "logistics",
-    "LOGISTICS": "logistics",
+_ROLE_ALLOWED_DOMAINS: dict[str, frozenset[str]] = {
+    "ADMIN": frozenset(VALID_DOMAINS),
+    "INVENTORY": frozenset({"inventory"}),
+    "COURIER": frozenset({"logistics"}),
+    "LOGISTICS": frozenset({"logistics"}),
 }
 
 
-def _session_collecting(state: AgentState) -> bool:
-    for key in ("logistics_session", "inventory_session"):
-        session = state.get(key)
-        if session and session.get("collecting"):
-            return True
-    return False
+def is_domain_allowed_for_role(role: str | None, domain: str) -> bool:
+    """Return whether a role may access the given domain at coarse authorization."""
+    if not role:
+        return False
+    if role == "ADMIN":
+        return True
+    allowed = _ROLE_ALLOWED_DOMAINS.get(role, frozenset())
+    return domain in allowed
 
 
-def apply_domain_routing_hint(state: AgentState) -> AgentState:
+def _resume_parameter_domain(state: AgentState) -> AgentState:
+    """Skip domain detection when resuming parameter clarification."""
+    session = get_active_hitl_session(state) or {}
+    domain = session.get("domain") or state.get("domain", "")
+    logger.info(
+        "Coarse authorization allowed: domain=%s source=parameter_resume role=%s",
+        domain,
+        state.get("user_role"),
+    )
+    return _authorize_allowed(state, domain, classification_source="parameter_resume")
+
+
+def _resume_domain_clarification(state: AgentState) -> AgentState:
+    """Interpret the user's domain answer and route into the correct session bucket."""
+    query = state["user_query"]
+    role = state.get("user_role")
+    resolved = parse_domain_answer(query)
+
+    if resolved is None:
+        question = ClarificationManager.domain_question()
+        return _request_domain_clarification(state, question)
+
+    if not is_domain_allowed_for_role(role, resolved):
+        return _deny_domain_access(state, resolved, role)
+
+    logger.info(
+        "Domain clarification resolved: domain=%s source=user_answer role=%s query=%r",
+        resolved,
+        role,
+        query,
+    )
+    routed = apply_domain_session_to_state(state, resolved)
+    return _authorize_allowed(routed, resolved, classification_source="domain_resume")
+
+
+def coarse_authorization(state: AgentState) -> AgentState:
     """
-    Infer likely domain for cache partitioning and intent bias.
+    Keyword-based domain detection, domain ambiguity HITL, and coarse RBAC.
 
-    Never denies access. ADMIN always passes. Ambiguous queries trigger DOMAIN HITL.
+    Domain-level permission only — no confidence scoring, task inference,
+    resource ownership, or task authorization.
     """
-    if _session_collecting(state):
-        session = state.get("logistics_session") or state.get("inventory_session") or {}
-        domain = session.get("domain") or ("logistics" if state.get("logistics_session") else "inventory")
-        return {**state, "coarse_domain": domain, "clarification_needed": False}
+    if state.get("clarification_failed"):
+        return state
+
+    if is_domain_resume(state):
+        return _resume_domain_clarification(state)
+
+    if is_parameter_resume(state):
+        return _resume_parameter_domain(state)
 
     query = state["user_query"]
     role = state.get("user_role")
 
-    domain, confidence, ambiguous = detect_coarse_domain(query)
+    matched_inventory, matched_logistics = match_coarse_domain_keywords(query)
+    logger.info(
+        "keyword matches inventory=%s logistics=%s query=%r",
+        matched_inventory,
+        matched_logistics,
+        query,
+    )
+    domain = coarse_domain_from_matches(matched_inventory, matched_logistics)
+    logger.info(
+        "domain detection matched_inventory=%s matched_logistics=%s domain=%s",
+        matched_inventory,
+        matched_logistics,
+        domain or "ambiguous",
+    )
 
     updated: AgentState = {
         **state,
         "coarse_domain": domain or "",
         "clarification_needed": False,
+        "clarification_stage": None,
         "clarification_type": None,
         "clarification_question": None,
         "access_denied": False,
+        "authorization_denied": False,
+        "authorized": False,
+        "authorized_domain": None,
     }
 
-    if role == "ADMIN":
-        if domain:
-            updated["coarse_domain"] = domain
-        return updated
-
-    if role in _ROLE_DEFAULT_DOMAIN and (ambiguous or not domain):
-        return {**updated, "coarse_domain": _ROLE_DEFAULT_DOMAIN[role]}
-
-    if ambiguous or not domain:
+    if domain is None:
+        logger.info(
+            "domain=ambiguous source=keyword reason=no_unique_domain role=%s query=%r",
+            role,
+            query,
+        )
         question = ClarificationManager.domain_question()
         return _request_domain_clarification(updated, question)
 
-    logger.debug(
-        "Domain routing hint: domain=%s confidence=%s role=%s",
+    logger.info("domain=%s source=keyword role=%s", domain, role)
+
+    if not is_domain_allowed_for_role(role, domain):
+        return _deny_domain_access(updated, domain, role)
+
+    logger.info(
+        "Coarse authorization allowed: domain=%s source=keyword role=%s",
         domain,
-        confidence,
         role,
     )
-    return {**updated, "coarse_domain": domain}
+    return _authorize_allowed(updated, domain, classification_source="keyword")
+
+
+def _authorize_allowed(
+    state: AgentState,
+    domain: str,
+    *,
+    classification_source: str,
+) -> AgentState:
+    return {
+        **state,
+        "coarse_domain": domain,
+        "authorized": True,
+        "authorized_domain": domain,
+        "classification_source": classification_source,
+        "clarification_needed": False,
+        "clarification_stage": None,
+        "access_denied": False,
+        "authorization_denied": False,
+    }
+
+
+def _deny_domain_access(
+    state: AgentState,
+    domain: str,
+    role: str | None,
+) -> AgentState:
+    role_label = role or "unknown"
+    reason = f"Role {role_label} is not authorized to access {domain} domain"
+    logger.info(
+        "Coarse authorization denied: domain=%s source=keyword role=%s reason=%s",
+        domain,
+        role_label,
+        reason,
+    )
+    return {
+        **state,
+        "coarse_domain": domain,
+        "authorized": False,
+        "authorized_domain": None,
+        "classification_source": "keyword",
+        "access_denied": True,
+        "authorization_denied": False,
+        "clarification_needed": False,
+        "clarification_stage": None,
+        "agent_response": json.dumps(
+            {
+                "status": "denied",
+                "reason": reason,
+                "domain": domain,
+            },
+            indent=2,
+        ),
+    }
 
 
 def _request_domain_clarification(state: AgentState, question: str) -> AgentState:
@@ -81,14 +211,20 @@ def _request_domain_clarification(state: AgentState, question: str) -> AgentStat
         },
         indent=2,
     )
-    return {
+    session = build_clarification_session(
+        state,
+        stage=STAGE_DOMAIN,
+        clarification_type=clarification_type_for_stage(STAGE_DOMAIN),
+    )
+    updated: AgentState = {
         **state,
         "clarification_needed": True,
+        "clarification_stage": STAGE_DOMAIN,
         "clarification_type": ClarificationType.DOMAIN.value,
         "clarification_question": question,
+        "authorized": False,
+        "authorized_domain": None,
+        "classification_source": "keyword",
         "agent_response": agent_response,
     }
-
-
-# Backward-compatible alias for graph node registration.
-enforce_rbac_coarse = apply_domain_routing_hint
+    return attach_clarification_session(updated, session, stage=STAGE_DOMAIN)

@@ -1,6 +1,9 @@
 import env_setup  # noqa: F401
+import logging
 import os
 from openai import OpenAI
+
+logger = logging.getLogger(__name__)
 
 # NVIDIA CLIENT
 client = OpenAI(
@@ -405,19 +408,27 @@ allowed_keywords = [
     # Product Terms
     "product",
     "products",
+    "item",
+    "items",
     "product id",
     "product_id",
     "product name",
     "category",
     "catalog",
     "product catalog",
+    "sku",
+    "skus",
+    "amount",
 
     # Categories
     "electronics",
+    "electronic",
     "clothing",
     "groceries",
+    "grocery",
     "furniture",
     "toys",
+    "toy",
 
     # Product Names
     "wireless router",
@@ -544,6 +555,10 @@ def generate_sql(question):
         for keyword in allowed_keywords
     ):
 
+        logger.info(
+            "inventory_domain_gate_failed question=%r",
+            question,
+        )
         return "INVALID_DOMAIN_QUERY"
 
     response = client.chat.completions.create(
@@ -578,4 +593,8 @@ def generate_sql(question):
         ""
     ).strip()
 
+    logger.info(
+        "inventory_domain_gate_passed question=%r",
+        question,
+    )
     return generated_sql

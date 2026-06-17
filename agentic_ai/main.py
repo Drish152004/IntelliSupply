@@ -74,6 +74,7 @@ def _authenticated_user_from_env() -> dict | None:
 def _run_query_turn(initial_query: str) -> None:
     logistics_session = None
     inventory_session = None
+    pending_clarification_session = None
     user_message = initial_query
     authenticated_user = _authenticated_user_from_env()
 
@@ -82,6 +83,7 @@ def _run_query_turn(initial_query: str) -> None:
             user_message,
             logistics_session=logistics_session,
             inventory_session=inventory_session,
+            pending_clarification_session=pending_clarification_session,
             authenticated_user=authenticated_user,
         )
 
@@ -100,14 +102,27 @@ def _run_query_turn(initial_query: str) -> None:
             if not user_message:
                 print("Cancelled this request.")
                 return
-            session = (payload.get("data") or {}).get("session")
-            if result.get("domain") == "inventory":
+            data = payload.get("data") or {}
+            session = data.get("session")
+            pending = data.get("pending_clarification_session") or session
+            stage = (session or {}).get("clarification_stage")
+            if stage == "domain":
+                pending_clarification_session = pending
+                logistics_session = None
+                inventory_session = None
+            elif result.get("domain") == "inventory":
                 inventory_session = session
                 logistics_session = None
+                pending_clarification_session = None
             else:
                 logistics_session = session
                 inventory_session = None
+                pending_clarification_session = None
             continue
+
+        if payload and payload.get("status") == "clarification_failed":
+            print(f"\nAssistant: {payload.get('message', 'Clarification failed.')}")
+            return
 
         _print_result(payload, result["final_response"])
         return

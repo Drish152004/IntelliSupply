@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from orchestrator.rbac.exceptions import UnknownIdentityError, UnknownRoleError
-from orchestrator.rbac.permissions import VALID_ROLES
+from orchestrator.task_registry import VALID_ROLES
 
 AUTH_TO_ORCHESTRATOR: dict[str, str] = {
     "admin": "ADMIN",

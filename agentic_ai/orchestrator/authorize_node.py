@@ -14,7 +14,10 @@ logger = logging.getLogger(__name__)
 
 def authorize_request(state: AgentState) -> AgentState:
     """Apply task-level and resource-level authorization after entity extraction."""
-    allowed, reason, entities = authorize_task_and_resources(state)
+    if state.get("missing_required_parameters") or state.get("clarification_needed"):
+        return state
+
+    allowed, reason, entities, prefetched_order_route = authorize_task_and_resources(state)
 
     updated: AgentState = {
         **state,
@@ -22,6 +25,8 @@ def authorize_request(state: AgentState) -> AgentState:
         "authorization_denied": False,
         "access_denied": False,
     }
+    if prefetched_order_route is not None:
+        updated["prefetched_order_route"] = prefetched_order_route
 
     if allowed:
         return updated
@@ -30,7 +35,7 @@ def authorize_request(state: AgentState) -> AgentState:
     return {
         **updated,
         "authorization_denied": True,
-        "access_denied": True,
+        "access_denied": False,
         "clarification_type": ClarificationType.AUTHORIZATION.value,
         "agent_response": json.dumps(
             {

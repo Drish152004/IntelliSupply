@@ -9,6 +9,11 @@ import logging
 from typing import Any
 
 from context.clarification_manager import ClarificationType
+from orchestrator.hitl_session import (
+    STAGE_DOMAIN,
+    clear_all_hitl_sessions,
+    should_clear_hitl_sessions,
+)
 from orchestrator.rbac.session_context import build_session_for_response
 from orchestrator.state import AgentState
 
@@ -31,6 +36,9 @@ class ResponseFormatter:
     """Build a unified API response from orchestrator state."""
 
     def format(self, state: AgentState) -> dict[str, Any]:
+        if state.get("clarification_failed"):
+            return self._format_clarification_failed(state)
+
         if state.get("authorization_denied"):
             return self._format_authorization_denied(state)
 
@@ -68,6 +76,16 @@ class ResponseFormatter:
         except json.JSONDecodeError:
             return None
         return payload if isinstance(payload, dict) else None
+
+    def _format_clarification_failed(self, state: AgentState) -> dict[str, Any]:
+        raw = self._parse_agent_response(state.get("agent_response", "")) or {}
+        return {
+            "status": "clarification_failed",
+            "message": raw.get(
+                "message",
+                "Unable to collect required information. Please start a new request.",
+            ),
+        }
 
     def _format_authorization_denied(self, state: AgentState) -> dict[str, Any]:
         raw = self._parse_agent_response(state.get("agent_response", ""))
@@ -121,7 +139,12 @@ class ResponseFormatter:
         }
         session = build_session_for_response(state)
         if session:
-            response["data"] = {"session": session}
+            data: dict[str, Any] = {"session": session}
+            if state.get("clarification_stage") == STAGE_DOMAIN or session.get(
+                "clarification_stage"
+            ) == STAGE_DOMAIN:
+                data["pending_clarification_session"] = session
+            response["data"] = data
         return response
 
     def _format_cache(self, state: AgentState) -> dict[str, Any]:
@@ -163,7 +186,10 @@ class ResponseFormatter:
             }
             session = build_session_for_response(state)
             if session:
-                clarification["data"] = {"session": session}
+                data: dict[str, Any] = {"session": session}
+                if session.get("clarification_stage") == STAGE_DOMAIN:
+                    data["pending_clarification_session"] = session
+                clarification["data"] = data
             return clarification
 
         if status == "error":
@@ -215,10 +241,13 @@ def format_response(state: AgentState) -> AgentState:
     """LangGraph node: normalize state into a unified final response."""
     formatter = ResponseFormatter()
     formatted = formatter.format(state)
-    final_response = formatter.serialize(state)
+    updated_state: AgentState = dict(state)
+    if should_clear_hitl_sessions(formatted.get("status")):
+        updated_state = clear_all_hitl_sessions(updated_state)
+    final_response = formatter.serialize(updated_state)
     logger.info(
         "RESPONSE FORMAT COMPLETE status=%s source=%s",
         formatted.get("status"),
         formatted.get("source", ""),
     )
-    return {**state, "final_response": final_response}
+    return {**updated_state, "final_response": final_response}

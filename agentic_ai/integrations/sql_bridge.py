@@ -13,14 +13,29 @@ from typing import Any
 
 from config.env import load_env
 from config.paths import REPO_ROOT
+from observability.trace_events import (
+    get_current_trace_id,
+    llm_input_payload,
+    llm_output_payload,
+    summarize_sql_rows,
+    trace_llm_input,
+    trace_llm_output,
+    trace_nlsql_request,
+    trace_nlsql_response,
+    trace_sql_execute,
+    trace_sql_result,
+)
 from openai import OpenAI
 from sqlalchemy import create_engine, text
 
 CHATBOT_ROOT = REPO_ROOT / "rag" / "inventory" / "chatbot"
 
+INVENTORY_SCHEMA_TABLES = ("planning_dataset", "product_catalog", "hubs")
+
 _engine = None
 _client: OpenAI | None = None
 _generate_sql = None
+_sql_system_prompt = None
 _env_loaded = False
 
 
@@ -33,7 +48,7 @@ def _ensure_env() -> None:
 
 
 def _ensure_sql_generator():
-    global _generate_sql
+    global _generate_sql, _sql_system_prompt
     _ensure_env()
     if _generate_sql is not None:
         return _generate_sql
@@ -44,6 +59,7 @@ def _ensure_sql_generator():
     import sql_generator as sg
 
     _generate_sql = sg.generate_sql
+    _sql_system_prompt = sg.SYSTEM_PROMPT
     return _generate_sql
 
 
@@ -78,17 +94,53 @@ def _db_engine():
     return _engine
 
 
-def ask_inventory_sql(question: str) -> dict[str, Any]:
+def _extract_tables_from_sql(sql: str) -> list[str]:
+    lowered = sql.lower()
+    return [table for table in INVENTORY_SCHEMA_TABLES if table in lowered]
+
+
+def ask_inventory_sql(
+    question: str,
+    *,
+    entities: dict[str, Any] | None = None,
+    routing_metadata: dict[str, Any] | None = None,
+    trace_id: str | None = None,
+) -> dict[str, Any]:
     """
     NL-to-SQL for inventory Postgres (products, warehouses, inventory tables).
 
     Mirrors rag/inventory/chatbot/chatbot.py.
     """
     generate_sql = _ensure_sql_generator()
+    resolved_trace_id = trace_id or get_current_trace_id()
+
+    nlsql_prompt = f"SYSTEM:\n{_sql_system_prompt or ''}\n\nUSER:\n{question}"
+    trace_nlsql_request(
+        {
+            "user_question": question,
+            "entities": entities or {},
+            "schema_names": ["inventory"],
+            "selected_tables": list(INVENTORY_SCHEMA_TABLES),
+            "routing_metadata": routing_metadata or {},
+        },
+        trace_id=resolved_trace_id,
+        prompt=nlsql_prompt,
+    )
 
     generated_sql = generate_sql(question)
     generated_sql = (
         generated_sql.replace("```sql", "").replace("```", "").strip()
+    )
+
+    selected_tables = _extract_tables_from_sql(generated_sql) if generated_sql else []
+    trace_nlsql_response(
+        {
+            "generated_sql": generated_sql,
+            "confidence": None,
+            "reasoning": None,
+            "selected_tables": selected_tables or list(INVENTORY_SCHEMA_TABLES),
+        },
+        trace_id=resolved_trace_id,
     )
 
     if generated_sql == "INVALID_DOMAIN_QUERY":
@@ -112,10 +164,18 @@ def ask_inventory_sql(question: str) -> dict[str, Any]:
             "error": "unsafe_query",
         }
 
+    trace_sql_execute({"sql": generated_sql}, trace_id=resolved_trace_id)
+
     try:
         with _db_engine().connect() as conn:
             result = conn.execute(text(generated_sql))
             rows = result.fetchall()
+            columns = list(result.keys()) if result.keys() else []
+
+        trace_sql_result(
+            summarize_sql_rows(rows, columns),
+            trace_id=resolved_trace_id,
+        )
 
         formatted_prompt = f"""
         User Question:
@@ -127,12 +187,23 @@ def ask_inventory_sql(question: str) -> dict[str, Any]:
         Generate a short natural language response.
         """
 
+        trace_llm_input(
+            llm_input_payload(context=formatted_prompt, row_count=len(rows)),
+            trace_id=resolved_trace_id,
+            prompt=formatted_prompt,
+        )
+
         response = _llm_client().chat.completions.create(
             model="meta/llama-3.1-8b-instruct",
             messages=[{"role": "user", "content": formatted_prompt}],
             temperature=0,
         )
         final_answer = response.choices[0].message.content
+
+        trace_llm_output(
+            llm_output_payload(final_answer, status="success"),
+            trace_id=resolved_trace_id,
+        )
 
         return {
             "question": question,
@@ -141,6 +212,10 @@ def ask_inventory_sql(question: str) -> dict[str, Any]:
             "answer": final_answer,
         }
     except Exception as exc:
+        trace_llm_output(
+            llm_output_payload(None, status="error"),
+            trace_id=resolved_trace_id,
+        )
         return {
             "question": question,
             "sql": generated_sql,

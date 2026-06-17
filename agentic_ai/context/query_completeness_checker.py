@@ -22,6 +22,16 @@ class QueryCompletenessChecker:
 
     @staticmethod
     def check(task: str, entities: dict[str, str]) -> QueryCompletenessResult:
+        if task == "hub_lookup" and entities.get("hub_id") and not entities.get("city_name"):
+            question = ClarificationManager.entity_question(task, ["city_name"])
+            return QueryCompletenessResult(
+                complete=False,
+                needs_clarification=True,
+                clarification_type=ClarificationType.ENTITY,
+                question=question,
+                missing_entities=["city_name"],
+            )
+
         requirements = QUERY_ENTITY_REQUIREMENTS.get(task)
         if not requirements:
             return QueryCompletenessResult(complete=True)
@@ -30,6 +40,14 @@ class QueryCompletenessChecker:
             return QueryCompletenessResult(complete=True)
 
         missing = QueryCompletenessChecker._missing_entity_groups(requirements, entities)
+        if task == "next_stop_lookup":
+            has_courier = bool(entities.get("courier_id")) or entities.get("self_scoped") == "true"
+            if has_courier:
+                missing = [
+                    field
+                    for field in ("current_stop", "last_completed_order")
+                    if field not in entities
+                ]
         question = ClarificationManager.entity_question(task, missing)
         return QueryCompletenessResult(
             complete=False,

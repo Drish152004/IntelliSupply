@@ -16,6 +16,10 @@ def resolve_courier_identity(authenticated_user: dict[str, Any] | None) -> dict[
 
     Returns:
         {
+            "user_id": "<jwt sub>",
+            "email": "<user email>",
+            "name": "<user name>",
+            "role_id": <role id or None>,
             "user_role": "<ADMIN|LOGISTICS|INVENTORY|COURIER>",
             "logistics_session": {"courier_id": "..."}  # when courier_id present
         }
@@ -33,6 +37,10 @@ def resolve_courier_identity(authenticated_user: dict[str, Any] | None) -> dict[
     logistics_session["user_role"] = user_role
 
     return {
+        "user_id": authenticated_user.get("user_id"),
+        "email": authenticated_user.get("email"),
+        "name": authenticated_user.get("name"),
+        "role_id": authenticated_user.get("role_id"),
         "user_role": user_role,
         "logistics_session": logistics_session,
     }
