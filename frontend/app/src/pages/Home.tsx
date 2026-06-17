@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useSessionStorageState } from '@/hooks/useSessionStorage';
 import Navbar from '@/components/Navbar';
 import RouteMap from '@/components/RouteMap';
 import AICopilot from '@/components/AICopilot';
@@ -73,8 +74,8 @@ export default function LogisticsDashboard() {
   const isManager = user?.role === 'admin' || user?.role === 'logistics_manager';
   const isCourier = user?.role === 'courier';
 
-  const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
-  const [highlightedOrderId, setHighlightedOrderId] = useState<string | null>(null);
+  const [selectedRouteId, setSelectedRouteId] = useSessionStorageState<string | null>('logistics_route_id', null);
+  const [highlightedOrderId, setHighlightedOrderId] = useSessionStorageState<string | null>('logistics_highlighted_order_id', null);
   const [mapRouteLoading, setMapRouteLoading] = useState(false);
 
   // ── Add-shipment form (managers only) ────────────────────────────────────
@@ -99,13 +100,13 @@ export default function LogisticsDashboard() {
   // ── Current shipments panel ────────────────────────────────────────────
   const [currentShipments, setCurrentShipments] = useState<ShipmentListItem[]>([]);
   const [shipmentsLoading, setShipmentsLoading] = useState(false);
-  const [filterDeliveryDay, setFilterDeliveryDay] = useState(todayISO());
+  const [filterDeliveryDay, setFilterDeliveryDay] = useSessionStorageState('logistics_delivery_day', todayISO());
   const [deliveryDaysLoaded, setDeliveryDaysLoaded] = useState(false);
   const [mapMessage, setMapMessage] = useState<string | null>(null);
 
   // Manager courier dropdown
   const [couriers, setCouriers] = useState<CourierListItem[]>([]);
-  const [selectedCourierId, setSelectedCourierId] = useState<string>('');
+  const [selectedCourierId, setSelectedCourierId] = useSessionStorageState<string>('logistics_courier_id', '');
 
   // ── Order detail dialog ────────────────────────────────────────────────
   const [detailOpen, setDetailOpen] = useState(false);
@@ -125,7 +126,7 @@ export default function LogisticsDashboard() {
   const [allShipments, setAllShipments] = useState<ShipmentListItem[]>([]);
   const [allShipmentsLoading, setAllShipmentsLoading] = useState(false);
   const [allShipmentsSearch, setAllShipmentsSearch] = useState('');
-  const [showAllDates, setShowAllDates] = useState(false);
+  const [showAllDates, setShowAllDates] = useSessionStorageState('logistics_show_all_dates', false);
   const [logisticsKpis, setLogisticsKpis] = useState<LogisticsKpis | null>(null);
   const [kpisLoading, setKpisLoading] = useState(false);
 

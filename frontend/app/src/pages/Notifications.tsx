@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSessionStorageState } from '@/hooks/useSessionStorage';
 import Navbar from '@/components/Navbar';
 import { Bell, AlertTriangle, Clock3, Search, Package, Truck, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -96,9 +97,9 @@ export default function Notifications() {
   const tabs = ROLE_TABS[role] ?? ROLE_TABS.admin;
   const allowedCategories = ROLE_CATEGORIES[role] ?? ROLE_CATEGORIES.admin;
 
-  const [activeTab, setActiveTab] = useState('All');
-  const [search, setSearch] = useState('');
-  const [unreadOnly, setUnreadOnly] = useState(false);
+  const [activeTab, setActiveTab] = useSessionStorageState('notifications_active_tab', 'All');
+  const [search, setSearch] = useSessionStorageState('notifications_search', '');
+  const [unreadOnly, setUnreadOnly] = useSessionStorageState('notifications_unread_only', false);
   const [notificationItems, setNotificationItems] = useState<NotificationItem[]>([]);
   const [loading, setLoading] = useState(true);
 

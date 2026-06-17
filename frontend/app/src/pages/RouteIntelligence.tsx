@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSessionStorageState } from '@/hooks/useSessionStorage';
 import Navbar from '@/components/Navbar';
 import RouteMap from '@/components/RouteMap';
 import { routes } from '@/data/mockData';
@@ -7,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { listShipments, type ShipmentListItem } from '@/lib/api';
 
 export default function RouteIntelligence() {
-  const [selectedRouteId, setSelectedRouteId] = useState<string>(routes[0]?.id ?? '');
+  const [selectedRouteId, setSelectedRouteId] = useSessionStorageState<string>('intelligence_selected_route_id', routes[0]?.id ?? '');
   const [shipments, setShipments] = useState<ShipmentListItem[]>([]);
   const selectedRoute = useMemo(
     () => routes.find((route) => route.id === selectedRouteId) || routes[0],

@@ -1,4 +1,5 @@
-﻿import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { useSessionStorageState } from '@/hooks/useSessionStorage';
 import { MessageSquare, Trash2, Send, Mic, MicOff, Sparkles, Bot, User, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -55,14 +56,14 @@ function buildVoiceUserMessage(original: string, english: string, lang?: string 
 
 export default function AICopilot({ compact = false, expanded = false, domain = 'logistics' }: AICopilotProps) {
   const isCompact = compact && !expanded;
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useSessionStorageState<ChatMessage[]>(`copilot_messages_${domain}`, []);
   const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
-  const [logisticsSession, setLogisticsSession] = useState<Record<string, unknown> | null>(null);
-  const [inventorySession, setInventorySession] = useState<Record<string, unknown> | null>(null);
+  const [logisticsSession, setLogisticsSession] = useSessionStorageState<Record<string, unknown> | null>('copilot_logistics_session', null);
+  const [inventorySession, setInventorySession] = useSessionStorageState<Record<string, unknown> | null>('copilot_inventory_session', null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);

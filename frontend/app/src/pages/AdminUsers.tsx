@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSessionStorageState } from '@/hooks/useSessionStorage';
 import { Link } from 'react-router';
 import Navbar from '@/components/Navbar';
 import { Input } from '@/components/ui/input';
@@ -12,8 +13,8 @@ const statusClasses: Record<string, string> = {
 };
 
 export default function AdminUsers() {
-  const [query, setQuery] = useState('');
-  const [roleFilter, setRoleFilter] = useState('All roles');
+  const [query, setQuery] = useSessionStorageState('admin_users_query', '');
+  const [roleFilter, setRoleFilter] = useSessionStorageState('admin_users_role_filter', 'All roles');
   const [users, setUsers] = useState<AdminUserRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

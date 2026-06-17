@@ -100,6 +100,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     localStorage.removeItem(STORAGE_KEY);
     setAccessToken(null);
+    sessionStorage.clear();
   }, []);
 
   /* Restore session from refresh cookie (OAuth / cookie-based sessions). */

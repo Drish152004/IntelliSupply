@@ -27,7 +27,7 @@ export interface ChatMessage {
   id: string;
   role: 'user' | 'ai';
   content: string;
-  timestamp: Date;
+  timestamp: Date | string;
 }
 
 export const locations: Location[] = [

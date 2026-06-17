@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSessionStorageState } from '@/hooks/useSessionStorage';
 import { Settings2, Sparkles } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import EntityScopePanel, { deriveScopeOptions } from '@/components/planning/EntityScopePanel';
@@ -41,24 +42,24 @@ export default function Planning() {
   const [auditLoading, setAuditLoading] = useState(false);
   const [automationModalOpen, setAutomationModalOpen] = useState(false);
 
-  const [hubId, setHubId] = useState('');
-  const [category, setCategory] = useState('');
-  const [productId, setProductId] = useState('');
-  const [simulationDate, setSimulationDate] = useState('');
-  const [planningWindowDays, setPlanningWindowDays] = useState(7);
+  const [hubId, setHubId] = useSessionStorageState('planning_hub_id', '');
+  const [category, setCategory] = useSessionStorageState('planning_category', '');
+  const [productId, setProductId] = useSessionStorageState('planning_product_id', '');
+  const [simulationDate, setSimulationDate] = useSessionStorageState('planning_date', '');
+  const [planningWindowDays, setPlanningWindowDays] = useSessionStorageState('planning_window', 7);
 
-  const [scenarioQuery, setScenarioQuery] = useState('');
-  const [scenarioPatch, setScenarioPatch] = useState<ScenarioPatch | null>(null);
-  const [activeExampleId, setActiveExampleId] = useState<string | null>(null);
-  const [clarificationQuestions, setClarificationQuestions] = useState<string[]>([]);
+  const [scenarioQuery, setScenarioQuery] = useSessionStorageState('planning_query', '');
+  const [scenarioPatch, setScenarioPatch] = useSessionStorageState<ScenarioPatch | null>('planning_patch', null);
+  const [activeExampleId, setActiveExampleId] = useSessionStorageState<string | null>('planning_example_id', null);
+  const [clarificationQuestions, setClarificationQuestions] = useSessionStorageState<string[]>('planning_questions', []);
 
-  const [result, setResult] = useState<PlanningSimulationResult | null>(null);
+  const [result, setResult] = useSessionStorageState<PlanningSimulationResult | null>('planning_result', null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [selectedStateCard, setSelectedStateCard] = useState<string | null>(null);
-  const [selectedCase, setSelectedCase] = useState<'best' | 'likely' | 'worst' | null>(null);
-  const [selectedDecisionId, setSelectedDecisionId] = useState<string | null>(null);
+  const [selectedStateCard, setSelectedStateCard] = useSessionStorageState<string | null>('planning_state_card', null);
+  const [selectedCase, setSelectedCase] = useSessionStorageState<'best' | 'likely' | 'worst' | null>('planning_case', null);
+  const [selectedDecisionId, setSelectedDecisionId] = useSessionStorageState<string | null>('planning_decision_id', null);
 
   const requestIdRef = useRef(0);
 

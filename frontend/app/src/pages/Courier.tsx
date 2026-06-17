@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useSessionStorageState } from '@/hooks/useSessionStorage';
 import Navbar from '@/components/Navbar';
 import RouteMap from '@/components/RouteMap';
 import AICopilot from '@/components/AICopilot';
@@ -41,14 +42,14 @@ export default function Courier() {
 
   const [shipments, setShipments] = useState<ShipmentListItem[]>([]);
   const [shipmentsLoading, setShipmentsLoading] = useState(false);
-  const [deliveryDay, setDeliveryDay] = useState(todayISO());
+  const [deliveryDay, setDeliveryDay] = useSessionStorageState('courier_delivery_day', todayISO());
 
   const [routeResult, setRouteResult] = useState<CourierRouteResult | null>(null);
   const [routeLoading, setRouteLoading] = useState(false);
 
   const [hubLocations, setHubLocations] = useState<HubMapLocation[]>([]);
-  const [highlightedOrderId, setHighlightedOrderId] = useState<string | null>(null);
-  const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
+  const [highlightedOrderId, setHighlightedOrderId] = useSessionStorageState<string | null>('courier_highlighted_order_id', null);
+  const [selectedRouteId, setSelectedRouteId] = useSessionStorageState<string | null>('courier_selected_route_id', null);
 
   const [mapMessage, setMapMessage] = useState<string | null>(null);
   const [mapRouteLoading, setMapRouteLoading] = useState(false);

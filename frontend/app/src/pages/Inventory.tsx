@@ -1,4 +1,5 @@
-﻿import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useSessionStorageState } from '@/hooks/useSessionStorage';
 import Navbar from '@/components/Navbar';
 import AICopilot from '@/components/AICopilot';
 import {
@@ -111,10 +112,10 @@ export default function Inventory() {
   const [hubs, setHubs] = useState<InventoryHubItem[]>([]);
   const [dropdownLoading, setDropdownLoading] = useState(false);
 
-  const [search, setSearch] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('All');
-  const [statusFilter, setStatusFilter] = useState('All');
-  const [selectedProduct, setSelectedProduct] = useState<ProductRow | null>(null);
+  const [search, setSearch] = useSessionStorageState('inventory_search', '');
+  const [categoryFilter, setCategoryFilter] = useSessionStorageState('inventory_category_filter', 'All');
+  const [statusFilter, setStatusFilter] = useSessionStorageState('inventory_status_filter', 'All');
+  const [selectedProduct, setSelectedProduct] = useSessionStorageState<ProductRow | null>('inventory_selected_product', null);
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
