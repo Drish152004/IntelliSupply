@@ -8,25 +8,35 @@ import AICopilot from '@/components/AICopilot';
 import { getDashboardSummary, listHubLocations, type DashboardSummary, type HubMapLocation } from '@/lib/api';
 
 const defaultSummary: DashboardSummary = {
-  sales_volume_label: 'This week',
-  sales_volume_value: '—',
-  logistics_reliability_pct: 92.4,
-  hardware_uptime_pct: 98.7,
-  active_sessions: 0,
-  orders_funnel: 0,
-  route_on_time_pct: 87,
   recent_shipments: 0,
+  courier_assignment_pct: 0,
+  active_couriers: 0,
+  total_accounts: 0,
+  unassigned_shipments: 0,
+  hub_count: 0,
+  reference_delivery_day: '—',
+  role_distribution: [],
+  logistics: {
+    delivery_day: '—',
+    active_shipments: 0,
+    at_risk_shipments: 0,
+    active_couriers: 0,
+    hub_coverage: 0,
+    unassigned_shipments: 0,
+    courier_assignment_pct: 0,
+    callouts: [],
+  },
 };
 
 export default function Overview() {
   const navigate = useNavigate();
-  const [summary, setSummary] = useState<DashboardSummary>(defaultSummary);
+  const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [hubLocations, setHubLocations] = useState<HubMapLocation[]>([]);
 
   useEffect(() => {
     void getDashboardSummary()
       .then(setSummary)
-      .catch(() => undefined);
+      .catch(() => setSummary(null));
   }, []);
 
   useEffect(() => {
@@ -35,32 +45,35 @@ export default function Overview() {
       .catch(() => setHubLocations([]));
   }, []);
 
+  const data = summary ?? defaultSummary;
+  const loaded = summary !== null;
+
   const summaryCards = [
     {
-      label: 'Sales volume',
-      value: summary.sales_volume_value,
-      detail: summary.sales_volume_label,
+      label: 'Recent shipments',
+      value: loaded ? String(data.recent_shipments) : '—',
+      detail: 'Orders',
       color: 'border-pink-100 bg-pink-50 text-pink-900',
       icon: TrendingUp,
     },
     {
-      label: 'Logistics reliability',
-      value: `${summary.logistics_reliability_pct}%`,
-      detail: 'On-time routes',
+      label: 'Courier assignment',
+      value: loaded ? `${data.courier_assignment_pct}%` : '—',
+      detail: 'Shipments with an assigned courier',
       color: 'border-sky-100 bg-sky-50 text-sky-900',
       icon: Truck,
     },
     {
-      label: 'Hardware uptime',
-      value: `${summary.hardware_uptime_pct}%`,
-      detail: 'Hub devices',
+      label: 'Active couriers',
+      value: loaded ? String(data.active_couriers) : '—',
+      detail: 'All active courier accounts',
       color: 'border-emerald-100 bg-emerald-50 text-emerald-900',
       icon: ShieldCheck,
     },
     {
-      label: 'User sessions',
-      value: summary.active_sessions.toLocaleString(),
-      detail: 'Derived from recent shipments',
+      label: 'Directory accounts',
+      value: loaded ? data.total_accounts.toLocaleString() : '—',
+      detail: 'Profiles and courier accounts',
       color: 'border-amber-100 bg-amber-50 text-amber-900',
       icon: Users,
     },
@@ -68,15 +81,15 @@ export default function Overview() {
 
   const salesCards = [
     {
-      title: 'Orders funnel',
-      subtitle: 'Sales and logistics aligned in one view',
-      value: `${summary.orders_funnel} new`,
+      title: 'Unassigned shipments',
+      subtitle: 'Orders still needing courier assignment',
+      value: loaded ? `${data.unassigned_shipments}` : '—',
       icon: Package,
     },
     {
-      title: 'Route pulse',
-      subtitle: 'Live dispatch and transit health',
-      value: `${summary.route_on_time_pct}% on time`,
+      title: 'Hub coverage',
+      subtitle: 'Distinct hubs in recent shipment lanes',
+      value: loaded ? `${data.hub_count} hubs` : '—',
       icon: Truck,
     },
   ];
@@ -116,26 +129,11 @@ export default function Overview() {
 
         <div className="grid gap-6 xl:grid-cols-[1.6fr_0.95fr]">
           <section className="space-y-6">
-            {/* <div className="page-card">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-sm uppercase tracking-[0.24em] text-muted-foreground">Admin Copilot</p>
-                  <h2 className="text-2xl font-semibold text-foreground">AI guidance for approvals and operations</h2>
-                </div>
-                <button className="rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white shadow-sm">
-                  Launch Copilot
-                </button>
-              </div>
-              <p className="mt-4 text-sm leading-6 text-muted-foreground">
-                Ask the admin copilot for system health, user metrics, and logistics guidance right from the dashboard.
-              </p>
-            </div> */}
-
             <div className="page-card">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="text-sm uppercase tracking-[0.24em] text-muted-foreground">Sales & logistics</p>
-                  <h2 className="text-2xl font-semibold text-foreground">Revenue and delivery flow</h2>
+                  <h2 className="text-2xl font-semibold text-foreground">Operational health</h2>
                 </div>
                 <button
                   onClick={() => navigate('/inventory')}

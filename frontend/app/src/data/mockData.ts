@@ -23,21 +23,6 @@ export interface Route {
   routeType: 'primary' | 'alternate';
 }
 
-export interface Shipment {
-  id: string;
-  origin: string;
-  destination: string;
-  vehicleType: string;
-  driver: string;
-  eta: string;
-  delayProbability: number;
-  priority: 'high' | 'medium' | 'low';
-  status: 'ontime' | 'delayed' | 'critical' | 'optimized';
-  weather: string;
-  routeId: string;
-  shipmentType: string;
-}
-
 export interface ChatMessage {
   id: string;
   role: 'user' | 'ai';
@@ -189,132 +174,6 @@ export const routes: Route[] = [
   },
 ];
 
-export const shipments: Shipment[] = [
-  {
-    id: 'SHP-78432',
-    origin: 'Bangalore Central Hub',
-    destination: 'Chennai Hub',
-    vehicleType: 'Refrigerated Truck',
-    driver: 'Rajesh Kumar',
-    eta: '4h 30m',
-    delayProbability: 12,
-    priority: 'high',
-    status: 'ontime',
-    weather: 'Clear, 28°C',
-    routeId: 'RT-2847',
-    shipmentType: 'Pharmaceuticals',
-  },
-  {
-    id: 'SHP-78433',
-    origin: 'Bangalore Central Hub',
-    destination: 'Hyderabad Hub',
-    vehicleType: 'Container Truck',
-    driver: 'Suresh Reddy',
-    eta: '8h 15m',
-    delayProbability: 35,
-    priority: 'medium',
-    status: 'delayed',
-    weather: 'Light Rain, 24°C',
-    routeId: 'RT-2848',
-    shipmentType: 'Electronics',
-  },
-  {
-    id: 'SHP-78434',
-    origin: 'Pune Hub',
-    destination: 'Mumbai Hub',
-    vehicleType: 'Flatbed Truck',
-    driver: 'Amit Patil',
-    eta: '3h 45m',
-    delayProbability: 8,
-    priority: 'high',
-    status: 'optimized',
-    weather: 'Clear, 30°C',
-    routeId: 'RT-2849',
-    shipmentType: 'Steel Coils',
-  },
-  {
-    id: 'SHP-78435',
-    origin: 'Coimbatore Hub',
-    destination: 'Bangalore Central Hub',
-    vehicleType: 'Container Truck',
-    driver: 'Venkatesh Iyer',
-    eta: '6h 20m',
-    delayProbability: 62,
-    priority: 'high',
-    status: 'critical',
-    weather: 'Heavy Rain, 22°C',
-    routeId: 'RT-2850',
-    shipmentType: 'Auto Parts',
-  },
-  {
-    id: 'SHP-78436',
-    origin: 'Chennai Hub',
-    destination: 'Kochi Hub',
-    vehicleType: 'Refrigerated Truck',
-    driver: 'Thomas Mathew',
-    eta: '10h 30m',
-    delayProbability: 18,
-    priority: 'medium',
-    status: 'ontime',
-    weather: 'Partly Cloudy, 29°C',
-    routeId: 'RT-2851',
-    shipmentType: 'Seafood Export',
-  },
-  {
-    id: 'SHP-78437',
-    origin: 'Vizag Hub',
-    destination: 'Chennai Hub',
-    vehicleType: 'Heavy Hauler',
-    driver: 'Prasad Rao',
-    eta: '14h 00m',
-    delayProbability: 22,
-    priority: 'low',
-    status: 'delayed',
-    weather: 'Thunderstorms, 26°C',
-    routeId: 'RT-2852',
-    shipmentType: 'Minerals',
-  },
-  {
-    id: 'SHP-78438',
-    origin: 'Nagpur Hub',
-    destination: 'Ahmedabad Hub',
-    vehicleType: 'Container Truck',
-    driver: 'Manoj Sharma',
-    eta: '16h 45m',
-    delayProbability: 15,
-    priority: 'medium',
-    status: 'ontime',
-    weather: 'Clear, 32°C',
-    routeId: 'RT-2853',
-    shipmentType: 'Textiles',
-  },
-  {
-    id: 'SHP-78439',
-    origin: 'Bangalore Central Hub',
-    destination: 'Pune Hub',
-    vehicleType: 'Box Truck',
-    driver: 'Deepak Joshi',
-    eta: '12h 30m',
-    delayProbability: 28,
-    priority: 'medium',
-    status: 'delayed',
-    weather: 'Foggy, 20°C',
-    routeId: 'RT-2854',
-    shipmentType: 'Consumer Goods',
-  },
-];
-
-export const quickActions = [
-  'Add Order',
-  'Create Shipment',
-  'Optimize Routes',
-  'Generate ETA Report',
-  'Detect Delays',
-  'Reassign Driver',
-  'Simulate Traffic',
-  'Risk Analysis',
-];
-
 export const suggestedPrompts = [
   'Optimize all delayed shipments',
   'Find fastest route',
@@ -322,33 +181,6 @@ export const suggestedPrompts = [
   'Predict traffic delays',
   'Add new shipment',
   'Show hub bottlenecks',
-];
-
-export const quickActionResponses: Record<string, string> = {
-  'Add Order': 'New order form initialized. Please provide the origin, destination, and cargo details to proceed.',
-  'Create Shipment': 'Shipment creation wizard started. I can auto-assign the nearest available driver. Should I proceed?',
-  'Optimize Routes': 'Analyzing all active routes for efficiency improvements... Found 3 routes with 15-22% potential savings. Applying optimizations now.',
-  'Generate ETA Report': 'Compiling ETA accuracy report for the last 24 hours... Current on-time performance is 87.3%, up 2.1% from yesterday.',
-  'Detect Delays': 'Scanning weather and traffic data... 2 shipments at risk: SHP-78435 (Heavy Rain) and SHP-78433 (Road Construction).',
-  'Reassign Driver': 'Available drivers in your network: Rajesh Kumar (Bangalore), Amit Patil (Pune), Manoj Sharma (Nagpur). Who should I reassign?',
-  'Simulate Traffic': 'Traffic simulation running for Bangalore-Hyderabad corridor... Peak congestion expected at 6:00 PM. Suggesting alternate route via Kurnool.',
-  'Risk Analysis': 'Comprehensive risk analysis complete. Top risks: Weather (32%), Traffic (28%), Vehicle Breakdown (15%). Mitigation strategies available.',
-};
-
-export const initialChatMessages: ChatMessage[] = [
-  {
-    id: 'msg-1',
-    role: 'user',
-    content: 'Optimize deliveries for Bangalore region',
-    timestamp: new Date(Date.now() - 3600000),
-  },
-  {
-    id: 'msg-2',
-    role: 'ai',
-    content: 'I found 3 alternate routes that reduce total travel time by 18%. Route RT-2849 (Pune to Mumbai) has been auto-optimized with fuel savings of 12%. Would you like me to apply these changes?',
-    timestamp: new Date(Date.now() - 3500000),
-  },
-
 ];
 
 export const statsCards = [

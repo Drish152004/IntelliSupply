@@ -20,6 +20,7 @@ import { useLogisticsLocations } from '@/hooks/useLogisticsLocations';
 import {
   createShipment,
   getShipment,
+  getLogisticsKpis,
   listShipments,
   listDeliveryDays,
   listCouriersWithOrders,
@@ -28,6 +29,7 @@ import {
   type CourierListItem,
   type CourierRouteResult,
   type HubMapLocation,
+  type LogisticsKpis,
   type OrderDetail,
   type ShipmentListItem,
 } from '@/lib/api';
@@ -124,6 +126,8 @@ export default function LogisticsDashboard() {
   const [allShipmentsLoading, setAllShipmentsLoading] = useState(false);
   const [allShipmentsSearch, setAllShipmentsSearch] = useState('');
   const [showAllDates, setShowAllDates] = useState(false);
+  const [logisticsKpis, setLogisticsKpis] = useState<LogisticsKpis | null>(null);
+  const [kpisLoading, setKpisLoading] = useState(false);
 
   useEffect(() => {
     setRouteResult(null);
@@ -218,6 +222,52 @@ export default function LogisticsDashboard() {
     loadShipments();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, user, filterDeliveryDay, selectedCourierId, deliveryDaysLoaded, showAllDates]);
+
+  useEffect(() => {
+    if (authLoading || !user || !deliveryDaysLoaded) return;
+    const day = showAllDates ? undefined : filterDeliveryDay || undefined;
+    setKpisLoading(true);
+    void getLogisticsKpis(day)
+      .then(setLogisticsKpis)
+      .catch(() => setLogisticsKpis(null))
+      .finally(() => setKpisLoading(false));
+  }, [authLoading, user, filterDeliveryDay, deliveryDaysLoaded, showAllDates]);
+
+  const mapStats = [
+    {
+      label: 'Active shipments',
+      value: kpisLoading ? '—' : String(logisticsKpis?.active_shipments ?? 0),
+    },
+    {
+      label: 'At-risk shipments',
+      value: kpisLoading ? '—' : String(logisticsKpis?.at_risk_shipments ?? 0),
+    },
+    {
+      label: 'Unassigned',
+      value: kpisLoading ? '—' : String(logisticsKpis?.unassigned_shipments ?? 0),
+    },
+  ];
+
+  const routeOpsStats = [
+    {
+      label: 'Active shipments',
+      value: kpisLoading ? '—' : String(logisticsKpis?.active_shipments ?? 0),
+    },
+    {
+      label: 'Courier assignment',
+      value: kpisLoading ? '—' : `${logisticsKpis?.courier_assignment_pct ?? 0}%`,
+    },
+    {
+      label: 'At-risk shipments',
+      value: kpisLoading ? '—' : String(logisticsKpis?.at_risk_shipments ?? 0),
+    },
+    {
+      label: 'Hub coverage',
+      value: kpisLoading ? '—' : String(logisticsKpis?.hub_coverage ?? 0),
+    },
+  ];
+
+  const kpiCallouts = logisticsKpis?.callouts ?? [];
 
   const handleRouteSelect = (routeId: string) => {
     setSelectedRouteId((prev) => (prev === routeId ? null : routeId));
@@ -781,11 +831,7 @@ export default function LogisticsDashboard() {
             </div>
 
             <div className="mt-4 grid shrink-0 grid-cols-3 gap-3 overflow-hidden rounded-xl border border-border bg-slate-50">
-              {[
-                { label: 'Live shipments', value: '142' },
-                { label: 'Risk events', value: '28' },
-                { label: 'AI suggestions', value: '3' },
-              ].map((stat, index) => (
+              {mapStats.map((stat, index) => (
                 <div
                   key={stat.label}
                   className={cn('px-4 py-3.5', index < 2 && 'border-r border-border')}
@@ -874,12 +920,7 @@ export default function LogisticsDashboard() {
               </div>
 
               <div className="grid shrink-0 grid-cols-2 gap-2 border-b border-border p-3">
-                {[
-                  { label: 'Active routes', value: '142' },
-                  { label: 'Delay risk', value: '21%' },
-                  { label: 'Critical alerts', value: '7' },
-                  { label: 'Hub coverage', value: '18' },
-                ].map((stat) => (
+                {routeOpsStats.map((stat) => (
                   <div key={stat.label} className="rounded-lg border border-border bg-slate-50/80 p-3">
                     <p className="text-[9px] uppercase tracking-[0.18em] text-muted-foreground">
                       {stat.label}
@@ -890,24 +931,29 @@ export default function LogisticsDashboard() {
               </div>
 
               <div className="min-h-0 flex-1 space-y-2 overflow-y-auto custom-scrollbar p-3">
-                <div className="rounded-lg bg-slate-50 p-3 text-sm">
-                  <p className="font-semibold">21 routes delayed</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Most impacted: Bengaluru → Chennai.
-                  </p>
-                </div>
-                <div className="rounded-lg bg-slate-50 p-3 text-sm">
-                  <p className="font-semibold">12 recovery actions active</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Priority reallocation in progress.
-                  </p>
-                </div>
-                <div className="rounded-lg border border-amber-100 bg-amber-50/80 p-3 text-sm text-amber-950">
-                  Customs hold on RT-3122 may delay arrival by 5 hours.
-                </div>
-                <div className="rounded-lg border border-red-100 bg-red-50/80 p-3 text-sm text-red-950">
-                  Temperature variance detected for Pharma load RT-2978.
-                </div>
+                {kpisLoading && (
+                  <div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Loading KPIs…
+                  </div>
+                )}
+                {!kpisLoading &&
+                  kpiCallouts.map((callout) => (
+                    <div
+                      key={callout.title}
+                      className={cn(
+                        'rounded-lg p-3 text-sm',
+                        callout.severity === 'critical'
+                          ? 'border border-red-100 bg-red-50/80 text-red-950'
+                          : callout.severity === 'warning'
+                            ? 'border border-amber-100 bg-amber-50/80 text-amber-950'
+                            : 'bg-slate-50',
+                      )}
+                    >
+                      <p className="font-semibold">{callout.title}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{callout.detail}</p>
+                    </div>
+                  ))}
               </div>
             </div>
           </aside>

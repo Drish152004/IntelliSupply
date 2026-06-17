@@ -559,9 +559,50 @@ export async function transcribeVoice(audio: Blob) {
 //  DASHBOARD + NOTIFS
 // =======================
 
-export async function getDashboardSummary() {
-  const data = await apiFetch<{ summary: any }>('/api/dashboard/summary');
+export interface LogisticsCallout {
+  title: string;
+  detail: string;
+  severity: 'info' | 'warning' | 'critical';
+}
+
+export interface LogisticsKpis {
+  delivery_day: string;
+  active_shipments: number;
+  at_risk_shipments: number;
+  active_couriers: number;
+  hub_coverage: number;
+  unassigned_shipments: number;
+  courier_assignment_pct: number;
+  callouts: LogisticsCallout[];
+}
+
+export interface RoleDistributionEntry {
+  role: string;
+  count: number;
+}
+
+export interface DashboardSummary {
+  recent_shipments: number;
+  courier_assignment_pct: number;
+  active_couriers: number;
+  total_accounts: number;
+  unassigned_shipments: number;
+  hub_count: number;
+  reference_delivery_day: string;
+  inventory_summary?: Record<string, unknown> | null;
+  role_distribution: RoleDistributionEntry[];
+  logistics: LogisticsKpis;
+}
+
+export async function getDashboardSummary(): Promise<DashboardSummary> {
+  const data = await apiFetch<{ summary: DashboardSummary }>('/api/dashboard/summary');
   return data.summary;
+}
+
+export async function getLogisticsKpis(deliveryDay?: string): Promise<LogisticsKpis> {
+  const params = deliveryDay ? `?delivery_day=${encodeURIComponent(deliveryDay)}` : '';
+  const data = await apiFetch<{ kpis: LogisticsKpis }>(`/api/dashboard/logistics-kpis${params}`);
+  return data.kpis;
 }
 
 export async function listNotifications(limit = 20) {
