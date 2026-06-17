@@ -25,7 +25,7 @@ class RankedDecision:
     rank: int
     decision: Decision
     comparison: DecisionComparison
-    score: float
+    utility_score: float
 
 
 @dataclass

@@ -176,7 +176,7 @@ export interface RankedDecision {
   rank: number;
   decision: Decision;
   comparison: DecisionComparison;
-  score: number;
+  utility_score: number;
 }
 
 export interface RecommendationSummary {
@@ -250,6 +250,16 @@ export function asBoolFlag(value: number | boolean | null | undefined): boolean 
 
 export function formatPercentFraction(value: number, digits = 1): string {
   return `${(value * 100).toFixed(digits)}%`;
+}
+
+/** Dataset percent fields (e.g. demand_growth_pct) are already stored as percent, not 0–1 fractions. */
+export function formatPercentValue(value: number, digits = 1): string {
+  return `${value.toFixed(digits)}%`;
+}
+
+/** Format backend utility_score (0–100) for display. */
+export function formatUtilityScore(rd: RankedDecision): string {
+  return `${Math.round(rd.utility_score)}/100`;
 }
 
 export function formatPatchLabels(patch: ScenarioPatch | null | undefined): string[] {

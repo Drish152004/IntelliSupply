@@ -14,7 +14,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import type { ScenarioState } from '@/lib/planningTypes';
-import { asBoolFlag, formatPercentFraction } from '@/lib/planningTypes';
+import { asBoolFlag, formatPercentValue } from '@/lib/planningTypes';
 
 interface InventoryStateModalProps {
   cardId: string | null;
@@ -77,11 +77,10 @@ export default function InventoryStateModal({
     fields = [
       { label: 'rolling_7_avg_demand', value: demand.rolling_7_avg_demand.toFixed(2) },
       { label: 'rolling_30_avg_demand', value: demand.rolling_30_avg_demand.toFixed(2) },
-      { label: 'demand_growth_pct', value: formatPercentFraction(demand.demand_growth_pct) },
+      { label: 'demand_growth_pct', value: formatPercentValue(demand.demand_growth_pct) },
       { label: 'previous_year_demand', value: demand.previous_year_demand?.toFixed(2) ?? 'N/A' },
-      { label: 'yoy_demand_change_pct', value: demand.yoy_demand_change_pct != null ? formatPercentFraction(demand.yoy_demand_change_pct) : 'N/A' },
+      { label: 'yoy_demand_change_pct', value: demand.yoy_demand_change_pct != null ? formatPercentValue(demand.yoy_demand_change_pct) : 'N/A' },
       { label: 'yoy_trend_label', value: demand.yoy_trend_label },
-      { label: 'demand_cv', value: demand.demand_cv.toFixed(3) },
       { label: 'volatility_label', value: demand.volatility_label },
     ];
   } else if (cardId === 'forecast') {
@@ -90,8 +89,6 @@ export default function InventoryStateModal({
       { label: 'predicted_demand', value: Math.round(forecast.predicted_demand).toString() },
       { label: 'lower_bound', value: Math.round(forecast.lower_bound).toString() },
       { label: 'upper_bound', value: Math.round(forecast.upper_bound).toString() },
-      { label: 'forecast_uncertainty', value: forecast.forecast_uncertainty.toFixed(3) },
-      { label: 'confidence_score', value: formatPercentFraction(forecast.confidence_score) },
       { label: 'horizon_days', value: String(forecast.forecast_daily.length) },
     ];
   } else if (cardId === 'risk') {
@@ -114,13 +111,9 @@ export default function InventoryStateModal({
     fields = [
       { label: 'has_incoming_replenishment', value: replen.has_incoming_replenishment ? 'Yes' : 'No' },
       { label: 'quantity_ordered', value: replen.quantity_ordered?.toString() ?? 'N/A' },
-      { label: 'quantity_received', value: replen.quantity_received?.toString() ?? 'N/A' },
       { label: 'lead_time_days', value: replen.lead_time_days?.toString() ?? 'N/A' },
-      { label: 'actual_delay_days', value: replen.actual_delay_days?.toString() ?? 'N/A' },
-      { label: 'replenishment_status', value: replen.replenishment_status ?? 'N/A' },
       { label: 'priority', value: replen.priority ?? 'N/A' },
       { label: 'expected_arrival_date', value: replen.expected_arrival_date ?? 'N/A' },
-      { label: 'actual_arrival_date', value: replen.actual_arrival_date ?? 'N/A' },
     ];
   }
 

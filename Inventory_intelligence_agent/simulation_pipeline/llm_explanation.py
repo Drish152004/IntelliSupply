@@ -78,9 +78,10 @@ def _build_template_explanation(payload: ExplainabilityPayload) -> LLMExplanatio
     )
 
     if rec.get("selected_intervention"):
+        utility = rec.get("utility_score", 0)
         recommended_action = (
             f"Recommended action: {rec.get('selected_intervention')} "
-            f"(score {rec.get('score'):.3f}). {rec.get('explanation', '')}"
+            f"(effectiveness {utility:.0f}/100). {rec.get('explanation', '')}"
         )
     else:
         recommended_action = rec.get("explanation", "No intervention recommended.")
@@ -95,7 +96,8 @@ def _build_template_explanation(payload: ExplainabilityPayload) -> LLMExplanatio
 
     if payload.ranked_decisions_summary:
         lines = [
-            f"#{item['rank']} {item['title']} (score {item['score']:.3f})"
+            f"#{item['rank']} {item['title']} "
+            f"(effectiveness {item.get('utility_score', 0):.0f}/100)"
             for item in payload.ranked_decisions_summary
         ]
         decision_comparison = "Evaluated interventions (ranked): " + "; ".join(lines) + "."

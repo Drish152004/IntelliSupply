@@ -7,7 +7,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import type { RankedDecision, RecommendationSummary } from '@/lib/planningTypes';
-import { formatPercentFraction } from '@/lib/planningTypes';
+import { formatPercentFraction, formatUtilityScore } from '@/lib/planningTypes';
 
 interface InterventionDetailModalProps {
   decisionId: string | null;
@@ -40,7 +40,7 @@ export default function InterventionDetailModal({
             {rd.decision.title}
           </DialogTitle>
           <DialogDescription>
-            Rank #{rd.rank} · Score {(rd.score * 100).toFixed(0)}/100 · {rd.decision.decision_type}
+            Rank #{rd.rank} · Effectiveness {formatUtilityScore(rd)} · {rd.decision.decision_type}
           </DialogDescription>
         </DialogHeader>
 

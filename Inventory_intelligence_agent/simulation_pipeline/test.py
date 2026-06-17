@@ -2649,9 +2649,14 @@ def run_deterministic_stages_8_11_tests() -> int:
         f"top={ranked[0].decision.decision_id}",
     )
     check(
-        "scores are descending",
-        ranked[0].score >= ranked[1].score,
-        f"scores={[item.score for item in ranked]}",
+        "utility scores are descending",
+        ranked[0].utility_score >= ranked[1].utility_score,
+        f"utility_scores={[item.utility_score for item in ranked]}",
+    )
+    check(
+        "better decision has higher absolute utility",
+        ranked[0].utility_score > ranked[1].utility_score,
+        f"utility_scores={[item.utility_score for item in ranked]}",
     )
 
     recommendation = build_recommendation_summary(

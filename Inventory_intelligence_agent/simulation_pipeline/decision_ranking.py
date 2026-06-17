@@ -9,17 +9,9 @@ _WEIGHTS = {
     "ending_inv": 0.10,
 }
 
-
-def _min_max_normalize(values: list[float]) -> list[float]:
-    if not values:
-        return []
-    if len(values) == 1:
-        return [1.0]
-    lo = min(values)
-    hi = max(values)
-    if hi == lo:
-        return [1.0 for _ in values]
-    return [(v - lo) / (hi - lo) for v in values]
+_SHORTAGE_CAP = 500.0
+_DAYS_BELOW_SAFETY_STOCK_CAP = 7.0
+_ENDING_INVENTORY_CAP = 500.0
 
 
 def _benefit_values(comparison: DecisionComparison) -> dict[str, float]:
@@ -31,38 +23,36 @@ def _benefit_values(comparison: DecisionComparison) -> dict[str, float]:
     }
 
 
-def _score_comparison(
-    comparison: DecisionComparison,
-    normalized: dict[str, list[float]],
-    index: int,
-) -> float:
+def absolute_utility_score(comparison: DecisionComparison) -> float:
+    """Absolute intervention effectiveness on a 0–100 scale (not peer-normalized)."""
     benefits = _benefit_values(comparison)
-    return sum(
-        _WEIGHTS[key] * normalized[key][index]
-        for key in _WEIGHTS
+    stockout_benefit = max(0.0, benefits["stockout"])
+    shortage_benefit = min(1.0, max(0.0, benefits["shortage"] / _SHORTAGE_CAP))
+    days_benefit = min(
+        1.0,
+        max(0.0, benefits["days_ss"] / _DAYS_BELOW_SAFETY_STOCK_CAP),
     )
+    ending_benefit = min(1.0, max(0.0, benefits["ending_inv"] / _ENDING_INVENTORY_CAP))
+    weighted = sum(_WEIGHTS[key] * value for key, value in {
+        "stockout": stockout_benefit,
+        "shortage": shortage_benefit,
+        "days_ss": days_benefit,
+        "ending_inv": ending_benefit,
+    }.items())
+    return round(min(100.0, max(0.0, weighted * 100.0)), 1)
 
 
 def rank_decisions(comparisons: list[DecisionComparison]) -> list[RankedDecision]:
     if not comparisons:
         return []
 
-    benefit_keys = list(_WEIGHTS.keys())
-    raw_by_key: dict[str, list[float]] = {key: [] for key in benefit_keys}
-    for comparison in comparisons:
-        benefits = _benefit_values(comparison)
-        for key in benefit_keys:
-            raw_by_key[key].append(benefits[key])
-
-    normalized = {key: _min_max_normalize(raw_by_key[key]) for key in benefit_keys}
-
     scored = [
         (
-            _score_comparison(comparison, normalized, index),
+            absolute_utility_score(comparison),
             comparison.decision.decision_id,
             comparison,
         )
-        for index, comparison in enumerate(comparisons)
+        for comparison in comparisons
     ]
     scored.sort(key=lambda item: (-item[0], item[1]))
 
@@ -71,7 +61,7 @@ def rank_decisions(comparisons: list[DecisionComparison]) -> list[RankedDecision
             rank=rank,
             decision=comparison.decision,
             comparison=comparison,
-            score=score,
+            utility_score=utility,
         )
-        for rank, (score, _decision_id, comparison) in enumerate(scored, start=1)
+        for rank, (utility, _decision_id, comparison) in enumerate(scored, start=1)
     ]

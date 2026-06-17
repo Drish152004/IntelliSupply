@@ -165,7 +165,7 @@ def build_explainability_payload(
             "selected_intervention": rec.decision.title,
             "decision_id": rec.decision.decision_id,
             "decision_type": rec.decision.decision_type.value,
-            "score": rec.score,
+            "utility_score": rec.utility_score,
             "expected_improvements": _comparison_dict(rec.comparison),
             "explanation": recommendation.explanation,
         }
@@ -176,7 +176,7 @@ def build_explainability_payload(
     else:
         recommendation_summary = {
             "selected_intervention": None,
-            "score": None,
+            "utility_score": None,
             "expected_improvements": {},
             "explanation": recommendation.explanation,
         }
@@ -188,7 +188,7 @@ def build_explainability_payload(
             "decision_id": item.decision.decision_id,
             "title": item.decision.title,
             "decision_type": item.decision.decision_type.value,
-            "score": item.score,
+            "utility_score": item.utility_score,
             "comparison": _comparison_dict(item.comparison),
         }
         for item in ranked_decisions[:top_n_decisions]

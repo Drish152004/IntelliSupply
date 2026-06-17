@@ -6,7 +6,7 @@ import {
   Star,
   Truck,
 } from 'lucide-react';
-import type { RankedDecision, RecommendationSummary } from '@/lib/planningTypes';
+import { formatUtilityScore, type RankedDecision, type RecommendationSummary } from '@/lib/planningTypes';
 
 interface InterventionRankingPanelProps {
   rankedDecisions: RankedDecision[];
@@ -85,7 +85,7 @@ export default function InterventionRankingPanel({
               <h4 className="font-bold text-slate-900">{rd.decision.title}</h4>
               <p className="mt-2 text-xs text-slate-500 line-clamp-3">{rd.decision.rationale}</p>
               <p className="mt-3 text-xs font-semibold text-indigo-600">
-                Score: {(rd.score * 100).toFixed(0)}/100
+                Effectiveness: {formatUtilityScore(rd)}
               </p>
               <div className="mt-2 text-xs font-semibold text-indigo-600 flex items-center gap-1">
                 View comparison

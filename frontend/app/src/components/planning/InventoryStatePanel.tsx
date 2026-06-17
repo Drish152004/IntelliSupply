@@ -7,7 +7,7 @@ import {
   Warehouse,
 } from 'lucide-react';
 import type { ScenarioState } from '@/lib/planningTypes';
-import { asBoolFlag, formatPercentFraction } from '@/lib/planningTypes';
+import { asBoolFlag, formatPercentValue } from '@/lib/planningTypes';
 
 interface InventoryStatePanelProps {
   scenario: ScenarioState;
@@ -31,14 +31,14 @@ export default function InventoryStatePanel({
       title: 'Demand',
       icon: Activity,
       color: 'emerald',
-      summary: `7d avg: ${scenario.demand.rolling_7_avg_demand.toFixed(1)} | growth ${formatPercentFraction(scenario.demand.demand_growth_pct)}`,
+      summary: `7d avg: ${scenario.demand.rolling_7_avg_demand.toFixed(1)} | growth ${formatPercentValue(scenario.demand.demand_growth_pct)}`,
     },
     {
       id: 'forecast',
       title: 'Forecast',
       icon: Activity,
       color: 'cyan',
-      summary: `Predicted: ${Math.round(scenario.forecast.predicted_demand)} | confidence ${(scenario.forecast.confidence_score * 100).toFixed(0)}%`,
+      summary: `Predicted: ${Math.round(scenario.forecast.predicted_demand)} | range ${Math.round(scenario.forecast.lower_bound)}–${Math.round(scenario.forecast.upper_bound)}`,
     },
     {
       id: 'risk',
@@ -60,7 +60,7 @@ export default function InventoryStatePanel({
       icon: Package,
       color: 'amber',
       summary: scenario.replenishment.has_incoming_replenishment
-        ? `PO: ${scenario.replenishment.quantity_ordered ?? 0} units | delay ${scenario.replenishment.actual_delay_days ?? 0}d`
+        ? `PO: ${scenario.replenishment.quantity_ordered ?? 0} units | lead ${scenario.replenishment.lead_time_days ?? '—'}d`
         : 'No incoming replenishment',
     },
   ];
