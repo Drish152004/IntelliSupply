@@ -6,13 +6,23 @@ import {
   Star,
   Truck,
 } from 'lucide-react';
-import { formatUtilityScore, type RankedDecision, type RecommendationSummary } from '@/lib/planningTypes';
+import DecisionExecuteButton from '@/components/planning/DecisionExecuteButton';
+import {
+  formatUtilityScore,
+  type ExecutionDecision,
+  type ManualExecutionStatus,
+  type RankedDecision,
+  type RecommendationSummary,
+} from '@/lib/planningTypes';
 
 interface InterventionRankingPanelProps {
   rankedDecisions: RankedDecision[];
   recommendation: RecommendationSummary;
   selectedDecisionId: string | null;
   onSelectDecision: (decisionId: string) => void;
+  policyEvaluations?: ExecutionDecision[];
+  manualExecutionState?: Record<string, ManualExecutionStatus>;
+  onExecuteDecision?: (decisionId: string) => void;
 }
 
 function iconForType(decisionType: string) {
@@ -31,8 +41,14 @@ export default function InterventionRankingPanel({
   recommendation,
   selectedDecisionId,
   onSelectDecision,
+  policyEvaluations = [],
+  manualExecutionState = {},
+  onExecuteDecision,
 }: InterventionRankingPanelProps) {
   const recommendedId = recommendation.recommended_decision?.decision.decision_id;
+
+  const policyByDecisionId = (decisionId: string) =>
+    policyEvaluations.find((item) => item.decision.decision_id === decisionId);
 
   if (rankedDecisions.length === 0) {
     return (
@@ -87,6 +103,16 @@ export default function InterventionRankingPanel({
               <p className="mt-3 text-xs font-semibold text-indigo-600">
                 Effectiveness: {formatUtilityScore(rd)}
               </p>
+              {isRecommended && onExecuteDecision && (
+                <div className="mt-3">
+                  <DecisionExecuteButton
+                    decisionId={rd.decision.decision_id}
+                    policyEvaluation={policyByDecisionId(rd.decision.decision_id)}
+                    manualStatus={manualExecutionState[rd.decision.decision_id] ?? 'idle'}
+                    onExecute={onExecuteDecision}
+                  />
+                </div>
+              )}
               <div className="mt-2 text-xs font-semibold text-indigo-600 flex items-center gap-1">
                 View comparison
                 <ChevronRight className="h-3 w-3" />

@@ -15,6 +15,7 @@ import InterventionDetailModal from '@/components/planning/InterventionDetailMod
 import ExplainabilityPanel from '@/components/planning/ExplainabilityPanel';
 import PlanningAutomationModal from '@/components/planning/PlanningAutomationModal';
 import {
+  executePlanningDecision,
   getAutomationPolicies,
   getPlanningAuditLogs,
   getPlanningContext,
@@ -26,6 +27,7 @@ import {
 import type {
   ActionAuditLog,
   AutomationPolicy,
+  ManualExecutionStatus,
   PlanningContext,
   PlanningSimulationResult,
   ScenarioPatch,
@@ -60,6 +62,9 @@ export default function Planning() {
   const [selectedStateCard, setSelectedStateCard] = useSessionStorageState<string | null>('planning_state_card', null);
   const [selectedCase, setSelectedCase] = useSessionStorageState<'best' | 'likely' | 'worst' | null>('planning_case', null);
   const [selectedDecisionId, setSelectedDecisionId] = useSessionStorageState<string | null>('planning_decision_id', null);
+  const [manualExecutionState, setManualExecutionState] = useState<
+    Record<string, ManualExecutionStatus>
+  >({});
 
   const requestIdRef = useRef(0);
 
@@ -155,6 +160,7 @@ export default function Planning() {
     setError(null);
     setClarificationQuestions([]);
     setResult(null);
+    setManualExecutionState({});
     setSelectedCase(null);
     setSelectedDecisionId(null);
     setSelectedStateCard(null);
@@ -268,6 +274,38 @@ export default function Planning() {
     [policies],
   );
 
+  const handleExecuteDecision = useCallback(
+    async (decisionId: string) => {
+      if (!result) return;
+
+      const ranked = result.ranked_decisions.find(
+        (item) => item.decision.decision_id === decisionId,
+      );
+      if (!ranked) return;
+
+      setManualExecutionState((prev) => ({ ...prev, [decisionId]: 'executing' }));
+      try {
+        const response = await executePlanningDecision({
+          decision: ranked.decision,
+          scenario: result.scenario,
+        });
+        setManualExecutionState((prev) => ({
+          ...prev,
+          [decisionId]: response.execution_result.success ? 'success' : 'failed',
+        }));
+        if (automationModalOpen) {
+          const updatedLogs = await getPlanningAuditLogs(100);
+          setAuditLogs(updatedLogs);
+        }
+      } catch (err) {
+        console.error('Failed to execute decision:', err);
+        setManualExecutionState((prev) => ({ ...prev, [decisionId]: 'failed' }));
+        setError(err instanceof Error ? err.message : 'Failed to execute decision.');
+      }
+    },
+    [result, automationModalOpen],
+  );
+
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
       <Navbar />
@@ -371,6 +409,9 @@ export default function Planning() {
               recommendation={result.recommendation_summary}
               selectedDecisionId={selectedDecisionId}
               onSelectDecision={setSelectedDecisionId}
+              policyEvaluations={result.policy_evaluations}
+              manualExecutionState={manualExecutionState}
+              onExecuteDecision={handleExecuteDecision}
             />
 
             <ExplainabilityPanel explanation={result.llm_explanation} />
@@ -409,6 +450,9 @@ export default function Planning() {
         rankedDecisions={result?.ranked_decisions ?? []}
         recommendation={result?.recommendation_summary ?? null}
         onClose={() => setSelectedDecisionId(null)}
+        policyEvaluations={result?.policy_evaluations}
+        manualExecutionState={manualExecutionState}
+        onExecuteDecision={handleExecuteDecision}
       />
     </div>
   );
