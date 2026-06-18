@@ -107,6 +107,94 @@ def parse_domain_answer(user_query: str) -> str | None:
     return None
 
 
+# Ordered most-specific phrase first; longest matching alias wins so overlapping
+# tokens (e.g. "route" vs "courier route") resolve deterministically.
+_INTENT_TASK_ALIASES: dict[str, tuple[str, ...]] = {
+    "courier_orders": (
+        "orders assigned to courier",
+        "orders assigned",
+        "assigned orders",
+        "courier workload",
+        "courier orders",
+        "assigned",
+    ),
+    "courier_route": (
+        "courier route",
+        "next stop",
+        "remaining stops",
+        "today's route",
+        "route sequence",
+        "optimized route",
+        "route",
+    ),
+    "recent_routes": (
+        "recent deliveries",
+        "latest deliveries",
+        "latest orders",
+        "newest routes",
+        "recent routes",
+        "deliveries",
+        "recent",
+        "latest",
+    ),
+    "order_lookup": (
+        "order details",
+        "order status",
+        "order lookup",
+        "order",
+    ),
+    "delivery_days": (
+        "available delivery dates",
+        "delivery schedules",
+        "delivery dates",
+        "delivery days",
+        "schedules",
+    ),
+    "hub_route": (
+        "route between hubs",
+        "hub route",
+        "between hubs",
+        "hub",
+    ),
+    "inventory_nlsql": (
+        "inventory",
+        "stock",
+        "products",
+        "warehouse",
+    ),
+}
+
+
+def parse_intent_answer(
+    clarification_answer: str,
+    candidate_tasks: list[str] | None,
+) -> str | None:
+    """Deterministically map an intent clarification answer to a candidate task.
+
+    Mirrors ``parse_domain_answer``: the answer is matched only against the
+    candidate tasks stored on the session. The longest matching alias wins so
+    overlapping signals (e.g. "route" vs "courier route") resolve predictably.
+    Returns ``None`` when nothing matches so the caller can fall back to
+    re-classification.
+    """
+    if not candidate_tasks:
+        return None
+
+    normalized = clarification_answer.strip().lower()
+    if not normalized:
+        return None
+
+    best_task: str | None = None
+    best_score = 0
+    for task in candidate_tasks:
+        for alias in _INTENT_TASK_ALIASES.get(task, ()):
+            if alias in normalized and len(alias) > best_score:
+                best_score = len(alias)
+                best_task = task
+
+    return best_task
+
+
 def merge_intent_query(original_query: str, clarification_answer: str) -> str:
     """Combine the original vague query with the user's intent clarification."""
     original = original_query.strip()
@@ -151,6 +239,7 @@ def build_clarification_session(
     stage: str,
     clarification_type: str,
     base_session: dict[str, Any] | None = None,
+    candidate_tasks: list[str] | None = None,
 ) -> dict[str, Any]:
     """Persist clarification metadata for the next client turn."""
     session = dict(base_session or {})
@@ -175,6 +264,9 @@ def build_clarification_session(
     entities = state.get("entities") or {}
     if entities:
         session["entities"] = dict(entities)
+
+    if candidate_tasks:
+        session["candidate_tasks"] = list(candidate_tasks)
 
     session["clarification_attempts"] = next_clarification_attempts(session)
     return session
@@ -269,6 +361,7 @@ def clear_all_hitl_sessions(state: AgentState) -> AgentState:
         cleaned.pop("original_query", None)
         cleaned.pop("clarification_attempts", None)
         cleaned.pop("entities", None)
+        cleaned.pop("candidate_tasks", None)
         updated[key] = cleaned
 
     return updated
