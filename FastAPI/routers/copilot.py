@@ -48,18 +48,19 @@ def query(
     current_user: Annotated[TokenUser, Depends(get_current_user)],
 ) -> Any:
     try:
-        # 1. Payload validation
+        # 1. PII Masking first (scrubs inputs before any logs/errors can leak raw data)
+        body.query = mask_pii(body.query)
+
+        # 2. Payload validation
         try:
             validate_llm_input(body.query)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
 
-        # 2. Prompt injection checks
+        # 3. Prompt injection checks
         if check_prompt_injection(body.query):
             raise HTTPException(status_code=400, detail="Blocked unsafe query.")
 
-        # 3. PII Masking before orchestration
-        body.query = mask_pii(body.query)
 
         result = _invoke_orchestrator(body, current_user)
         return _parse_final_response(result["final_response"])
@@ -76,18 +77,18 @@ def debug(
     current_user: Annotated[TokenUser, Depends(get_current_user)],
 ) -> dict[str, Any]:
     try:
-        # 1. Payload validation
+        # 1. PII Masking first
+        body.query = mask_pii(body.query)
+
+        # 2. Payload validation
         try:
             validate_llm_input(body.query)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
 
-        # 2. Prompt injection checks
+        # 3. Prompt injection checks
         if check_prompt_injection(body.query):
             raise HTTPException(status_code=400, detail="Blocked unsafe query.")
-
-        # 3. PII Masking before orchestration
-        body.query = mask_pii(body.query)
 
         result = _invoke_orchestrator(body, current_user)
         return {
