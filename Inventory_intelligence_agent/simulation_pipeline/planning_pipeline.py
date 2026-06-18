@@ -114,6 +114,10 @@ def run_decision_evaluation_and_recommendation(
         )
         execution_results.append(execution_result)
 
+        after_state = execution_result.execution_details.get("after_state")
+        if execution_decision.status == "AUTO_APPROVED":
+            after_state = execution_result.execution_details
+
         append_action_audit_log(
             decision_id=recommended.decision.decision_id,
             decision_type=recommended.decision.decision_type.value,
@@ -122,7 +126,7 @@ def run_decision_evaluation_and_recommendation(
             execution_status=execution_decision.status,
             reason=execution_decision.reason,
             before_state=execution_result.execution_details.get("before_state"),
-            after_state=execution_result.execution_details.get("after_state"),
+            after_state=after_state,
         )
 
     payload = build_explainability_payload(
