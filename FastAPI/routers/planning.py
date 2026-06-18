@@ -21,6 +21,8 @@ from scenario_understanding_agent import understand_scenario
 
 router = APIRouter(prefix="/planning", tags=["planning"])
 
+BASE_STATE_SCENARIO_LABEL = "Current operational state (no what-if changes)"
+
 PlanningUser = Annotated[
     TokenUser,
     Depends(require_roles("admin", "inventory_manager")),
@@ -90,6 +92,7 @@ class UnderstandScenarioRequest(EntityScopeRequest):
 class SimulateRequest(EntityScopeRequest):
     scenario_query: Optional[str] = None
     patch: Optional[ScenarioPatch] = None
+    simulate_base_state: bool = False
     planning_window_days: int = Field(default=7, ge=1, le=30)
     n_worlds: int = 100
     random_seed: Optional[int] = 42
@@ -135,6 +138,9 @@ def _resolve_patch(
     body: SimulateRequest,
     base_state,
 ) -> tuple[ScenarioPatch, str]:
+    if body.simulate_base_state:
+        return ScenarioPatch(), BASE_STATE_SCENARIO_LABEL
+
     query = (body.scenario_query or "").strip()
 
     if body.patch is not None:

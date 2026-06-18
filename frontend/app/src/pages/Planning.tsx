@@ -144,6 +144,7 @@ export default function Planning() {
     ? clarificationAnswersComplete(clarificationSession!.prompts, clarificationSession!.answers)
     : true;
   const canRun = scopeReady && scenarioReady && !loading && clarificationReady;
+  const canRunBaseState = scopeReady && !loading;
 
   const handleSelectExample = useCallback(
     (example: (typeof PLANNING_EXAMPLE_SCENARIOS)[number]) => {
@@ -300,6 +301,62 @@ export default function Planning() {
     clarificationReady,
   ]);
 
+  const handleRunBaseStateSimulation = useCallback(async () => {
+    if (!scopeReady) return;
+
+    const currentRequestId = ++requestIdRef.current;
+    setLoading(true);
+    setError(null);
+    setResult(null);
+    setManualExecutionState({});
+    setSelectedCase(null);
+    setSelectedDecisionId(null);
+    setSelectedStateCard(null);
+
+    try {
+      const data = await simulatePlanning({
+        hub_id: hubId,
+        product_id: productId,
+        category,
+        simulation_date: simulationDate,
+        simulate_base_state: true,
+        planning_window_days: planningWindowDays,
+        n_worlds: 100,
+        random_seed: 42,
+        skip_llm: false,
+        auto_select_all_decisions: true,
+      });
+
+      if (currentRequestId === requestIdRef.current) {
+        setResult(data);
+        if (automationModalOpen) {
+          const updatedLogs = await getPlanningAuditLogs(100);
+          setAuditLogs(updatedLogs);
+        }
+      }
+    } catch (err) {
+      if (currentRequestId !== requestIdRef.current) return;
+
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('Simulation failed.');
+      }
+    } finally {
+      if (currentRequestId === requestIdRef.current) {
+        setLoading(false);
+      }
+    }
+  }, [
+    scopeReady,
+    hubId,
+    productId,
+    category,
+    simulationDate,
+    planningWindowDays,
+    automationModalOpen,
+  ]);
+
   const handlePolicyChange = useCallback(
     (policyType: string, patch: Partial<AutomationPolicy>) => {
       setPolicies((prev) =>
@@ -393,9 +450,9 @@ export default function Planning() {
               <button
                 type="button"
                 onClick={() => setAutomationModalOpen(true)}
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 transition"
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-800 px-5 py-3 text-sm font-semibold text-white shadow-md transition hover:bg-slate-900 hover:border-slate-900"
               >
-                <Settings2 className="h-4 w-4 text-indigo-600" />
+                <Settings2 className="h-4 w-4" />
                 Automation Settings
               </button>
             </div>
@@ -434,8 +491,10 @@ export default function Planning() {
 
         <RunSimulationBar
           canRun={canRun}
+          canRunBaseState={canRunBaseState}
           loading={loading}
           onRun={handleRunSimulation}
+          onRunBaseState={handleRunBaseStateSimulation}
           scopeReady={scopeReady}
           scenarioReady={scenarioReady}
           clarificationActive={clarificationActive}

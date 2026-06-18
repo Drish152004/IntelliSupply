@@ -278,6 +278,7 @@ export interface EntityScope {
 export interface SimulatePlanningPayload extends EntityScope {
   scenario_query?: string | null;
   patch?: ScenarioPatch | null;
+  simulate_base_state?: boolean;
   planning_window_days?: number;
   n_worlds?: number;
   random_seed?: number | null;
