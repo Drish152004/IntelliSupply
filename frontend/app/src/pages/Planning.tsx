@@ -3,7 +3,7 @@ import { useSessionStorageState } from '@/hooks/useSessionStorage';
 import { Settings2, Sparkles } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import EntityScopePanel, { deriveScopeOptions } from '@/components/planning/EntityScopePanel';
-import ScenarioInputPanel from '@/components/planning/ScenarioInputPanel';
+import ScenarioInputPanel, { clarificationAnswersComplete } from '@/components/planning/ScenarioInputPanel';
 import RunSimulationBar from '@/components/planning/RunSimulationBar';
 import PlanningIdleState from '@/components/planning/PlanningIdleState';
 import InventoryStatePanel from '@/components/planning/InventoryStatePanel';
@@ -27,6 +27,7 @@ import {
 import type {
   ActionAuditLog,
   AutomationPolicy,
+  ClarificationSession,
   ManualExecutionStatus,
   PlanningContext,
   PlanningSimulationResult,
@@ -53,7 +54,10 @@ export default function Planning() {
   const [scenarioQuery, setScenarioQuery] = useSessionStorageState('planning_query', '');
   const [scenarioPatch, setScenarioPatch] = useSessionStorageState<ScenarioPatch | null>('planning_patch', null);
   const [activeExampleId, setActiveExampleId] = useSessionStorageState<string | null>('planning_example_id', null);
-  const [clarificationQuestions, setClarificationQuestions] = useSessionStorageState<string[]>('planning_questions', []);
+  const [clarificationSession, setClarificationSession] = useSessionStorageState<ClarificationSession | null>(
+    'planning_clarification_session',
+    null,
+  );
 
   const [result, setResult] = useSessionStorageState<PlanningSimulationResult | null>('planning_result', null);
   const [loading, setLoading] = useState(false);
@@ -133,14 +137,21 @@ export default function Planning() {
   const scenarioReady = Boolean(
     scenarioPatch || scenarioQuery.trim().length > 0,
   );
-  const canRun = scopeReady && scenarioReady && !loading && clarificationQuestions.length === 0;
+  const clarificationActive = Boolean(
+    clarificationSession && clarificationSession.prompts.length > 0,
+  );
+  const clarificationReady = clarificationActive
+    ? clarificationAnswersComplete(clarificationSession!.prompts, clarificationSession!.answers)
+    : true;
+  const canRun = scopeReady && scenarioReady && !loading && clarificationReady;
+  const canRunBaseState = scopeReady && !loading;
 
   const handleSelectExample = useCallback(
     (example: (typeof PLANNING_EXAMPLE_SCENARIOS)[number]) => {
       setScenarioQuery(example.scenarioQuery);
       setScenarioPatch(example.patch);
       setActiveExampleId(example.id);
-      setClarificationQuestions([]);
+      setClarificationSession(null);
       setError(null);
     },
     [],
@@ -149,7 +160,17 @@ export default function Planning() {
   const handleQueryChange = useCallback(() => {
     setActiveExampleId(null);
     setScenarioPatch(null);
-    setClarificationQuestions([]);
+    setClarificationSession(null);
+  }, []);
+
+  const handleClarificationAnswerChange = useCallback((fieldId: string, value: string) => {
+    setClarificationSession((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        answers: { ...prev.answers, [fieldId]: value },
+      };
+    });
   }, []);
 
   const handleRunSimulation = useCallback(async () => {
@@ -158,7 +179,6 @@ export default function Planning() {
     const currentRequestId = ++requestIdRef.current;
     setLoading(true);
     setError(null);
-    setClarificationQuestions([]);
     setResult(null);
     setManualExecutionState({});
     setSelectedCase(null);
@@ -168,17 +188,51 @@ export default function Planning() {
     try {
       let patchToUse = scenarioPatch;
 
-      if (!patchToUse && scenarioQuery.trim()) {
+      if (clarificationSession && clarificationReady) {
         const understanding = await understandPlanningScenario({
           hub_id: hubId,
           product_id: productId,
           category,
           simulation_date: simulationDate,
           scenario_query: scenarioQuery.trim(),
+          partial_patch: clarificationSession.partialPatch,
+          scenario_types: clarificationSession.scenarioTypes,
+          clarification_answers: clarificationSession.answers,
+          planning_window_days: planningWindowDays,
         });
 
         if (understanding.status === 'needs_clarification') {
-          setClarificationQuestions(understanding.clarification_questions ?? []);
+          setClarificationSession({
+            partialPatch: understanding.partial_patch ?? clarificationSession.partialPatch,
+            scenarioTypes: understanding.scenario_types ?? clarificationSession.scenarioTypes,
+            prompts: understanding.clarification_prompts ?? [],
+            answers: {},
+          });
+          return;
+        }
+
+        patchToUse = understanding.patch ?? null;
+        setClarificationSession(null);
+        if (patchToUse) {
+          setScenarioPatch(patchToUse);
+        }
+      } else if (!patchToUse && scenarioQuery.trim()) {
+        const understanding = await understandPlanningScenario({
+          hub_id: hubId,
+          product_id: productId,
+          category,
+          simulation_date: simulationDate,
+          scenario_query: scenarioQuery.trim(),
+          planning_window_days: planningWindowDays,
+        });
+
+        if (understanding.status === 'needs_clarification') {
+          setClarificationSession({
+            partialPatch: understanding.partial_patch ?? {},
+            scenarioTypes: understanding.scenario_types ?? [],
+            prompts: understanding.clarification_prompts ?? [],
+            answers: {},
+          });
           return;
         }
 
@@ -213,7 +267,15 @@ export default function Planning() {
       if (currentRequestId !== requestIdRef.current) return;
 
       if (err instanceof PlanningClarificationError) {
-        setClarificationQuestions(err.questions);
+        setClarificationSession({
+          partialPatch: {},
+          scenarioTypes: [],
+          prompts: err.questions.map((question, index) => ({
+            field_id: `field_${index}`,
+            question,
+          })),
+          answers: {},
+        });
       } else if (err instanceof Error) {
         setError(err.message);
       } else {
@@ -229,6 +291,64 @@ export default function Planning() {
     scenarioReady,
     scenarioPatch,
     scenarioQuery,
+    hubId,
+    productId,
+    category,
+    simulationDate,
+    planningWindowDays,
+    automationModalOpen,
+    clarificationSession,
+    clarificationReady,
+  ]);
+
+  const handleRunBaseStateSimulation = useCallback(async () => {
+    if (!scopeReady) return;
+
+    const currentRequestId = ++requestIdRef.current;
+    setLoading(true);
+    setError(null);
+    setResult(null);
+    setManualExecutionState({});
+    setSelectedCase(null);
+    setSelectedDecisionId(null);
+    setSelectedStateCard(null);
+
+    try {
+      const data = await simulatePlanning({
+        hub_id: hubId,
+        product_id: productId,
+        category,
+        simulation_date: simulationDate,
+        simulate_base_state: true,
+        planning_window_days: planningWindowDays,
+        n_worlds: 100,
+        random_seed: 42,
+        skip_llm: false,
+        auto_select_all_decisions: true,
+      });
+
+      if (currentRequestId === requestIdRef.current) {
+        setResult(data);
+        if (automationModalOpen) {
+          const updatedLogs = await getPlanningAuditLogs(100);
+          setAuditLogs(updatedLogs);
+        }
+      }
+    } catch (err) {
+      if (currentRequestId !== requestIdRef.current) return;
+
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('Simulation failed.');
+      }
+    } finally {
+      if (currentRequestId === requestIdRef.current) {
+        setLoading(false);
+      }
+    }
+  }, [
+    scopeReady,
     hubId,
     productId,
     category,
@@ -330,9 +450,9 @@ export default function Planning() {
               <button
                 type="button"
                 onClick={() => setAutomationModalOpen(true)}
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 transition"
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-800 px-5 py-3 text-sm font-semibold text-white shadow-md transition hover:bg-slate-900 hover:border-slate-900"
               >
-                <Settings2 className="h-4 w-4 text-indigo-600" />
+                <Settings2 className="h-4 w-4" />
                 Automation Settings
               </button>
             </div>
@@ -362,17 +482,22 @@ export default function Planning() {
           setScenarioQuery={setScenarioQuery}
           activeExampleId={activeExampleId}
           onSelectExample={handleSelectExample}
-          clarificationQuestions={clarificationQuestions}
+          clarificationPrompts={clarificationSession?.prompts ?? []}
+          clarificationAnswers={clarificationSession?.answers ?? {}}
+          onClarificationAnswerChange={handleClarificationAnswerChange}
           onQueryChange={handleQueryChange}
           disabled={loading}
         />
 
         <RunSimulationBar
           canRun={canRun}
+          canRunBaseState={canRunBaseState}
           loading={loading}
           onRun={handleRunSimulation}
+          onRunBaseState={handleRunBaseStateSimulation}
           scopeReady={scopeReady}
           scenarioReady={scenarioReady}
+          clarificationActive={clarificationActive}
         />
 
         {loading && (

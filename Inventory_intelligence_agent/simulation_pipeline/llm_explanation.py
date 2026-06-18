@@ -8,7 +8,7 @@ from groq import Groq
 
 from recommendation_models import ExplainabilityPayload, LLMExplanation
 
-DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile"
+DEFAULT_GROQ_MODEL = "llama-3.1-8b-instant"
 
 _client: Optional[Groq] = None
 

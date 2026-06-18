@@ -8,7 +8,7 @@ export default function PlanningIdleState() {
       </div>
       <h3 className="mt-4 text-lg font-bold text-slate-900">No simulation results yet</h3>
       <p className="mt-2 text-sm text-slate-500 max-w-lg mx-auto">
-        Select entity scope, describe a what-if scenario (or pick an example), then run the simulation to see inventory state, outcome discovery, intervention rankings, and explainability output.
+        Select entity scope, then simulate the current operational state or describe a what-if scenario (or pick an example) to see inventory state, outcome discovery, intervention rankings, and explainability output.
       </p>
     </div>
   );

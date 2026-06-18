@@ -21,6 +21,8 @@ from scenario_understanding_agent import understand_scenario
 
 router = APIRouter(prefix="/planning", tags=["planning"])
 
+BASE_STATE_SCENARIO_LABEL = "Current operational state (no what-if changes)"
+
 PlanningUser = Annotated[
     TokenUser,
     Depends(require_roles("admin", "inventory_manager")),
@@ -81,11 +83,16 @@ class EntityScopeRequest(BaseModel):
 
 class UnderstandScenarioRequest(EntityScopeRequest):
     scenario_query: str = Field(..., min_length=1)
+    partial_patch: Optional[ScenarioPatch] = None
+    scenario_types: Optional[List[str]] = None
+    clarification_answers: Optional[dict[str, str]] = None
+    planning_window_days: Optional[int] = Field(default=None, ge=1, le=30)
 
 
 class SimulateRequest(EntityScopeRequest):
     scenario_query: Optional[str] = None
     patch: Optional[ScenarioPatch] = None
+    simulate_base_state: bool = False
     planning_window_days: int = Field(default=7, ge=1, le=30)
     n_worlds: int = 100
     random_seed: Optional[int] = 42
@@ -131,6 +138,9 @@ def _resolve_patch(
     body: SimulateRequest,
     base_state,
 ) -> tuple[ScenarioPatch, str]:
+    if body.simulate_base_state:
+        return ScenarioPatch(), BASE_STATE_SCENARIO_LABEL
+
     query = (body.scenario_query or "").strip()
 
     if body.patch is not None:
@@ -196,7 +206,14 @@ def understand_planning_scenario(
             category=body.category,
             simulation_date=body.simulation_date,
         )
-        result = understand_scenario(body.scenario_query.strip(), base_state)
+        result = understand_scenario(
+            body.scenario_query.strip(),
+            base_state,
+            partial_patch=body.partial_patch,
+            scenario_types=body.scenario_types,
+            clarification_answers=body.clarification_answers,
+            planning_window_days=body.planning_window_days,
+        )
         return _to_jsonable(result)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

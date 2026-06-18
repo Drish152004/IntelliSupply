@@ -1,5 +1,6 @@
 import { Brain } from 'lucide-react';
 import ExampleScenarioChips from './ExampleScenarioChips';
+import type { ClarificationPrompt } from '@/lib/planningTypes';
 import type { PLANNING_EXAMPLE_SCENARIOS } from '@/lib/planningExamples';
 
 interface ScenarioInputPanelProps {
@@ -7,7 +8,9 @@ interface ScenarioInputPanelProps {
   setScenarioQuery: (value: string) => void;
   activeExampleId: string | null;
   onSelectExample: (example: (typeof PLANNING_EXAMPLE_SCENARIOS)[number]) => void;
-  clarificationQuestions: string[];
+  clarificationPrompts: ClarificationPrompt[];
+  clarificationAnswers: Record<string, string>;
+  onClarificationAnswerChange: (fieldId: string, value: string) => void;
   onQueryChange: () => void;
   disabled?: boolean;
 }
@@ -17,7 +20,9 @@ export default function ScenarioInputPanel({
   setScenarioQuery,
   activeExampleId,
   onSelectExample,
-  clarificationQuestions,
+  clarificationPrompts,
+  clarificationAnswers,
+  onClarificationAnswerChange,
   onQueryChange,
   disabled,
 }: ScenarioInputPanelProps) {
@@ -53,18 +58,38 @@ export default function ScenarioInputPanel({
         className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
       />
 
-      {clarificationQuestions.length > 0 && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
-          <p className="text-xs font-bold uppercase tracking-wider text-amber-800 mb-2">
+      {clarificationPrompts.length > 0 && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 space-y-4">
+          <p className="text-xs font-bold uppercase tracking-wider text-amber-800">
             Clarification needed
           </p>
-          <ul className="space-y-1">
-            {clarificationQuestions.map((q) => (
-              <li key={q} className="text-sm text-amber-900">{q}</li>
-            ))}
-          </ul>
+          {clarificationPrompts.map((prompt) => (
+            <div key={prompt.field_id} className="space-y-1.5">
+              <label
+                htmlFor={`clarification-${prompt.field_id}`}
+                className="block text-sm text-amber-900"
+              >
+                {prompt.question}
+              </label>
+              <input
+                id={`clarification-${prompt.field_id}`}
+                type="text"
+                value={clarificationAnswers[prompt.field_id] ?? ''}
+                onChange={(e) => onClarificationAnswerChange(prompt.field_id, e.target.value)}
+                disabled={disabled}
+                className="w-full rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400"
+              />
+            </div>
+          ))}
         </div>
       )}
     </div>
   );
+}
+
+export function clarificationAnswersComplete(
+  prompts: ClarificationPrompt[],
+  answers: Record<string, string>,
+): boolean {
+  return prompts.every((prompt) => (answers[prompt.field_id] ?? '').trim().length > 0);
 }

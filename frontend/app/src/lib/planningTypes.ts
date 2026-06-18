@@ -34,7 +34,22 @@ export interface PlanningContext {
 export interface ScenarioUnderstandingResult {
   status: 'complete' | 'needs_clarification';
   patch?: ScenarioPatch | null;
+  partial_patch?: ScenarioPatch | null;
+  scenario_types?: string[];
+  clarification_prompts?: ClarificationPrompt[];
   clarification_questions?: string[];
+}
+
+export interface ClarificationPrompt {
+  field_id: string;
+  question: string;
+}
+
+export interface ClarificationSession {
+  partialPatch: ScenarioPatch;
+  scenarioTypes: string[];
+  prompts: ClarificationPrompt[];
+  answers: Record<string, string>;
 }
 
 export interface SimulationDay {
@@ -263,6 +278,7 @@ export interface EntityScope {
 export interface SimulatePlanningPayload extends EntityScope {
   scenario_query?: string | null;
   patch?: ScenarioPatch | null;
+  simulate_base_state?: boolean;
   planning_window_days?: number;
   n_worlds?: number;
   random_seed?: number | null;
@@ -273,6 +289,10 @@ export interface SimulatePlanningPayload extends EntityScope {
 
 export interface UnderstandScenarioPayload extends EntityScope {
   scenario_query: string;
+  partial_patch?: ScenarioPatch | null;
+  scenario_types?: string[] | null;
+  clarification_answers?: Record<string, string> | null;
+  planning_window_days?: number | null;
 }
 
 export function mapSimulationDay(day: SimulationDay): DailyLogEntry {

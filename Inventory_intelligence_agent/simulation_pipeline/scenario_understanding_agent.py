@@ -3,11 +3,16 @@
 import json
 import os
 import re
-from typing import Optional
+from typing import Any, Optional
 
 from groq import Groq
 
 from scenario_models import (
+    ClarificationPrompt,
+    DemandPatch,
+    EventPatch,
+    InventoryPatch,
+    ReplenishmentPatch,
     ScenarioExtraction,
     ScenarioPatch,
     ScenarioUnderstandingResult,
@@ -16,22 +21,18 @@ from scenario_models import (
 from state_models import SimulationState
 
 VALID_SEASONS = frozenset({"winter", "spring", "summer", "autumn"})
-DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile"
+SUPPORTED_SCENARIO_TYPES = frozenset({
+    "demand_change",
+    "inventory_change",
+    "seasonality_change",
+    "promotion_toggle",
+    "epidemic_toggle",
+    "lead_time_change",
+    "replenishment_delay",
+})
+DEFAULT_GROQ_MODEL = "llama-3.1-8b-instant"
 
 _client: Optional[Groq] = None
-
-
-def _get_client() -> Groq:
-    global _client
-    if _client is None:
-        _client = Groq(
-            api_key=os.environ.get("GROQ_API_KEY"),
-        )
-    return _client
-
-
-def _get_groq_model() -> str:
-    return os.environ.get("GROQ_MODEL", DEFAULT_GROQ_MODEL)
 
 SYSTEM_PROMPT = """
 You are an inventory scenario understanding agent for IntelliSupply.
@@ -55,7 +56,7 @@ Rules:
 - When the user combines multiple changes in one question, populate all relevant patch
   sections and list every detected type in scenario_types.
 
-Supported V1 scenario types (list each one detected in scenario_types):
+Supported scenario types (list each one detected in scenario_types):
 - demand_change
 - inventory_change
 - seasonality_change
@@ -105,6 +106,134 @@ patch: {
   "inventory": { "current_stock_delta": -200 }
 }
 """
+
+
+def _get_client() -> Groq:
+    global _client
+    if _client is None:
+        _client = Groq(
+            api_key=os.environ.get("GROQ_API_KEY"),
+        )
+    return _client
+
+
+def _get_groq_model() -> str:
+    return os.environ.get("GROQ_MODEL", DEFAULT_GROQ_MODEL)
+
+
+def merge_patch(base: ScenarioPatch, updates: ScenarioPatch) -> ScenarioPatch:
+    merged = base.model_dump()
+    update_data = updates.model_dump(exclude_none=True)
+    for key, value in update_data.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = {**merged[key], **value}
+        else:
+            merged[key] = value
+    return ScenarioPatch.model_validate(merged)
+
+
+def parse_percent_or_multiplier(raw: str) -> float:
+    text = raw.strip()
+    if text.endswith("%"):
+        pct = float(text[:-1].strip())
+        multiplier = 1.0 + (pct / 100.0)
+    else:
+        value = float(text)
+        if value > 5:
+            multiplier = 1.0 + (value / 100.0)
+        else:
+            multiplier = value
+    if multiplier <= 0:
+        raise ValueError("Demand multiplier must be positive.")
+    return multiplier
+
+
+def parse_signed_int(raw: str) -> int:
+    return int(raw.strip())
+
+
+def parse_positive_int(raw: str) -> int:
+    value = int(raw.strip())
+    if value < 0:
+        raise ValueError("Value must be zero or positive.")
+    return value
+
+
+def parse_boolean(raw: str) -> bool:
+    text = raw.strip().lower()
+    if text in {"on", "true", "yes", "1"}:
+        return True
+    if text in {"off", "false", "no", "0"}:
+        return False
+    raise ValueError("Use on/off or true/false.")
+
+
+def parse_season(raw: str) -> str:
+    season = raw.strip().lower()
+    if season not in VALID_SEASONS:
+        raise ValueError("Invalid season. Use winter, spring, summer, or autumn.")
+    return season
+
+
+def apply_clarification_answers(
+    patch: ScenarioPatch,
+    scenario_types: list[ScenarioType],
+    answers: dict[str, str],
+) -> tuple[ScenarioPatch, list[ScenarioType]]:
+    updated_types = list(scenario_types)
+    updates: dict[str, Any] = {}
+
+    if "scenario_type" in answers:
+        chosen = answers["scenario_type"].strip()
+        if chosen not in SUPPORTED_SCENARIO_TYPES:
+            raise ValueError(f"Unsupported scenario type: {chosen}")
+        updated_types = [chosen]  # type: ignore[list-item]
+
+    if "demand_multiplier" in answers:
+        multiplier = parse_percent_or_multiplier(answers["demand_multiplier"])
+        updates["demand"] = DemandPatch(demand_multiplier=multiplier)
+
+    if "inventory_delta" in answers:
+        updates["inventory"] = InventoryPatch(
+            current_stock_delta=parse_signed_int(answers["inventory_delta"]),
+        )
+
+    if "seasonality" in answers:
+        event_data = dict(updates.get("event") or {})
+        event_data["seasonality"] = parse_season(answers["seasonality"])
+        updates["event"] = event_data
+
+    if "promotion" in answers:
+        event_data = dict(updates.get("event") or {})
+        event_data["promotion"] = parse_boolean(answers["promotion"])
+        updates["event"] = event_data
+
+    if "epidemic" in answers:
+        event_data = dict(updates.get("event") or {})
+        event_data["epidemic"] = parse_boolean(answers["epidemic"])
+        updates["event"] = event_data
+
+    if "lead_time_delta" in answers:
+        updates["replenishment"] = ReplenishmentPatch(
+            lead_time_days_delta=parse_signed_int(answers["lead_time_delta"]),
+        )
+
+    if "replenishment_delay" in answers:
+        updates["replenishment"] = ReplenishmentPatch(
+            actual_delay_days_delta=parse_positive_int(answers["replenishment_delay"]),
+        )
+
+    if "replenishment_intent" in answers:
+        intent = answers["replenishment_intent"].strip()
+        if intent == "cancel":
+            updated_types = []
+        elif intent in SUPPORTED_SCENARIO_TYPES:
+            updated_types = [intent]  # type: ignore[list-item]
+        else:
+            raise ValueError("Invalid replenishment intent choice.")
+
+    patch_updates = ScenarioPatch.model_validate(updates)
+    return merge_patch(patch, patch_updates), updated_types
 
 
 def _format_state_context(state: SimulationState) -> str:
@@ -195,10 +324,10 @@ class ClarificationChecker:
     @classmethod
     def _infer_scenario_types(
         cls,
-        extraction: ScenarioExtraction,
+        scenario_types: list[ScenarioType],
         scenario_text: str,
     ) -> set[ScenarioType]:
-        types = set(extraction.scenario_types)
+        types = set(scenario_types)
         if cls._DEMAND_PATTERN.search(scenario_text):
             types.add("demand_change")
         if cls._INVENTORY_PATTERN.search(scenario_text):
@@ -218,88 +347,111 @@ class ClarificationChecker:
     @classmethod
     def check(
         cls,
-        extraction: ScenarioExtraction,
+        patch: ScenarioPatch,
+        scenario_types: list[ScenarioType],
         scenario_text: str,
         state: Optional[SimulationState] = None,
-    ) -> list[str]:
-        patch = extraction.patch
-        scenario_types = cls._infer_scenario_types(
-            extraction,
-            scenario_text,
-        )
-        questions: list[str] = []
+    ) -> list[ClarificationPrompt]:
+        inferred = cls._infer_scenario_types(scenario_types, scenario_text)
+        prompts: list[ClarificationPrompt] = []
 
-        if "demand_change" in scenario_types and not cls._has_demand_magnitude(patch):
-            questions.append(
-                "By how much should demand change? "
-                "Specify a percentage (e.g. 25%) or multiplier (e.g. 1.25 for +25%)."
+        if not inferred:
+            prompts.append(
+                ClarificationPrompt(
+                    field_id="scenario_type",
+                    question=(
+                        "Which scenario should be simulated? "
+                        "(demand change, inventory change, seasonality, promotion, "
+                        "epidemic, lead time, or replenishment delay)"
+                    ),
+                )
+            )
+            return prompts
+
+        if "demand_change" in inferred and not cls._has_demand_magnitude(patch):
+            prompts.append(
+                ClarificationPrompt(
+                    field_id="demand_multiplier",
+                    question=(
+                        "By how much should demand change? "
+                        "(e.g. 25% or 1.25 for +25%)"
+                    ),
+                )
             )
 
-        if "inventory_change" in scenario_types and not cls._has_inventory_magnitude(patch):
-            questions.append(
-                "By how many units should inventory change? "
-                "Use a signed value (e.g. +500 to add stock, -200 to reduce)."
+        if "inventory_change" in inferred and not cls._has_inventory_magnitude(patch):
+            prompts.append(
+                ClarificationPrompt(
+                    field_id="inventory_delta",
+                    question=(
+                        "By how many units should inventory change? "
+                        "(e.g. +500 or -200)"
+                    ),
+                )
             )
 
-        if "seasonality_change" in scenario_types and not cls._has_seasonality(patch):
-            questions.append(
-                "Which season should apply? "
-                "Choose one: winter, spring, summer, or autumn."
+        if "seasonality_change" in inferred and not cls._has_seasonality(patch):
+            prompts.append(
+                ClarificationPrompt(
+                    field_id="seasonality",
+                    question="Which season? (winter, spring, summer, or autumn)",
+                )
             )
 
-        if "promotion_toggle" in scenario_types and not cls._has_promotion_toggle(patch):
-            questions.append(
-                "Should promotion be turned on or off?"
+        if "promotion_toggle" in inferred and not cls._has_promotion_toggle(patch):
+            prompts.append(
+                ClarificationPrompt(
+                    field_id="promotion",
+                    question="Should promotion be on or off?",
+                )
             )
 
-        if "epidemic_toggle" in scenario_types and not cls._has_epidemic_toggle(patch):
-            questions.append(
-                "Should the epidemic flag be turned on or off?"
+        if "epidemic_toggle" in inferred and not cls._has_epidemic_toggle(patch):
+            prompts.append(
+                ClarificationPrompt(
+                    field_id="epidemic",
+                    question="Should the epidemic flag be on or off?",
+                )
             )
 
-        if "lead_time_change" in scenario_types and not cls._has_lead_time_delta(patch):
-            questions.append(
-                "By how many days should lead time change? "
-                "Use a signed value (e.g. +3 to increase, -2 to decrease)."
+        if "lead_time_change" in inferred and not cls._has_lead_time_delta(patch):
+            prompts.append(
+                ClarificationPrompt(
+                    field_id="lead_time_delta",
+                    question="By how many days should lead time change? (e.g. +3 or -2)",
+                )
             )
 
         if (
-            "replenishment_delay" in scenario_types
+            "replenishment_delay" in inferred
             and not cls._has_replenishment_delay(patch)
         ):
-            questions.append(
-                "By how many days should replenishment be delayed?"
+            prompts.append(
+                ClarificationPrompt(
+                    field_id="replenishment_delay",
+                    question="By how many days should replenishment be delayed?",
+                )
             )
 
         if (
             state is not None
-            and "replenishment_delay" in scenario_types
             and not state.replenishment.has_incoming_replenishment
+            and (
+                "replenishment_delay" in inferred
+                or "lead_time_change" in inferred
+            )
         ):
-            questions.append(
-                "There is no incoming replenishment order in the base state. "
-                "Should the scenario assume a new open order, or did you mean "
-                "lead-time change instead?"
+            prompts.append(
+                ClarificationPrompt(
+                    field_id="replenishment_intent",
+                    question=(
+                        "There is no incoming replenishment order. "
+                        "Did you mean lead time change, replenishment delay, or cancel?"
+                    ),
+                )
             )
 
-        if (
-            state is not None
-            and "lead_time_change" in scenario_types
-            and not state.replenishment.has_incoming_replenishment
-        ):
-            questions.append(
-                "There is no incoming replenishment order in the base state, "
-                "so lead time cannot be adjusted. Did you mean replenishment delay "
-                "or a different scenario?"
-            )
-
-        if patch.planning_window_days is None:
-            questions.append(
-                "Over how many days should we simulate? "
-                "For example: 7 for one week, 14 for two weeks, or 30 for one month."
-            )
-
-        return questions
+        return prompts
 
     @staticmethod
     def _has_demand_magnitude(patch: ScenarioPatch) -> bool:
@@ -431,44 +583,93 @@ def _infer_types_from_patch(patch: ScenarioPatch) -> list[ScenarioType]:
     return types
 
 
-def understand_scenario(
-    scenario_text: str,
-    state: Optional[SimulationState] = None,
+def _needs_clarification_result(
+    patch: ScenarioPatch,
+    scenario_types: list[ScenarioType],
+    prompts: list[ClarificationPrompt],
 ) -> ScenarioUnderstandingResult:
-    extraction = _extract_with_llm(scenario_text, state)
-
-    if not extraction.scenario_types:
-        extraction.scenario_types = _infer_types_from_patch(
-            extraction.patch
-        )
-
-    if not extraction.scenario_types:
-        return ScenarioUnderstandingResult(
-            status="needs_clarification",
-            clarification_questions=[
-                "Which scenario should be simulated? Supported changes: "
-                "demand increase/decrease, inventory increase/decrease, "
-                "seasonality change, promotion on/off, epidemic on/off, "
-                "lead time increase/decrease, or replenishment delay."
-            ],
-        )
-
-    questions = ClarificationChecker.check(
-        extraction,
-        scenario_text,
-        state,
+    return ScenarioUnderstandingResult(
+        status="needs_clarification",
+        partial_patch=patch,
+        scenario_types=scenario_types,
+        clarification_prompts=prompts,
+        clarification_questions=[prompt.question for prompt in prompts],
     )
-    if questions:
-        return ScenarioUnderstandingResult(
-            status="needs_clarification",
-            clarification_questions=questions,
+
+
+def _finalize_patch(
+    patch: ScenarioPatch,
+    state: Optional[SimulationState],
+    planning_window_days: Optional[int],
+) -> ScenarioUnderstandingResult:
+    if patch.planning_window_days is None and planning_window_days is not None:
+        patch = merge_patch(
+            patch,
+            ScenarioPatch(planning_window_days=planning_window_days),
         )
 
-    patch = ScenarioValidator.validate(extraction.patch)
+    patch = ScenarioValidator.validate(patch)
     if state is not None:
         ScenarioValidator.validate_against_state(patch, state)
 
     return ScenarioUnderstandingResult(
         status="complete",
         patch=patch,
+        scenario_types=_infer_types_from_patch(patch),
     )
+
+
+def understand_scenario(
+    scenario_text: str,
+    state: Optional[SimulationState] = None,
+    *,
+    partial_patch: Optional[ScenarioPatch] = None,
+    scenario_types: Optional[list[ScenarioType]] = None,
+    clarification_answers: Optional[dict[str, str]] = None,
+    planning_window_days: Optional[int] = None,
+) -> ScenarioUnderstandingResult:
+    if partial_patch is not None and clarification_answers is not None:
+        types = list(scenario_types or [])
+        patch, types = apply_clarification_answers(
+            partial_patch,
+            types,
+            clarification_answers,
+        )
+        if not types:
+            return ScenarioUnderstandingResult(
+                status="needs_clarification",
+                partial_patch=patch,
+                scenario_types=[],
+                clarification_prompts=[
+                    ClarificationPrompt(
+                        field_id="scenario_type",
+                        question="Which scenario should be simulated?",
+                    )
+                ],
+                clarification_questions=["Which scenario should be simulated?"],
+            )
+
+        prompts = ClarificationChecker.check(
+            patch,
+            types,
+            scenario_text,
+            state,
+        )
+        if prompts:
+            return _needs_clarification_result(patch, types, prompts)
+
+        return _finalize_patch(patch, state, planning_window_days)
+
+    extraction = _extract_with_llm(scenario_text, state)
+
+    if not extraction.scenario_types:
+        extraction.scenario_types = _infer_types_from_patch(extraction.patch)
+
+    types = list(extraction.scenario_types)
+    patch = extraction.patch
+
+    prompts = ClarificationChecker.check(patch, types, scenario_text, state)
+    if prompts:
+        return _needs_clarification_result(patch, types, prompts)
+
+    return _finalize_patch(patch, state, planning_window_days)
