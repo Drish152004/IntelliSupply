@@ -164,7 +164,11 @@ def ensure_graph_courier_route(
     city_name: str | None = None,
     ds: int = DEFAULT_DS,
 ) -> dict[str, Any]:
-    """Build a courier route from assigned Aura orders (no ML) and persist it."""
+    """Build and persist a graph-sorted courier route from assigned Aura orders (no ML).
+
+    Standalone utility for callers that need graph-only route building. Not used by
+    predict_courier_route(), which validates a saved route then falls through to ML.
+    """
     from aura_graphdb.aura_courier import get_courier_by_id
     from aura_graphdb.aura_route_queries import get_saved_courier_route
 

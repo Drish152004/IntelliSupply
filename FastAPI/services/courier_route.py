@@ -1,8 +1,9 @@
 """Courier route + ETA prediction service.
 
-On-demand: fetch a courier's orders for a delivery day, run the route sequence
-predictor, then estimate per-leg and cumulative ETA using the ETA model.
-Returns a saved RoutePrediction from GraphDB when one exists for that day.
+On-demand: fetch a courier's orders for a delivery day, return a saved
+RoutePrediction when it matches the current assignment set, otherwise run the
+ML route sequence predictor (with assigned-order fallback), estimate per-leg
+ETA, and persist the rebuilt route via persist_ml_courier_route.
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 
 from aura_graphdb.aura_courier import get_courier_by_id
-from aura_graphdb.aura_route_prediction import ensure_graph_courier_route, persist_ml_courier_route
+from aura_graphdb.aura_route_prediction import persist_ml_courier_route
 from aura_graphdb.aura_route_queries import get_orders_for_courier_day, get_saved_courier_route
 from ml_services.route_prediction.full_pipeline.coordinates import enrich_order_dict
 from services.eta_prediction import predict_eta
@@ -202,10 +203,9 @@ def predict_courier_route(
     """
     Return a complete courier route for a delivery day.
 
-    Fix:
-    - First fetch all currently assigned orders for the courier/date.
-    - Use saved GraphDB route only if it contains the same order set.
-    - If saved route is stale/incomplete, rebuild route using all assigned orders.
+    - Fetch all currently assigned orders for the courier/date.
+    - Return saved GraphDB route only if it contains the same order set.
+    - Otherwise run ML prediction (or assigned-order fallback) and persist.
     """
     courier = get_courier_by_id(courier_id)
     if not courier:
@@ -257,49 +257,6 @@ def predict_courier_route(
             f"assigned_orders={len(assigned_order_ids)}. "
             "Rebuilding route."
         )
-
-    graph_result = ensure_graph_courier_route(
-        courier_id=courier_id,
-        delivery_day=delivery_day,
-        ds=ML_DEFAULT_DS,
-    )
-
-    if graph_result.get("success") and graph_result.get("route"):
-        route = graph_result["route"]
-        route_stops = route.get("stops") or []
-
-        graph_order_ids = {
-            str(stop.get("order_id"))
-            for stop in route_stops
-            if stop.get("order_id")
-        }
-
-        if route_stops and graph_order_ids == assigned_order_ids:
-            if graph_result.get("source") == "graphdb":
-                return _format_saved_route(route)
-
-            payload = {
-                "success": True,
-                "courier_id": courier_id,
-                "courier_name": route.get("courier_name"),
-                "delivery_day": delivery_day,
-                "route_start_time": route.get("route_start_time"),
-                "predicted_sequence": route.get("predicted_sequence") or [],
-                "stops": route_stops,
-                "total_eta_minutes": route.get("total_eta_minutes"),
-                "source": route.get("source", "graph_built"),
-            }
-
-            return attach_map_geometry(payload, courier=courier)
-
-        if route_stops:
-            print(
-                "Graph-built route is incomplete. "
-                f"Courier={courier_id}, day={delivery_day}, "
-                f"graph_stops={len(graph_order_ids)}, "
-                f"assigned_orders={len(assigned_order_ids)}. "
-                "Rebuilding with ML."
-            )
 
     prepared = [enrich_order_dict(dict(o)) for o in raw_orders]
     orders_by_id = {o["order_id"]: o for o in prepared}
