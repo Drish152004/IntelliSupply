@@ -81,6 +81,10 @@ class EntityScopeRequest(BaseModel):
 
 class UnderstandScenarioRequest(EntityScopeRequest):
     scenario_query: str = Field(..., min_length=1)
+    partial_patch: Optional[ScenarioPatch] = None
+    scenario_types: Optional[List[str]] = None
+    clarification_answers: Optional[dict[str, str]] = None
+    planning_window_days: Optional[int] = Field(default=None, ge=1, le=30)
 
 
 class SimulateRequest(EntityScopeRequest):
@@ -196,7 +200,14 @@ def understand_planning_scenario(
             category=body.category,
             simulation_date=body.simulation_date,
         )
-        result = understand_scenario(body.scenario_query.strip(), base_state)
+        result = understand_scenario(
+            body.scenario_query.strip(),
+            base_state,
+            partial_patch=body.partial_patch,
+            scenario_types=body.scenario_types,
+            clarification_answers=body.clarification_answers,
+            planning_window_days=body.planning_window_days,
+        )
         return _to_jsonable(result)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

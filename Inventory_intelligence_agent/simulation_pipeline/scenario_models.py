@@ -96,7 +96,15 @@ class ScenarioExtraction(BaseModel):
     )
 
 
+class ClarificationPrompt(BaseModel):
+    field_id: str
+    question: str
+
+
 class ScenarioUnderstandingResult(BaseModel):
     status: Literal["complete", "needs_clarification"]
     patch: Optional[ScenarioPatch] = None
+    partial_patch: Optional[ScenarioPatch] = None
+    scenario_types: list[ScenarioType] = Field(default_factory=list)
+    clarification_prompts: list[ClarificationPrompt] = Field(default_factory=list)
     clarification_questions: list[str] = Field(default_factory=list)
