@@ -112,7 +112,7 @@ def _try_login(email: str, password: str) -> dict | None:
     user = result["user"]
 
     courier_id = None
-    if user.get("role") == "courier":
+    if str(user.get("role") or "").strip().lower() == "courier":
         courier = get_courier_by_email(email)
         if courier:
             courier_id = courier.get("courier_id")

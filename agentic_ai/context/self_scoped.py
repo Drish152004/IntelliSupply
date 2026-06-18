@@ -32,20 +32,18 @@ def apply_self_scoped_entities(
     *,
     entities: dict[str, str],
     user_query: str,
-    user_role: str | None,
-    session: dict | None,
 ) -> dict[str, str]:
     """
-    Mark self-scoped queries and bind session courier identity when appropriate.
+    Mark self-scoped queries.
 
     Intended to be called only from entity_extraction_node.
+
+    Courier identity binding for self-scoped queries no longer happens here: it
+    is performed in entity resolution from ``bound_courier_id`` (the new courier
+    identity model). This function therefore no longer reads logistics_session.
     """
     resolved = dict(entities)
     if is_self_scoped_query(user_query):
         resolved["self_scoped"] = "true"
-
-    bound = (session or {}).get("courier_id")
-    if resolved.get("self_scoped") == "true" and bound and "courier_id" not in resolved:
-        resolved["courier_id"] = str(bound)
 
     return resolved

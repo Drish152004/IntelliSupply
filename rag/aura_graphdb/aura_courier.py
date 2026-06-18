@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from typing import Any
 
@@ -9,6 +10,8 @@ from aura_graphdb.aura_connection import AuraConnection
 from aura_graphdb.aura_profiles import sync_profile_to_aura
 from rag.supabase.supabase_auth import register_user_in_supabase
 from rag.supabase.supabase_notifications import create_notification
+
+logger = logging.getLogger(__name__)
 
 COURIER_ROLE_ID = 2
 COURIER_ROLE_NAME = "courier"
@@ -165,6 +168,26 @@ def resolve_courier(
                 "email": clean_email,
             },
         )
+        # TEMP DEBUG: remove after diagnosing aarushi_demo_courier binding.
+        if rows:
+            logger.info(
+                "COURIER_RESOLVE_DEBUG "
+                "input_name=%s "
+                "rows_count=%s "
+                "selected_name=%s "
+                "selected_courier_id=%s",
+                courier_name,
+                len(rows) if rows else 0,
+                rows[0].get("name") if rows else None,
+                rows[0].get("courier_id") if rows else None,
+            )
+        else:
+            logger.info(
+                "COURIER_RESOLVE_DEBUG "
+                "input_name=%s "
+                "rows_count=0",
+                courier_name,
+            )
         return rows[0] if rows else None
     finally:
         conn.close()

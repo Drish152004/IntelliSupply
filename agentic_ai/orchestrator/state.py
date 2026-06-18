@@ -29,6 +29,12 @@ class AgentState(TypedDict):
     authenticated_role_id: NotRequired[int | None]
     authenticated_courier_id: NotRequired[str]
 
+    # Courier identity binding (new model). For COURIER users only:
+    #   JWT courier name -> bound_courier_name -> entity resolution -> bound_courier_id
+    # Centralized resource authorization is built on bound_courier_id in a later phase.
+    bound_courier_name: NotRequired[str | None]
+    bound_courier_id: NotRequired[str | None]
+
     logistics_session: NotRequired[dict[str, Any]]
     inventory_session: NotRequired[dict[str, Any]]
     pending_clarification_session: NotRequired[dict[str, Any] | None]

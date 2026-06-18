@@ -42,10 +42,6 @@ def extract_entities_node(state: AgentState) -> AgentState:
 
         user_query=user_query,
 
-        user_role=state.get("user_role"),
-
-        session=state.get("logistics_session"),
-
     )
 
 

@@ -189,6 +189,7 @@ def _dispatch_aura_function(
                 "success": False,
                 "data": None,
                 "summary": "Saved route not found",
+                "error": "No saved route found for this courier and delivery day.",
             }
         return {"success": True, "data": route, "summary": "Saved route found"}
 

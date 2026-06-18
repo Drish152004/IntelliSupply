@@ -172,6 +172,16 @@ def trace_entity_resolution(payload: dict[str, Any], *, trace_id: str | None = N
     )
 
 
+def trace_identity_binding(payload: dict[str, Any], *, trace_id: str | None = None) -> None:
+    """Emit a structured IDENTITY_BINDING event for courier identity binding."""
+    _emit(
+        trace_id=trace_id,
+        node_name="entity_resolution",
+        event_type="IDENTITY_BINDING",
+        payload=payload,
+    )
+
+
 def trace_cache_lookup(payload: dict[str, Any], *, trace_id: str | None = None) -> None:
     _emit(
         trace_id=trace_id,

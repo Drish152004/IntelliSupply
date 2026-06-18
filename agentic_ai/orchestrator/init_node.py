@@ -40,6 +40,14 @@ def _bootstrap_identity(
             "authenticated_role_id": identity.get("role_id"),
             "authenticated_courier_id": str(courier_id).strip() if courier_id else None,
         }
+        # Courier identity binding (new model): bind the JWT courier name only for
+        # COURIER users. ADMIN/LOGISTICS/INVENTORY identities are never auto-bound;
+        # they continue to provide the courier explicitly via clarification.
+        if resolved_role == "COURIER":
+            name = identity.get("name")
+            identity_fields["bound_courier_name"] = (
+                str(name).strip() if name and str(name).strip() else None
+            )
         return resolved_role, resolved_logistics, identity_fields
 
     resolved_role = restore_user_role(
@@ -97,10 +105,11 @@ def init_state(state: AgentState) -> AgentState:
         updated["pending_clarification_session"] = state["pending_clarification_session"]
 
     logger.info(
-        "init_state: user_id=%s role=%s courier_id=%s",
+        "init_state: user_id=%s role=%s courier_id=%s bound_courier_name=%s",
         updated.get("authenticated_user_id", ""),
         updated.get("user_role", ""),
         updated.get("authenticated_courier_id", ""),
+        updated.get("bound_courier_name", ""),
     )
     return updated
 

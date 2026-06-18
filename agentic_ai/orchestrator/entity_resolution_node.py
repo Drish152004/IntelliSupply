@@ -9,11 +9,13 @@ import sys
 from typing import Any, Callable, Literal
 
 from config.paths import REPO_ROOT
-from observability.trace_events import trace_entity_resolution
+from observability.trace_events import trace_entity_resolution, trace_identity_binding
 from orchestrator.state import AgentState
-from orchestrator.tracing import log_entity_resolution
+from orchestrator.tracing import log_entity_resolution, log_identity_binding
 
 logger = logging.getLogger(__name__)
+
+_COURIER_ROLE = "COURIER"
 
 _AURA_ROOT = REPO_ROOT / "rag" / "aura_graphdb"
 _imports_ready = False
@@ -405,21 +407,194 @@ def resolve_entities(
     return resolved
 
 
+# Worded courier names from the JWT ("Courier Two") must be normalized to the
+# numeric form stored in the graph ("Courier 2") before resolution.
+_NUMBER_WORDS: dict[str, int] = {
+    "zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+    "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15,
+    "sixteen": 16, "seventeen": 17, "eighteen": 18, "nineteen": 19,
+}
+_TENS_WORDS: dict[str, int] = {
+    "twenty": 20, "thirty": 30, "forty": 40, "fifty": 50,
+    "sixty": 60, "seventy": 70, "eighty": 80, "ninety": 90,
+}
+_COURIER_NAME_PREFIX = re.compile(r"^courier\s+(.+)$", re.I)
+
+
+def _words_to_number(text: str) -> int | None:
+    """Convert worded numbers ("two", "twenty one") to an int, or None if not numeric."""
+    tokens = [t for t in re.split(r"[\s-]+", text.strip().lower()) if t and t != "and"]
+    if not tokens:
+        return None
+
+    total = 0
+    matched = False
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        if token in _TENS_WORDS:
+            value = _TENS_WORDS[token]
+            following = tokens[index + 1] if index + 1 < len(tokens) else None
+            if following in _NUMBER_WORDS and 1 <= _NUMBER_WORDS[following] <= 9:
+                value += _NUMBER_WORDS[following]
+                index += 1
+            total += value
+            matched = True
+        elif token in _NUMBER_WORDS:
+            total += _NUMBER_WORDS[token]
+            matched = True
+        else:
+            return None
+        index += 1
+    return total if matched else None
+
+
+def _normalize_courier_name(name: str | None) -> str | None:
+    """Map a worded courier name ("Courier Two") to its numeric form ("Courier 2").
+
+    Returns None when the name is empty, has no "Courier <words>" shape, is already
+    numeric, or cannot be parsed as a number -- i.e. when no distinct normalized
+    form exists to retry resolution with.
+    """
+    cleaned = (name or "").strip()
+    if not cleaned:
+        return None
+    match = _COURIER_NAME_PREFIX.match(cleaned)
+    if not match:
+        return None
+    remainder = match.group(1).strip()
+    if remainder.isdigit():
+        return None
+    number = _words_to_number(remainder)
+    if number is None:
+        return None
+    return f"Courier {number}"
+
+
+def _resolve_bound_courier_id(
+    bound_courier_name: str | None,
+    *,
+    resolve_courier: Callable[..., dict[str, Any] | None] | None = None,
+) -> str | None:
+    """Resolve a bound courier name to the canonical graph courier_id, or None."""
+    name = (bound_courier_name or "").strip()
+    if not name:
+        return None
+    return resolve_courier_entity(courier_name=name, resolve_courier=resolve_courier)
+
+
+def apply_courier_identity_binding(
+    state: AgentState,
+    *,
+    resolve_courier: Callable[..., dict[str, Any] | None] | None = None,
+) -> AgentState:
+    """
+    Bind the authenticated courier identity: ``bound_courier_name`` -> ``bound_courier_id``.
+
+    COURIER role only. ADMIN/LOGISTICS/INVENTORY identities are never auto-bound.
+
+    Self-scoped courier queries ("my route", "my orders", ...) are bound to the
+    courier's own ``courier_id`` here so they resolve without clarification. This
+    is identity binding only -- resource ownership authorization is a later phase.
+    """
+    if state.get("user_role") != _COURIER_ROLE:
+        return state
+
+    bound_name = state.get("bound_courier_name")
+    trace_id = state.get("trace_id")
+    authenticated_courier_id = state.get("authenticated_courier_id")
+
+    # Resolution order: try the original JWT name first ("Courier Two"); if that
+    # fails, retry with the numeric form stored in the graph ("Courier 2").
+    normalized_name = _normalize_courier_name(bound_name)
+    bound_courier_id = _resolve_bound_courier_id(bound_name, resolve_courier=resolve_courier)
+    if not bound_courier_id and normalized_name:
+        bound_courier_id = _resolve_bound_courier_id(
+            normalized_name,
+            resolve_courier=resolve_courier,
+        )
+    source = "name_resolution" if bound_courier_id else "unresolved"
+
+    # Transitional fallback: while bound_courier_name -> bound_courier_id is being
+    # established as the source of truth, fall back to the courier_id already on
+    # the authenticated context so self-scoped queries do not regress.
+    if not bound_courier_id:
+        fallback = state.get("authenticated_courier_id")
+        if fallback and str(fallback).strip():
+            bound_courier_id = str(fallback).strip()
+            source = "authenticated_fallback"
+
+    # TEMP DEBUG: remove after diagnosing aarushi_demo_courier binding.
+    logger.info(
+        "BOUND_COURIER_DEBUG "
+        "jwt_name=%s "
+        "normalized_name=%s "
+        "resolved_id=%s "
+        "authenticated_courier_id=%s "
+        "source=%s",
+        bound_name,
+        normalized_name,
+        bound_courier_id,
+        authenticated_courier_id,
+        source,
+    )
+
+    updated: AgentState = {**state, "bound_courier_id": bound_courier_id}
+
+    if trace_id:
+        trace_identity_binding(
+            {
+                "role": _COURIER_ROLE,
+                "original_name": bound_name,
+                "normalized_name": normalized_name,
+                "bound_courier_name": bound_name,
+                "bound_courier_id": bound_courier_id,
+                "resolved_courier_id": bound_courier_id,
+                "source": source,
+            },
+            trace_id=trace_id,
+        )
+        log_identity_binding(
+            trace_id,
+            bound_courier_name=bound_name,
+            bound_courier_id=bound_courier_id,
+            source=source,
+            normalized_name=normalized_name,
+        )
+
+    # Self-scoped identity binding: a courier's "my ..." query targets their own
+    # data, so populate courier_id from the bound identity when no explicit
+    # courier was requested.
+    entities = dict(updated.get("entities") or {})
+    if (
+        bound_courier_id
+        and entities.get("self_scoped") == "true"
+        and not (entities.get(_COURIER_ENTITY_KEY) or "").strip()
+    ):
+        entities[_COURIER_ENTITY_KEY] = bound_courier_id
+        updated["entities"] = entities
+
+    return updated
+
+
 def resolve_entities_node(state: AgentState) -> AgentState:
     """
-    Resolve user-facing courier and hub references in state["entities"].
+    Bind courier identity and resolve user-facing courier/hub references.
 
     Does not classify intent, authorize, run HITL, or validate parameters.
     """
     if state.get("clarification_failed"):
         return state
 
-    entities = dict(state.get("entities") or {})
-    if not entities:
-        return state
-
     _clear_resolution_records()
+    bound_state = apply_courier_identity_binding(state)
+
+    entities = dict(bound_state.get("entities") or {})
+    if not entities:
+        return bound_state
+
     return {
-        **state,
-        "entities": resolve_entities(entities, trace_id=state.get("trace_id")),
+        **bound_state,
+        "entities": resolve_entities(entities, trace_id=bound_state.get("trace_id")),
     }

@@ -180,6 +180,93 @@ def log_entity_resolution(
     )
 
 
+def log_identity_binding(
+    trace_id: str,
+    *,
+    bound_courier_name: str | None,
+    bound_courier_id: str | None,
+    source: str,
+    normalized_name: str | None = None,
+) -> None:
+    """Log a human-readable courier identity binding line.
+
+    source is one of: name_resolution, authenticated_fallback, unresolved.
+    normalized_name is the numeric form a worded JWT name was mapped to, if any.
+    """
+    normalized_line = (
+        f"normalized_name={normalized_name}\n" if normalized_name else ""
+    )
+    if bound_courier_id:
+        _trace_log(
+            trace_id,
+            (
+                "Courier identity bound:\n"
+                f"bound_courier_name={bound_courier_name}\n"
+                f"{normalized_line}"
+                f"→\nbound_courier_id={bound_courier_id}\n"
+                f"source={source}"
+            ),
+        )
+        return
+    _trace_log(
+        trace_id,
+        (
+            "Courier identity unbound: "
+            f"bound_courier_name={bound_courier_name} "
+            f"normalized_name={normalized_name} (source={source})"
+        ),
+        level=logging.WARNING,
+    )
+
+
+def log_authz_allow(trace_id: str, *, task: str, bound_courier_id: str | None) -> None:
+    """Log a successful courier resource ownership check."""
+    _trace_log(
+        trace_id,
+        f"AUTHZ_ALLOW\ntask={task}\nbound_courier_id={bound_courier_id}",
+    )
+
+
+def log_authz_deny(
+    trace_id: str,
+    *,
+    task: str,
+    bound_courier_id: str | None,
+    requested_courier_id: str | None,
+) -> None:
+    """Log a denied courier resource ownership check (courier_id mismatch)."""
+    _trace_log(
+        trace_id,
+        (
+            "AUTHZ_DENY\n"
+            f"task={task}\n"
+            f"bound_courier_id={bound_courier_id}\n"
+            f"requested_courier_id={requested_courier_id}"
+        ),
+        level=logging.WARNING,
+    )
+
+
+def log_authz_deny_order(
+    trace_id: str,
+    *,
+    order_id: str,
+    assigned_courier_id: str | None,
+    bound_courier_id: str | None,
+) -> None:
+    """Log a denied courier order ownership check (order not assigned to courier)."""
+    _trace_log(
+        trace_id,
+        (
+            "AUTHZ_DENY_ORDER\n"
+            f"order_id={order_id}\n"
+            f"assigned_courier_id={assigned_courier_id}\n"
+            f"bound_courier_id={bound_courier_id}"
+        ),
+        level=logging.WARNING,
+    )
+
+
 def _resolve_trace_id(state: AgentState) -> str:
     return state.get("trace_id") or get_current_trace_id() or "unknown"
 
