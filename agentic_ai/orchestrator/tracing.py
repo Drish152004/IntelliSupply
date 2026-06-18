@@ -16,7 +16,7 @@ import time
 import traceback
 import uuid
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Protocol
 
 from logging_config import setup_trace_logging
 from observability.node_payloads import extract_node_input, extract_node_output
@@ -271,9 +271,21 @@ def _resolve_trace_id(state: AgentState) -> str:
     return state.get("trace_id") or get_current_trace_id() or "unknown"
 
 
+class _StateNodeCallable(Protocol):
+    """Structural type matching LangGraph's ``StateNode`` (keyword ``state`` arg).
+
+    ``Callable[[AgentState], AgentState]`` declares a positional-only parameter,
+    which does not satisfy LangGraph's node protocol (``def __call__(self,
+    state)``). Returning this protocol keeps ``add_node`` type-clean without
+    altering node behavior.
+    """
+
+    def __call__(self, state: AgentState) -> AgentState: ...
+
+
 def traced_node(
     node_name: str, fn: Callable[[AgentState], AgentState]
-) -> Callable[[AgentState], AgentState]:
+) -> _StateNodeCallable:
     """Wrap a graph node with entry/exit, state-diff, and error tracing."""
 
     @functools.wraps(fn)
