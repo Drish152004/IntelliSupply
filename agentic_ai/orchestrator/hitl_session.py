@@ -47,8 +47,7 @@ def get_active_hitl_session(state: AgentState) -> dict[str, Any] | None:
     if pending and pending.get("collecting"):
         return pending
 
-    for key in ("inventory_session", "logistics_session"):
-        session = state.get(key)
+    for session in (state.get("inventory_session"), state.get("logistics_session")):
         if session and session.get("collecting"):
             return session
     return None
@@ -311,12 +310,12 @@ def apply_domain_session_to_state(state: AgentState, domain: str) -> AgentState:
         "pending_clarification_session": None,
     }
 
+    # The opposite bucket is already preserved by the ``**state`` spread above;
+    # only the resolved domain's bucket needs to be replaced with the routed one.
     if domain == "inventory":
         updated["inventory_session"] = routed
-        updated["logistics_session"] = state.get("logistics_session")
     else:
         updated["logistics_session"] = routed
-        updated["inventory_session"] = state.get("inventory_session")
 
     return updated
 
@@ -345,24 +344,35 @@ def should_clear_hitl_sessions(response_status: str | None) -> bool:
     return response_status != HITL_ACTIVE_RESPONSE_STATUS
 
 
+def _strip_session_hitl(session: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Return a copy of a session bucket with HITL collection fields removed."""
+    if not session:
+        return session
+    cleaned = dict(session)
+    cleaned["collecting"] = False
+    for field in (
+        "clarification_stage",
+        "clarification_type",
+        "original_query",
+        "clarification_attempts",
+        "entities",
+        "candidate_tasks",
+    ):
+        cleaned.pop(field, None)
+    return cleaned
+
+
 def clear_all_hitl_sessions(state: AgentState) -> AgentState:
     """Clear HITL state from all session buckets after a terminal response."""
-    updated = dict(state)
-    updated["pending_clarification_session"] = None
+    updated: AgentState = {**state, "pending_clarification_session": None}
 
-    for key in ("logistics_session", "inventory_session"):
-        session = updated.get(key)
-        if not session:
-            continue
-        cleaned = dict(session)
-        cleaned["collecting"] = False
-        cleaned.pop("clarification_stage", None)
-        cleaned.pop("clarification_type", None)
-        cleaned.pop("original_query", None)
-        cleaned.pop("clarification_attempts", None)
-        cleaned.pop("entities", None)
-        cleaned.pop("candidate_tasks", None)
-        updated[key] = cleaned
+    logistics = _strip_session_hitl(state.get("logistics_session"))
+    if logistics is not None:
+        updated["logistics_session"] = logistics
+
+    inventory = _strip_session_hitl(state.get("inventory_session"))
+    if inventory is not None:
+        updated["inventory_session"] = inventory
 
     return updated
 
