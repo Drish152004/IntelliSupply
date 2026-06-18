@@ -6,7 +6,6 @@ import logging
 from typing import Any
 
 from integrations.language import normalize_query
-from orchestrator.hitl_session import attempts_exceeded, get_active_hitl_session
 from orchestrator.rbac.courier_identity import resolve_courier_identity
 from orchestrator.rbac.session_context import merge_logistics_session, restore_user_role
 from orchestrator.state import AgentState
@@ -86,16 +85,6 @@ def init_state(state: AgentState) -> AgentState:
         "clarification_needed": False,
         "clarification_failed": False,
     }
-
-    active_hitl = get_active_hitl_session(updated)
-    if active_hitl and active_hitl.get("original_query"):
-        updated["original_query"] = active_hitl["original_query"]
-    if active_hitl and attempts_exceeded(active_hitl):
-        updated["clarification_failed"] = True
-        updated["agent_response"] = (
-            '{"status": "clarification_failed", '
-            '"message": "Clarification attempt limit reached."}'
-        )
 
     if resolved_logistics:
         updated["logistics_session"] = resolved_logistics

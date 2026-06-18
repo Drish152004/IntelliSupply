@@ -256,7 +256,15 @@ class ResponseFormatter:
 
 
 def format_response(state: AgentState) -> AgentState:
-    """LangGraph node: normalize state into a unified final response."""
+    """LangGraph node: normalize state into a unified final response.
+
+    On a semantic cache hit the cached response is returned verbatim as
+    ``final_response`` and all formatting logic is bypassed.
+    """
+    if state.get("cache_hit") and state.get("cache_response") is not None:
+        logger.info("RESPONSE FORMAT served from semantic cache")
+        return {**state, "final_response": state["cache_response"]}
+
     formatter = ResponseFormatter()
     formatted = formatter.format(state)
     updated_state: AgentState = dict(state)

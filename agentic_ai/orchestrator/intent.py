@@ -13,12 +13,7 @@ from orchestrator.hitl_session import (
     build_clarification_session,
     clarification_type_for_stage,
     get_active_hitl_session,
-    is_intent_resume,
-    is_parameter_resume,
-    merge_intent_query,
-    parse_intent_answer,
 )
-from orchestrator.intent_routing import domain_for_task
 from orchestrator.intent_task_classifier import (
     build_clarification_question,
     classify_domain_task,
@@ -74,76 +69,58 @@ def _apply_classification(state: AgentState, classification: dict) -> AgentState
 
 
 def detect_intent(state: AgentState) -> AgentState:
-    """Detect domain and task from query, entities, and session context."""
+    """Detect domain and task. Resume context is provided by clarification_router.
+
+    NEW QUERY: classify normally.
+    INTENT CLARIFICATION: classify the merged query (router-built), pinning the
+        final domain to the authorized session domain; _apply_classification
+        decides whether another clarification is still required.
+    PARAMETER CLARIFICATION: restore task/domain from state with confidence 1.0;
+        no classification (the task does not change).
+    """
     if state.get("clarification_failed"):
         return state
 
-    if is_parameter_resume(state):
-        session = get_active_hitl_session(state) or {}
-        domain = session.get("domain") or state.get("domain", "logistics")
-        original_query = (
-            session.get("original_query")
-            or state.get("original_query")
-            or state["user_query"]
-        )
+    stage = state.get("clarification_stage")
+
+    if stage == STAGE_PARAMETER:
+        original = state.get("original_query") or state["user_query"]
         classification = {
-            "domain": domain,
-            "task": session.get("task") or state.get("task") or "order_lookup",
+            "domain": state.get("domain") or "logistics",
+            "task": state.get("task") or "order_lookup",
             "confidence": 1.0,
             "source": "parameter_resume",
         }
         logger.info(
-            "Intent parameter resume: domain=%s task=%s query=%r",
+            "Intent parameter resume: domain=%s task=%s",
             classification["domain"],
             classification["task"],
-            original_query,
         )
-        resumed_state: AgentState = {**state, "user_query": original_query}
-        return _apply_classification(resumed_state, classification)
+        return _apply_classification({**state, "user_query": original}, classification)
 
-    if is_intent_resume(state):
-        session = get_active_hitl_session(state) or {}
-        user_answer = state["user_query"]
-        original = session.get("original_query") or state.get("original_query", "")
-        candidate_tasks = session.get("candidate_tasks") or []
-        stored_domain = session.get("domain") or state.get("domain") or "logistics"
-
-        resolved_task = parse_intent_answer(user_answer, candidate_tasks)
-        if resolved_task:
-            classification = {
-                "domain": domain_for_task(resolved_task) or stored_domain,
-                "task": resolved_task,
-                "confidence": 1.0,
-                "source": "intent_resume",
-            }
-            logger.info(
-                "Intent resume resolved deterministically: task=%s domain=%s answer=%r",
-                resolved_task,
-                classification["domain"],
-                user_answer,
-            )
-            resumed_state: AgentState = {**state, "user_query": original or user_answer}
-            return _apply_classification(resumed_state, classification)
-
-        # Parsing failed: fall back to re-classifying the merged query.
-        merged_query = merge_intent_query(original, user_answer)
-        logger.info("Intent resume merged query (fallback): %r", merged_query)
-        coarse = state.get("coarse_domain") or session.get("domain")
-        entities = state.get("entities") or {}
+    if stage == STAGE_INTENT:
+        domain_hint = state.get("domain") or state.get("coarse_domain")
         classification = classify_domain_task(
-            merged_query,
-            entities=entities,
-            domain_hint=coarse if coarse else None,
+            state["user_query"],
+            entities=state.get("entities") or {},
+            domain_hint=domain_hint if domain_hint else None,
         )
-        resumed_state: AgentState = {**state, "user_query": merged_query}
-        return _apply_classification(resumed_state, classification)
+        # Coarse RBAC was skipped this turn; pin the domain to the authorized one
+        # so an intent answer can never silently cross into another domain.
+        if state.get("domain"):
+            classification["domain"] = state["domain"]
+        logger.info(
+            "Intent clarification reclassified: task=%s domain=%s confidence=%s",
+            classification.get("task"),
+            classification.get("domain"),
+            classification.get("confidence"),
+        )
+        return _apply_classification(state, classification)
 
     coarse = state.get("coarse_domain")
-    entities = state.get("entities") or {}
     classification = classify_domain_task(
         state["user_query"],
-        entities=entities,
+        entities=state.get("entities") or {},
         domain_hint=coarse if coarse else None,
     )
-
     return _apply_classification(state, classification)

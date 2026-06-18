@@ -29,6 +29,9 @@ sqlalchemy>=2.0
 psycopg2-binary>=2.9
 neo4j>=5.0
 
+# Cache (Redis semantic cache)
+redis>=5.0
+
 # Authentication and security
 werkzeug>=3.0
 bcrypt>=4.0

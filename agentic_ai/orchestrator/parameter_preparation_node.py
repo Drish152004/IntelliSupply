@@ -10,10 +10,8 @@ from typing import Any
 
 from context.clarification_manager import ClarificationType
 from orchestrator.hitl_session import (
-    MAX_HITL_ATTEMPTS,
     STAGE_PARAMETER,
     attach_clarification_session,
-    attempts_exceeded,
     build_clarification_session,
     clarification_type_for_stage,
     get_active_hitl_session,
@@ -48,24 +46,6 @@ class PreparationResult:
     payload: dict[str, Any] | None = None
     question: str | None = None
     missing_fields: list[str] | None = None
-
-
-def _clarification_failed_state(state: AgentState) -> AgentState:
-    return {
-        **state,
-        "clarification_needed": False,
-        "clarification_failed": True,
-        "agent_response": json.dumps(
-            {
-                "status": "clarification_failed",
-                "message": (
-                    f"Unable to collect required information after "
-                    f"{MAX_HITL_ATTEMPTS} attempts."
-                ),
-            },
-            indent=2,
-        ),
-    }
 
 
 def _hub_id_from_entities(entities: dict[str, str], role: str) -> str | None:
@@ -275,14 +255,6 @@ def prepare_parameters(state: AgentState) -> AgentState:
         }
 
     active_session = get_active_hitl_session(state)
-    if attempts_exceeded(active_session):
-        logger.info("Parameter clarification attempt limit reached for task=%s", task)
-        return {
-            **_clarification_failed_state(updated),
-            "missing_required_parameters": True,
-            "missing_fields": result.missing_fields or [],
-        }
-
     agent_response = json.dumps(
         {
             "status": "awaiting_input",

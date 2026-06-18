@@ -1,61 +1,25 @@
 """Entity extraction node: extract and normalize identifiers only."""
 
-
-
 from __future__ import annotations
 
-
-
 from context.entity_extractor import EntityExtractor
-
 from context.self_scoped import apply_self_scoped_entities
-
-from orchestrator.hitl_session import get_active_hitl_session, is_hitl_resume, merge_entities
-
+from orchestrator.hitl_session import merge_entities
 from orchestrator.state import AgentState
 
 
-
-
-
 def extract_entities_node(state: AgentState) -> AgentState:
+    """Extract raw entity references and merge with any entities already on state.
 
+    Sole producer of self_scoped. For resume turns the clarification_router has
+    placed persisted entities on ``state["entities"]``; for new queries it is
+    empty, so the merge is a no-op. No HITL, authorization, or task validation.
     """
-
-    Extract raw entity references from the user query and populate state["entities"].
-
-
-
-    Sole producer of self_scoped and self-scoped courier binding.
-
-    No HITL, authorization, task validation, or completeness checks.
-
-    """
-
     user_query = state["user_query"]
-    session = get_active_hitl_session(state) or {}
-    entities = EntityExtractor.extract(user_query)
-
-    entities = apply_self_scoped_entities(
-
-        entities=entities,
-
+    extracted = EntityExtractor.extract(user_query)
+    extracted = apply_self_scoped_entities(
+        entities=extracted,
         user_query=user_query,
-
     )
-
-
-
-    if is_hitl_resume(state):
-
-        session = get_active_hitl_session(state) or {}
-
-        persisted = session.get("entities") or {}
-
-        entities = merge_entities(persisted, entities)
-
-
-
-    return {**state, "entities": entities}
-
-
+    merged = merge_entities(state.get("entities") or {}, extracted)
+    return {**state, "entities": merged}

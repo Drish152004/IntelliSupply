@@ -324,43 +324,63 @@ def resolve_entities(
         ]
         before = ", ".join(part for part in before_parts if part)
 
-        canonical_courier_id = resolve_courier_entity(
-            courier_reference=str(courier_reference).strip() if courier_reference else None,
-            courier_name=str(courier_name).strip() if courier_name else None,
-            courier_id=str(existing_courier_id).strip() if existing_courier_id else None,
-            resolve_courier=resolve_courier,
-        )
-        if canonical_courier_id:
-            if canonical_courier_id == str(existing_courier_id or "").strip():
-                _emit_resolution_trace(
-                    trace_id,
-                    entity_type="courier",
-                    entity_key=_COURIER_ENTITY_KEY,
-                    before=before,
-                    after=canonical_courier_id,
-                    status="unchanged",
-                )
-            else:
-                resolved[_COURIER_ENTITY_KEY] = canonical_courier_id
-                _emit_resolution_trace(
-                    trace_id,
-                    entity_type="courier",
-                    entity_key=_COURIER_ENTITY_KEY,
-                    before=before,
-                    after=canonical_courier_id,
-                    status="success",
-                )
-            resolved.pop(_COURIER_REFERENCE_KEY, None)
-            resolved.pop(_COURIER_NAME_KEY, None)
-        else:
+        clean_existing_id = str(existing_courier_id or "").strip()
+        # JWT/self-scoped identity binding injects a graph-native courier_id with no
+        # name or reference. That id is already the canonical Courier.courier_id, so
+        # the resolver round-trip would only return it unchanged -- skip it. Explicit
+        # name/reference lookups (courier 11, courier aarushi) still resolve below.
+        if (
+            clean_existing_id
+            and not courier_reference
+            and not courier_name
+            and _is_canonical_courier_id(clean_existing_id)
+        ):
             _emit_resolution_trace(
                 trace_id,
                 entity_type="courier",
                 entity_key=_COURIER_ENTITY_KEY,
                 before=before,
-                after=None,
-                status="failure",
+                after=clean_existing_id,
+                status="unchanged",
             )
+        else:
+            canonical_courier_id = resolve_courier_entity(
+                courier_reference=str(courier_reference).strip() if courier_reference else None,
+                courier_name=str(courier_name).strip() if courier_name else None,
+                courier_id=clean_existing_id or None,
+                resolve_courier=resolve_courier,
+            )
+            if canonical_courier_id:
+                if canonical_courier_id == clean_existing_id:
+                    _emit_resolution_trace(
+                        trace_id,
+                        entity_type="courier",
+                        entity_key=_COURIER_ENTITY_KEY,
+                        before=before,
+                        after=canonical_courier_id,
+                        status="unchanged",
+                    )
+                else:
+                    resolved[_COURIER_ENTITY_KEY] = canonical_courier_id
+                    _emit_resolution_trace(
+                        trace_id,
+                        entity_type="courier",
+                        entity_key=_COURIER_ENTITY_KEY,
+                        before=before,
+                        after=canonical_courier_id,
+                        status="success",
+                    )
+                resolved.pop(_COURIER_REFERENCE_KEY, None)
+                resolved.pop(_COURIER_NAME_KEY, None)
+            else:
+                _emit_resolution_trace(
+                    trace_id,
+                    entity_type="courier",
+                    entity_key=_COURIER_ENTITY_KEY,
+                    before=before,
+                    after=None,
+                    status="failure",
+                )
 
     for key in _HUB_ENTITY_KEYS:
         hub_ref = resolved.get(key)
@@ -407,92 +427,16 @@ def resolve_entities(
     return resolved
 
 
-# Worded courier names from the JWT ("Courier Two") must be normalized to the
-# numeric form stored in the graph ("Courier 2") before resolution.
-_NUMBER_WORDS: dict[str, int] = {
-    "zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
-    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
-    "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15,
-    "sixteen": 16, "seventeen": 17, "eighteen": 18, "nineteen": 19,
-}
-_TENS_WORDS: dict[str, int] = {
-    "twenty": 20, "thirty": 30, "forty": 40, "fifty": 50,
-    "sixty": 60, "seventy": 70, "eighty": 80, "ninety": 90,
-}
-_COURIER_NAME_PREFIX = re.compile(r"^courier\s+(.+)$", re.I)
-
-
-def _words_to_number(text: str) -> int | None:
-    """Convert worded numbers ("two", "twenty one") to an int, or None if not numeric."""
-    tokens = [t for t in re.split(r"[\s-]+", text.strip().lower()) if t and t != "and"]
-    if not tokens:
-        return None
-
-    total = 0
-    matched = False
-    index = 0
-    while index < len(tokens):
-        token = tokens[index]
-        if token in _TENS_WORDS:
-            value = _TENS_WORDS[token]
-            following = tokens[index + 1] if index + 1 < len(tokens) else None
-            if following in _NUMBER_WORDS and 1 <= _NUMBER_WORDS[following] <= 9:
-                value += _NUMBER_WORDS[following]
-                index += 1
-            total += value
-            matched = True
-        elif token in _NUMBER_WORDS:
-            total += _NUMBER_WORDS[token]
-            matched = True
-        else:
-            return None
-        index += 1
-    return total if matched else None
-
-
-def _normalize_courier_name(name: str | None) -> str | None:
-    """Map a worded courier name ("Courier Two") to its numeric form ("Courier 2").
-
-    Returns None when the name is empty, has no "Courier <words>" shape, is already
-    numeric, or cannot be parsed as a number -- i.e. when no distinct normalized
-    form exists to retry resolution with.
+def apply_courier_identity_binding(state: AgentState) -> AgentState:
     """
-    cleaned = (name or "").strip()
-    if not cleaned:
-        return None
-    match = _COURIER_NAME_PREFIX.match(cleaned)
-    if not match:
-        return None
-    remainder = match.group(1).strip()
-    if remainder.isdigit():
-        return None
-    number = _words_to_number(remainder)
-    if number is None:
-        return None
-    return f"Courier {number}"
-
-
-def _resolve_bound_courier_id(
-    bound_courier_name: str | None,
-    *,
-    resolve_courier: Callable[..., dict[str, Any] | None] | None = None,
-) -> str | None:
-    """Resolve a bound courier name to the canonical graph courier_id, or None."""
-    name = (bound_courier_name or "").strip()
-    if not name:
-        return None
-    return resolve_courier_entity(courier_name=name, resolve_courier=resolve_courier)
-
-
-def apply_courier_identity_binding(
-    state: AgentState,
-    *,
-    resolve_courier: Callable[..., dict[str, Any] | None] | None = None,
-) -> AgentState:
-    """
-    Bind the authenticated courier identity: ``bound_courier_name`` -> ``bound_courier_id``.
+    Bind the authenticated courier identity from the JWT, the single source of truth.
 
     COURIER role only. ADMIN/LOGISTICS/INVENTORY identities are never auto-bound.
+
+    The JWT ``courier_id`` claim (``authenticated_courier_id``) is the graph-native
+    courier id: it is the same ``Courier.courier_id`` returned by name resolution and
+    compared in resource authorization. It is therefore used directly as
+    ``bound_courier_id`` -- no graph lookup, fuzzy matching, or name normalization.
 
     Self-scoped courier queries ("my route", "my orders", ...) are bound to the
     courier's own ``courier_id`` here so they resolve without clarification. This
@@ -501,53 +445,17 @@ def apply_courier_identity_binding(
     if state.get("user_role") != _COURIER_ROLE:
         return state
 
-    bound_name = state.get("bound_courier_name")
     trace_id = state.get("trace_id")
-    authenticated_courier_id = state.get("authenticated_courier_id")
-
-    # Resolution order: try the original JWT name first ("Courier Two"); if that
-    # fails, retry with the numeric form stored in the graph ("Courier 2").
-    normalized_name = _normalize_courier_name(bound_name)
-    bound_courier_id = _resolve_bound_courier_id(bound_name, resolve_courier=resolve_courier)
-    if not bound_courier_id and normalized_name:
-        bound_courier_id = _resolve_bound_courier_id(
-            normalized_name,
-            resolve_courier=resolve_courier,
-        )
-    source = "name_resolution" if bound_courier_id else "unresolved"
-
-    # Transitional fallback: while bound_courier_name -> bound_courier_id is being
-    # established as the source of truth, fall back to the courier_id already on
-    # the authenticated context so self-scoped queries do not regress.
-    if not bound_courier_id:
-        fallback = state.get("authenticated_courier_id")
-        if fallback and str(fallback).strip():
-            bound_courier_id = str(fallback).strip()
-            source = "authenticated_fallback"
-
-    # TEMP DEBUG: remove after diagnosing aarushi_demo_courier binding.
-    logger.info(
-        "BOUND_COURIER_DEBUG "
-        "jwt_name=%s "
-        "normalized_name=%s "
-        "resolved_id=%s "
-        "authenticated_courier_id=%s "
-        "source=%s",
-        bound_name,
-        normalized_name,
-        bound_courier_id,
-        authenticated_courier_id,
-        source,
-    )
+    bound_courier_id = (str(state.get("authenticated_courier_id") or "")).strip() or None
+    source = "authenticated_jwt" if bound_courier_id else "unresolved"
 
     updated: AgentState = {**state, "bound_courier_id": bound_courier_id}
 
     if trace_id:
+        bound_name = state.get("bound_courier_name")
         trace_identity_binding(
             {
                 "role": _COURIER_ROLE,
-                "original_name": bound_name,
-                "normalized_name": normalized_name,
                 "bound_courier_name": bound_name,
                 "bound_courier_id": bound_courier_id,
                 "resolved_courier_id": bound_courier_id,
@@ -560,7 +468,6 @@ def apply_courier_identity_binding(
             bound_courier_name=bound_name,
             bound_courier_id=bound_courier_id,
             source=source,
-            normalized_name=normalized_name,
         )
 
     # Self-scoped identity binding: a courier's "my ..." query targets their own

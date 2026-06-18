@@ -29,9 +29,11 @@ class AgentState(TypedDict):
     authenticated_role_id: NotRequired[int | None]
     authenticated_courier_id: NotRequired[str]
 
-    # Courier identity binding (new model). For COURIER users only:
-    #   JWT courier name -> bound_courier_name -> entity resolution -> bound_courier_id
-    # Centralized resource authorization is built on bound_courier_id in a later phase.
+    # Courier identity binding. For COURIER users only:
+    #   JWT courier_id claim (authenticated_courier_id) -> bound_courier_id (direct).
+    # The JWT identity is authoritative; no name resolution is performed. Centralized
+    # resource authorization is built on bound_courier_id.
+    # bound_courier_name is retained for tracing/diagnostics only.
     bound_courier_name: NotRequired[str | None]
     bound_courier_id: NotRequired[str | None]
 
@@ -77,3 +79,8 @@ class AgentState(TypedDict):
     ml_payload_partial: NotRequired[dict[str, Any]]
 
     trace_id: NotRequired[str]
+
+    # Semantic cache (Redis). cache_hit short-circuits execution to the formatter;
+    # cache_response holds the cached final_response served on a hit.
+    cache_hit: NotRequired[bool]
+    cache_response: NotRequired[Any]

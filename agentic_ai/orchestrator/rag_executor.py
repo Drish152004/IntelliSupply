@@ -7,12 +7,6 @@ import logging
 
 from integrations.aura_bridge import execute_aura_function
 from integrations.sql_bridge import ask_inventory_sql
-from orchestrator.result_cache import (
-    CACHE_TTL_SECONDS,
-    get_cached_result,
-    make_cache_key,
-    set_cached_result,
-)
 from orchestrator.state import AgentState
 
 logger = logging.getLogger(__name__)
@@ -115,32 +109,6 @@ def execute_rag(state: AgentState) -> AgentState:
                 ),
             }
 
-        courier_id = state.get("authenticated_courier_id")
-        cache_key = make_cache_key(
-            function_name=function_name,
-            payload=payload,
-            user_role=state.get("user_role"),
-            courier_id=courier_id,
-        )
-
-        cached_result = get_cached_result(cache_key)
-        if cached_result is not None:
-            logger.info("cache_hit key=%s", cache_key)
-            agent_response = _build_logistics_response(
-                status="complete",
-                task=task,
-                function_name=function_name,
-                payload=payload,
-                result=cached_result,
-            )
-            return {
-                **state,
-                "execution_status": "complete",
-                "execution_error": None,
-                "agent_response": agent_response,
-            }
-
-        logger.info("cache_miss key=%s", cache_key)
         result = execute_aura_function(
             function_name=function_name,
             payload=payload,
@@ -149,10 +117,6 @@ def execute_rag(state: AgentState) -> AgentState:
             trace_id=trace_id,
         )
         status = "complete" if result.get("success") else "error"
-
-        if status == "complete":
-            set_cached_result(cache_key, result, CACHE_TTL_SECONDS)
-            logger.info("cache_store key=%s ttl=%s", cache_key, CACHE_TTL_SECONDS)
 
         agent_response = _build_logistics_response(
             status=status,

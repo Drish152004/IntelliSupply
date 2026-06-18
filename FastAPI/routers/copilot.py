@@ -95,7 +95,6 @@ def debug(
             "domain": result.get("domain"),
             "task": result.get("task"),
             "detected_language": result.get("detected_language"),
-            "cache_hit": result.get("cache_hit", False),
             "final_response": _parse_final_response(result.get("final_response", "")),
         }
     except HTTPException:

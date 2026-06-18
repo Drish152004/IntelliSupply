@@ -60,30 +60,6 @@ def clarification_stage(session: dict[str, Any] | None) -> str | None:
     return str(stage) if stage else None
 
 
-def is_hitl_resume(state: AgentState) -> bool:
-    session = get_active_hitl_session(state)
-    return bool(session and session.get("collecting"))
-
-
-def is_parameter_resume(state: AgentState) -> bool:
-    session = get_active_hitl_session(state)
-    return clarification_stage(session) == STAGE_PARAMETER
-
-
-def is_intent_resume(state: AgentState) -> bool:
-    session = get_active_hitl_session(state)
-    return clarification_stage(session) == STAGE_INTENT
-
-
-def is_domain_resume(state: AgentState) -> bool:
-    pending = state.get("pending_clarification_session")
-    return bool(
-        pending
-        and pending.get("collecting")
-        and clarification_stage(pending) == STAGE_DOMAIN
-    )
-
-
 def parse_domain_answer(user_query: str) -> str | None:
     """Interpret a user's domain clarification reply."""
     normalized = user_query.strip().lower()
@@ -104,94 +80,6 @@ def parse_domain_answer(user_query: str) -> str | None:
         if "inventory" not in normalized and "stock" not in normalized:
             return "logistics"
     return None
-
-
-# Ordered most-specific phrase first; longest matching alias wins so overlapping
-# tokens (e.g. "route" vs "courier route") resolve deterministically.
-_INTENT_TASK_ALIASES: dict[str, tuple[str, ...]] = {
-    "courier_orders": (
-        "orders assigned to courier",
-        "orders assigned",
-        "assigned orders",
-        "courier workload",
-        "courier orders",
-        "assigned",
-    ),
-    "courier_route": (
-        "courier route",
-        "next stop",
-        "remaining stops",
-        "today's route",
-        "route sequence",
-        "optimized route",
-        "route",
-    ),
-    "recent_routes": (
-        "recent deliveries",
-        "latest deliveries",
-        "latest orders",
-        "newest routes",
-        "recent routes",
-        "deliveries",
-        "recent",
-        "latest",
-    ),
-    "order_lookup": (
-        "order details",
-        "order status",
-        "order lookup",
-        "order",
-    ),
-    "delivery_days": (
-        "available delivery dates",
-        "delivery schedules",
-        "delivery dates",
-        "delivery days",
-        "schedules",
-    ),
-    "hub_route": (
-        "route between hubs",
-        "hub route",
-        "between hubs",
-        "hub",
-    ),
-    "inventory_nlsql": (
-        "inventory",
-        "stock",
-        "products",
-        "warehouse",
-    ),
-}
-
-
-def parse_intent_answer(
-    clarification_answer: str,
-    candidate_tasks: list[str] | None,
-) -> str | None:
-    """Deterministically map an intent clarification answer to a candidate task.
-
-    Mirrors ``parse_domain_answer``: the answer is matched only against the
-    candidate tasks stored on the session. The longest matching alias wins so
-    overlapping signals (e.g. "route" vs "courier route") resolve predictably.
-    Returns ``None`` when nothing matches so the caller can fall back to
-    re-classification.
-    """
-    if not candidate_tasks:
-        return None
-
-    normalized = clarification_answer.strip().lower()
-    if not normalized:
-        return None
-
-    best_task: str | None = None
-    best_score = 0
-    for task in candidate_tasks:
-        for alias in _INTENT_TASK_ALIASES.get(task, ()):
-            if alias in normalized and len(alias) > best_score:
-                best_score = len(alias)
-                best_task = task
-
-    return best_task
 
 
 def merge_intent_query(original_query: str, clarification_answer: str) -> str:
@@ -269,11 +157,6 @@ def build_clarification_session(
 
     session["clarification_attempts"] = next_clarification_attempts(session)
     return session
-
-
-def cleared_session() -> dict[str, Any]:
-    """Return a session dict with HITL fields removed."""
-    return {"collecting": False}
 
 
 def route_resolved_domain_session(

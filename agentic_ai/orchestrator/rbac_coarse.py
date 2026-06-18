@@ -6,19 +6,11 @@ import json
 import logging
 
 from context.clarification_manager import ClarificationManager, ClarificationType
-from context.entity_extractor import EntityExtractor
-from context.self_scoped import is_self_scoped_query
 from orchestrator.hitl_session import (
     STAGE_DOMAIN,
-    STAGE_PARAMETER,
-    apply_domain_session_to_state,
     attach_clarification_session,
     build_clarification_session,
     clarification_type_for_stage,
-    get_active_hitl_session,
-    is_domain_resume,
-    is_parameter_resume,
-    parse_domain_answer,
 )
 from orchestrator.task_registry import (
     VALID_DOMAINS,
@@ -36,69 +28,6 @@ _ROLE_ALLOWED_DOMAINS: dict[str, frozenset[str]] = {
     "LOGISTICS": frozenset({"logistics"}),
 }
 
-# Presence of any of these extracted entities uniquely implies the logistics domain.
-# Includes both spec field names and the variant keys the extractor actually emits
-# (e.g. from_hub/to_hub, courier_reference, city).
-_LOGISTICS_ENTITY_KEYS: frozenset[str] = frozenset({
-    "order_id",
-    "shipment_id",
-    "courier_id",
-    "courier_name",
-    "courier_reference",
-    "hub_id",
-    "from_hub_id",
-    "to_hub_id",
-    "from_hub",
-    "to_hub",
-    "city_name",
-    "city",
-    "route_prediction_id",
-    "self_scoped",
-})
-
-# Presence of any of these extracted entities uniquely implies the inventory domain.
-_INVENTORY_ENTITY_KEYS: frozenset[str] = frozenset({
-    "sku_id",
-    "warehouse_id",
-    "product_name",
-})
-
-
-def domain_from_entities(entities: dict[str, str] | None) -> str | None:
-    """
-    Resolve a domain from extracted entities, or None when undetermined.
-
-    Entity-based routing takes precedence over keyword matching. When entities
-    from both domains are present, the result is ambiguous (None) so keyword
-    detection can arbitrate.
-    """
-    if not entities:
-        return None
-    has_logistics = any(entities.get(key) for key in _LOGISTICS_ENTITY_KEYS)
-    has_inventory = any(entities.get(key) for key in _INVENTORY_ENTITY_KEYS)
-    if has_logistics and not has_inventory:
-        return "logistics"
-    if has_inventory and not has_logistics:
-        return "inventory"
-    return None
-
-
-def _entities_for_domain_detection(state: AgentState, query: str) -> dict[str, str]:
-    """
-    Return entities to drive domain detection.
-
-    Prefers entities already on state; falls back to a deterministic extraction
-    because coarse authorization runs before the entity_extraction node. This is
-    side-effect free and does not alter the entities the pipeline later produces.
-    """
-    existing = state.get("entities") or {}
-    if existing:
-        return existing
-    extracted = dict(EntityExtractor.extract(query))
-    if "self_scoped" not in extracted and is_self_scoped_query(query):
-        extracted["self_scoped"] = "true"
-    return extracted
-
 
 def is_domain_allowed_for_role(role: str | None, domain: str) -> bool:
     """Return whether a role may access the given domain at coarse authorization."""
@@ -110,80 +39,45 @@ def is_domain_allowed_for_role(role: str | None, domain: str) -> bool:
     return domain in allowed
 
 
-def _resume_parameter_domain(state: AgentState) -> AgentState:
-    """Skip domain detection when resuming parameter clarification."""
-    session = get_active_hitl_session(state) or {}
-    domain = session.get("domain") or state.get("domain", "")
-    logger.info(
-        "Coarse authorization allowed: domain=%s source=parameter_resume role=%s",
-        domain,
-        state.get("user_role"),
-    )
-    return _authorize_allowed(state, domain, classification_source="parameter_resume")
-
-
-def _resume_domain_clarification(state: AgentState) -> AgentState:
-    """Interpret the user's domain answer and route into the correct session bucket."""
-    query = state["user_query"]
-    role = state.get("user_role")
-    resolved = parse_domain_answer(query)
-
-    if resolved is None:
-        question = ClarificationManager.domain_question()
-        return _request_domain_clarification(state, question)
-
-    if not is_domain_allowed_for_role(role, resolved):
-        return _deny_domain_access(state, resolved, role)
-
-    logger.info(
-        "Domain clarification resolved: domain=%s source=user_answer role=%s query=%r",
-        resolved,
-        role,
-        query,
-    )
-    routed = apply_domain_session_to_state(state, resolved)
-    return _authorize_allowed(routed, resolved, classification_source="domain_resume")
-
-
 def coarse_authorization(state: AgentState) -> AgentState:
     """
     Keyword-based domain detection, domain ambiguity HITL, and coarse RBAC.
 
     Domain-level permission only — no confidence scoring, task inference,
     resource ownership, or task authorization.
+
+    Resume routing is owned entirely by clarification_router. A domain
+    clarification answer arrives here with the domain already resolved on
+    state; this node only validates role access for it.
     """
     if state.get("clarification_failed"):
         return state
 
-    if is_domain_resume(state):
-        return _resume_domain_clarification(state)
-
-    if is_parameter_resume(state):
-        return _resume_parameter_domain(state)
+    # Domain clarification answer: domain already resolved by clarification_router.
+    if state.get("clarification_stage") == STAGE_DOMAIN and state.get("domain"):
+        domain = state["domain"]
+        role = state.get("user_role")
+        base: AgentState = {
+            **state,
+            "coarse_domain": domain,
+            "clarification_needed": False,
+            "clarification_stage": None,
+        }
+        if not is_domain_allowed_for_role(role, domain):
+            return _deny_domain_access(base, domain, role)
+        logger.info("Domain clarification validated: domain=%s role=%s", domain, role)
+        return _authorize_allowed(base, domain, classification_source="domain_resume")
 
     query = state["user_query"]
     role = state.get("user_role")
 
-    # Entity-based routing takes precedence over keyword matching: a present
-    # logistics/inventory entity is sufficient to determine the domain.
-    entities = _entities_for_domain_detection(state, query)
-    entity_domain = domain_from_entities(entities)
-
+    # Domain detection is keyword-based only. Entity extraction is intentionally
+    # not performed here; it runs later in the entity_extraction node.
     matched_inventory, matched_logistics = match_coarse_domain_keywords(query)
+    domain = coarse_domain_from_matches(matched_inventory, matched_logistics)
+    detection_source = "keyword"
     logger.info(
-        "keyword matches inventory=%s logistics=%s query=%r",
-        matched_inventory,
-        matched_logistics,
-        query,
-    )
-    keyword_domain = coarse_domain_from_matches(matched_inventory, matched_logistics)
-
-    domain = entity_domain or keyword_domain
-    detection_source = "entity" if entity_domain else "keyword"
-    logger.info(
-        "domain detection entity_domain=%s matched_inventory=%s matched_logistics=%s "
-        "domain=%s source=%s",
-        entity_domain or "none",
+        "domain detection matched_inventory=%s matched_logistics=%s domain=%s source=%s",
         matched_inventory,
         matched_logistics,
         domain or "ambiguous",

@@ -2,8 +2,19 @@
 
 Main LangGraph orchestration workflow.
 
-init → coarse_authorization → entity_extraction → intent → entity_resolution
-  → authorize → parameter_preparation → rag_executor → response_formatter → END
+init → clarification_router → semantic_cache_lookup → coarse_authorization
+  → entity_extraction → intent → entity_resolution → authorize
+  → parameter_preparation → rag_executor → response_formatter
+  → semantic_cache_store → END
+
+clarification_router resumes in-progress HITL turns:
+  new query / domain answer → semantic_cache_lookup
+  intent answer / parameter answer → entity_extraction (bypasses cache)
+  attempts exceeded → response_formatter
+
+semantic_cache_lookup:
+  cache hit  → response_formatter (serves cached response)
+  cache miss → coarse_authorization
 
 """
 
@@ -14,6 +25,10 @@ import time
 from langgraph.graph import END, START, StateGraph
 
 from orchestrator.authorize_node import authorize_request
+from orchestrator.clarification_router_node import (
+    clarification_router,
+    route_after_clarification_router,
+)
 from orchestrator.entity_extraction_node import extract_entities_node
 from orchestrator.entity_resolution_node import resolve_entities_node
 from orchestrator.init_node import build_initial_state, init_state
@@ -23,6 +38,11 @@ from orchestrator.parameter_preparation_node import prepare_parameters
 from orchestrator.rag_executor import execute_rag
 from orchestrator.rbac_coarse import coarse_authorization
 from orchestrator.response_formatter import format_response
+from orchestrator.semantic_cache_lookup_node import (
+    route_after_semantic_cache_lookup,
+    semantic_cache_lookup_node,
+)
+from orchestrator.semantic_cache_store_node import semantic_cache_store_node
 from orchestrator.state import AgentState
 from orchestrator.tracing import (
     begin_trace,
@@ -78,6 +98,18 @@ def build_graph():
 
     graph.add_node("init_state", traced_node("init_state", init_state))
     graph.add_node(
+        "clarification_router",
+        traced_node("clarification_router", clarification_router),
+    )
+    graph.add_node(
+        "semantic_cache_lookup",
+        traced_node("semantic_cache_lookup", semantic_cache_lookup_node),
+    )
+    graph.add_node(
+        "semantic_cache_store",
+        traced_node("semantic_cache_store", semantic_cache_store_node),
+    )
+    graph.add_node(
         "coarse_authorization",
         traced_node("coarse_authorization", coarse_authorization),
     )
@@ -102,7 +134,15 @@ def build_graph():
     )
 
     graph.add_edge(START, "init_state")
-    graph.add_edge("init_state", "coarse_authorization")
+    graph.add_edge("init_state", "clarification_router")
+    graph.add_conditional_edges(
+        "clarification_router",
+        traced_route("clarification_router", route_after_clarification_router),
+    )
+    graph.add_conditional_edges(
+        "semantic_cache_lookup",
+        traced_route("semantic_cache_lookup", route_after_semantic_cache_lookup),
+    )
     graph.add_conditional_edges(
         "coarse_authorization",
         traced_route("coarse_authorization", _route_after_coarse_authorization),
@@ -122,7 +162,8 @@ def build_graph():
         traced_route("parameter_preparation", _route_after_parameter_preparation),
     )
     graph.add_edge("rag_executor", "response_formatter")
-    graph.add_edge("response_formatter", END)
+    graph.add_edge("response_formatter", "semantic_cache_store")
+    graph.add_edge("semantic_cache_store", END)
 
     return graph.compile()
 
