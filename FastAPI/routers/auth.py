@@ -23,16 +23,15 @@ from dependencies.auth import (
     get_current_user_optional,
 )
 
-from aura_graphdb.aura_auth import (
+from rag.aura_graphdb.aura_auth import (
     count_profiles,
     get_user_by_email,
-    get_user_by_id,
     login_user_with_password,
     register_user_with_password,
     update_user_profile,
 )
 
-from aura_graphdb.aura_courier import get_courier_by_email
+from rag.aura_graphdb.aura_courier import get_courier_by_email
 
 # Google OAuth
 from google.oauth2 import id_token
@@ -343,4 +342,4 @@ async def api_patch_me(
             courier_id = courier.get("courier_id")
 
     serialized = _serialize_user(updated_user, courier_id=courier_id)
-    return {"success": True, "user": serialized}
+    return {"success": True, "user": serialized}
