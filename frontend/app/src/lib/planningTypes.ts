@@ -26,6 +26,7 @@ export interface PlanningContext {
   combinations: Array<{
     category: string;
     product_id: string;
+    product_display_name: string;
     hub_id: string | number;
   }>;
 }
@@ -279,7 +280,7 @@ export interface PlanningSimulationResult {
 
 export interface EntityScope {
   hub_id: string;
-  product_id: string;
+  product_display_name: string;
   category: string;
   simulation_date: string;
 }
