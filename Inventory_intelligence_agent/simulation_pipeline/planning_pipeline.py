@@ -106,7 +106,10 @@ def run_decision_evaluation_and_recommendation(
 
     recommended = recommendation.recommended_decision
     if recommended is not None:
-        execution_decision = evaluate_policy(recommended.decision)
+        execution_decision = evaluate_policy(
+            recommended.decision,
+            utility_score=recommended.utility_score,
+        )
         policy_evaluations.append(execution_decision)
         execution_result = execute_decision_if_auto_approved(
             execution_decision,

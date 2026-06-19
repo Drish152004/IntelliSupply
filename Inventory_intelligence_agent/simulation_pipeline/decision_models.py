@@ -45,12 +45,16 @@ DECISION_TYPE_TO_POLICY_TYPE: dict[DecisionType, str] = {
 }
 
 
+DEFAULT_UTILITY_SCORE_THRESHOLD = 0.5
+
+
 @dataclass
 class AutomationPolicy:
     policy_type: str
     enabled: bool
     auto_execute: bool
     threshold_value: float
+    utility_score_threshold: float = DEFAULT_UTILITY_SCORE_THRESHOLD
 
 
 @dataclass
@@ -61,6 +65,8 @@ class ExecutionDecision:
     policy_type: str
     threshold_value: float | None = None
     observed_value: float | None = None
+    utility_score_threshold: float | None = None
+    observed_utility_score: float | None = None
 
 
 @dataclass

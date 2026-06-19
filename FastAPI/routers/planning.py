@@ -76,7 +76,7 @@ def _to_jsonable(obj: Any) -> Any:
 
 class EntityScopeRequest(BaseModel):
     hub_id: str
-    product_id: str
+    product_display_name: str
     category: str
     simulation_date: str
 
@@ -86,7 +86,6 @@ class UnderstandScenarioRequest(EntityScopeRequest):
     partial_patch: Optional[ScenarioPatch] = None
     scenario_types: Optional[List[str]] = None
     clarification_answers: Optional[dict[str, str]] = None
-    planning_window_days: Optional[int] = Field(default=None, ge=1, le=30)
 
 
 class SimulateRequest(EntityScopeRequest):
@@ -101,6 +100,48 @@ class SimulateRequest(EntityScopeRequest):
     selected_decision_ids: Optional[List[str]] = None
 
 
+_PRODUCT_CATALOG: Any = None
+
+
+def _get_product_catalog():
+    import pandas as pd
+    from base_state import DATA_DIR
+
+    global _PRODUCT_CATALOG
+    if _PRODUCT_CATALOG is None:
+        _PRODUCT_CATALOG = pd.read_csv(
+            DATA_DIR / "product_catalog_rows.csv",
+            usecols=["product_id", "category", "product_display_name"],
+        )
+    return _PRODUCT_CATALOG
+
+
+def _resolve_product_id(category: str, product_display_name: str) -> str:
+    catalog = _get_product_catalog()
+    match = catalog[
+        (catalog["category"] == category)
+        & (catalog["product_display_name"] == product_display_name)
+    ]
+    if match.empty:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Unknown product {product_display_name!r} "
+                f"in category {category!r}."
+            ),
+        )
+    return str(match.iloc[0]["product_id"])
+
+
+def _entity_scope_kwargs(body: EntityScopeRequest) -> dict[str, str]:
+    return {
+        "hub_id": body.hub_id,
+        "category": body.category,
+        "product_id": _resolve_product_id(body.category, body.product_display_name),
+        "simulation_date": body.simulation_date,
+    }
+
+
 def _load_context_data() -> dict[str, Any]:
     import pandas as pd
     from base_state import DATA_DIR
@@ -108,6 +149,19 @@ def _load_context_data() -> dict[str, Any]:
     df = pd.read_csv(
         DATA_DIR / "demand_forecast_daily.csv",
         usecols=["hub_id", "product_id", "category", "forecast_date"],
+    )
+
+    combos = (
+        df[["category", "product_id", "hub_id"]]
+        .drop_duplicates()
+        .merge(
+            _get_product_catalog(),
+            on=["category", "product_id"],
+            how="left",
+        )
+    )
+    combos["product_display_name"] = combos["product_display_name"].fillna(
+        combos["product_id"]
     )
 
     hubs = sorted(int(h) for h in df["hub_id"].unique())
@@ -119,10 +173,9 @@ def _load_context_data() -> dict[str, Any]:
             "category": row["category"],
             "product_id": row["product_id"],
             "hub_id": int(row["hub_id"]),
+            "product_display_name": row["product_display_name"],
         }
-        for row in df[["category", "product_id", "hub_id"]]
-        .drop_duplicates()
-        .to_dict(orient="records")
+        for row in combos.to_dict(orient="records")
     ]
 
     return {
@@ -200,19 +253,13 @@ def understand_planning_scenario(
 ):
     del current_user
     try:
-        base_state = build_base_state(
-            hub_id=body.hub_id,
-            product_id=body.product_id,
-            category=body.category,
-            simulation_date=body.simulation_date,
-        )
+        base_state = build_base_state(**_entity_scope_kwargs(body))
         result = understand_scenario(
             body.scenario_query.strip(),
             base_state,
             partial_patch=body.partial_patch,
             scenario_types=body.scenario_types,
             clarification_answers=body.clarification_answers,
-            planning_window_days=body.planning_window_days,
         )
         return _to_jsonable(result)
     except ValueError as exc:
@@ -231,12 +278,7 @@ def simulate_planning(
 ):
     del current_user
     try:
-        base_state = build_base_state(
-            hub_id=body.hub_id,
-            product_id=body.product_id,
-            category=body.category,
-            simulation_date=body.simulation_date,
-        )
+        base_state = build_base_state(**_entity_scope_kwargs(body))
 
         patch, scenario_query = _resolve_patch(body, base_state)
 

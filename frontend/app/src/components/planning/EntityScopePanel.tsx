@@ -1,12 +1,18 @@
 import type { PlanningContext } from '@/lib/planningTypes';
 
+export const DEFAULT_PLANNING_SCOPE = {
+  hubId: '1',
+  category: 'Groceries',
+  productDisplayName: 'Cooking Oil (P0003)',
+} as const;
+
 interface EntityScopePanelProps {
   hubId: string;
   setHubId: (value: string) => void;
   category: string;
   setCategory: (value: string) => void;
-  productId: string;
-  setProductId: (value: string) => void;
+  productDisplayName: string;
+  setProductDisplayName: (value: string) => void;
   simulationDate: string;
   setSimulationDate: (value: string) => void;
   planningWindowDays: number;
@@ -23,8 +29,8 @@ export default function EntityScopePanel({
   setHubId,
   category,
   setCategory,
-  productId,
-  setProductId,
+  productDisplayName,
+  setProductDisplayName,
   simulationDate,
   setSimulationDate,
   planningWindowDays,
@@ -78,8 +84,8 @@ export default function EntityScopePanel({
         <div className="flex flex-col gap-1 min-w-[140px] flex-1">
           <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Product</label>
           <select
-            value={productId}
-            onChange={(e) => setProductId(e.target.value)}
+            value={productDisplayName}
+            onChange={(e) => setProductDisplayName(e.target.value)}
             disabled={loading || !category || products.length === 0}
             className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
@@ -95,7 +101,7 @@ export default function EntityScopePanel({
           <select
             value={simulationDate}
             onChange={(e) => setSimulationDate(e.target.value)}
-            disabled={loading || !productId || dates.length === 0}
+            disabled={loading || !productDisplayName || dates.length === 0}
             className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
             <option value="">Select date</option>
@@ -130,7 +136,7 @@ export function deriveScopeOptions(
   context: PlanningContext | null,
   hubId: string,
   category: string,
-  productId: string,
+  productDisplayName: string,
 ) {
   if (!context) {
     return { hubs: [], categories: [], products: [], dates: [] };
@@ -159,7 +165,7 @@ export function deriveScopeOptions(
                 (c) =>
                   String(c.hub_id) === hubId && c.category === category,
               )
-              .map((c) => c.product_id),
+              .map((c) => c.product_display_name),
           ),
         ].sort()
       : [];
@@ -167,12 +173,12 @@ export function deriveScopeOptions(
   const validCombo =
     hubId &&
     category &&
-    productId &&
+    productDisplayName &&
     context.combinations.some(
       (c) =>
         String(c.hub_id) === hubId &&
         c.category === category &&
-        c.product_id === productId,
+        c.product_display_name === productDisplayName,
     );
 
   const dates = validCombo ? (context.dates ?? []) : [];

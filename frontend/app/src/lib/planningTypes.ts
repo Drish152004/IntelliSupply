@@ -1,5 +1,4 @@
 export interface ScenarioPatch {
-  planning_window_days?: number | null;
   inventory?: {
     current_stock_delta?: number | null;
     safety_stock_multiplier?: number | null;
@@ -27,6 +26,7 @@ export interface PlanningContext {
   combinations: Array<{
     category: string;
     product_id: string;
+    product_display_name: string;
     hub_id: string | number;
   }>;
 }
@@ -199,6 +199,12 @@ export interface RecommendationSummary {
   explanation: string;
 }
 
+export interface DecisionSimulationResult {
+  decision: Decision;
+  scenario: ScenarioState;
+  outcome: OutcomeSummary;
+}
+
 export interface ExecutionDecision {
   decision: Decision;
   status: 'AUTO_APPROVED' | 'APPROVAL_REQUIRED' | 'DISABLED';
@@ -206,6 +212,8 @@ export interface ExecutionDecision {
   policy_type: string;
   threshold_value?: number | null;
   observed_value?: number | null;
+  utility_score_threshold?: number | null;
+  observed_utility_score?: number | null;
 }
 
 export interface ActionExecutionResult {
@@ -219,6 +227,7 @@ export interface AutomationPolicy {
   enabled: boolean;
   auto_execute: boolean;
   threshold_value: number;
+  utility_score_threshold: number;
 }
 
 export interface ActionAuditLog {
@@ -261,6 +270,7 @@ export interface PlanningSimulationResult {
   scenario: ScenarioState;
   outcomes: OutcomeSummary;
   ranked_decisions: RankedDecision[];
+  decision_results?: DecisionSimulationResult[];
   recommendation_summary: RecommendationSummary;
   policy_evaluations?: ExecutionDecision[];
   execution_results?: ActionExecutionResult[];
@@ -270,7 +280,7 @@ export interface PlanningSimulationResult {
 
 export interface EntityScope {
   hub_id: string;
-  product_id: string;
+  product_display_name: string;
   category: string;
   simulation_date: string;
 }
@@ -292,7 +302,6 @@ export interface UnderstandScenarioPayload extends EntityScope {
   partial_patch?: ScenarioPatch | null;
   scenario_types?: string[] | null;
   clarification_answers?: Record<string, string> | null;
-  planning_window_days?: number | null;
 }
 
 export function mapSimulationDay(day: SimulationDay): DailyLogEntry {
@@ -333,9 +342,6 @@ export function formatUtilityScore(rd: RankedDecision): string {
 export function formatPatchLabels(patch: ScenarioPatch | null | undefined): string[] {
   if (!patch) return [];
   const labels: string[] = [];
-  if (patch.planning_window_days != null) {
-    labels.push(`Planning window: ${patch.planning_window_days} days`);
-  }
   if (patch.demand?.demand_multiplier != null) {
     const pct = ((patch.demand.demand_multiplier - 1) * 100).toFixed(0);
     labels.push(`Demand multiplier: ${patch.demand.demand_multiplier} (${pct}% change)`);

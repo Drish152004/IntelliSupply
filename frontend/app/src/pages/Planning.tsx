@@ -2,7 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSessionStorageState } from '@/hooks/useSessionStorage';
 import { Settings2, Sparkles } from 'lucide-react';
 import Navbar from '@/components/Navbar';
-import EntityScopePanel, { deriveScopeOptions } from '@/components/planning/EntityScopePanel';
+import EntityScopePanel, {
+  DEFAULT_PLANNING_SCOPE,
+  deriveScopeOptions,
+} from '@/components/planning/EntityScopePanel';
 import ScenarioInputPanel, { clarificationAnswersComplete } from '@/components/planning/ScenarioInputPanel';
 import RunSimulationBar from '@/components/planning/RunSimulationBar';
 import PlanningIdleState from '@/components/planning/PlanningIdleState';
@@ -45,9 +48,18 @@ export default function Planning() {
   const [auditLoading, setAuditLoading] = useState(false);
   const [automationModalOpen, setAutomationModalOpen] = useState(false);
 
-  const [hubId, setHubId] = useSessionStorageState('planning_hub_id', '');
-  const [category, setCategory] = useSessionStorageState('planning_category', '');
-  const [productId, setProductId] = useSessionStorageState('planning_product_id', '');
+  const [hubId, setHubId] = useSessionStorageState<string>(
+    'planning_hub_id',
+    DEFAULT_PLANNING_SCOPE.hubId,
+  );
+  const [category, setCategory] = useSessionStorageState<string>(
+    'planning_category',
+    DEFAULT_PLANNING_SCOPE.category,
+  );
+  const [productDisplayName, setProductDisplayName] = useSessionStorageState<string>(
+    'planning_product_display_name',
+    DEFAULT_PLANNING_SCOPE.productDisplayName,
+  );
   const [simulationDate, setSimulationDate] = useSessionStorageState('planning_date', '');
   const [planningWindowDays, setPlanningWindowDays] = useSessionStorageState('planning_window', 7);
 
@@ -112,28 +124,87 @@ export default function Planning() {
     loadAutomationData();
   }, [automationModalOpen, loadAutomationData]);
 
+  useEffect(() => {
+    if (!context) return;
+
+    const legacyProductId = sessionStorage.getItem('planning_product_id');
+    if (legacyProductId) {
+      const match = context.combinations.find(
+        (combo) =>
+          combo.product_id === legacyProductId &&
+          combo.category === category &&
+          String(combo.hub_id) === hubId,
+      );
+      if (match?.product_display_name) {
+        setProductDisplayName(match.product_display_name);
+      }
+      sessionStorage.removeItem('planning_product_id');
+      return;
+    }
+
+    if (
+      productDisplayName &&
+      !context.combinations.some((combo) => combo.product_display_name === productDisplayName)
+    ) {
+      const match = context.combinations.find(
+        (combo) =>
+          combo.product_id === productDisplayName && combo.category === category,
+      );
+      if (match?.product_display_name) {
+        setProductDisplayName(match.product_display_name);
+      }
+    }
+  }, [context, category, hubId, productDisplayName, setProductDisplayName]);
+
   const { hubs, categories, products, dates } = useMemo(
-    () => deriveScopeOptions(context, hubId, category, productId),
-    [context, hubId, category, productId],
+    () => deriveScopeOptions(context, hubId, category, productDisplayName),
+    [context, hubId, category, productDisplayName],
   );
 
   useEffect(() => {
-    if (hubs.length > 0 && !hubs.includes(hubId)) setHubId(hubs[0]);
-  }, [hubs, hubId]);
+    if (hubs.length === 0) return;
+    const legacyDefault =
+      hubId === '0' &&
+      category === 'Clothing' &&
+      productDisplayName === 'Cotton T-Shirt (P0002)';
+    if (hubId && hubs.includes(hubId) && !legacyDefault) return;
+    const preferred = hubs.includes(DEFAULT_PLANNING_SCOPE.hubId)
+      ? DEFAULT_PLANNING_SCOPE.hubId
+      : hubs[0];
+    setHubId(preferred);
+  }, [hubs, hubId, category, productDisplayName]);
 
   useEffect(() => {
-    if (categories.length > 0 && !categories.includes(category)) setCategory(categories[0]);
-  }, [categories, category]);
+    if (categories.length === 0) return;
+    const legacyDefault =
+      hubId === '0' &&
+      category === 'Clothing' &&
+      productDisplayName === 'Cotton T-Shirt (P0002)';
+    if (category && categories.includes(category) && !legacyDefault) return;
+    const preferred = categories.includes(DEFAULT_PLANNING_SCOPE.category)
+      ? DEFAULT_PLANNING_SCOPE.category
+      : categories[0];
+    setCategory(preferred);
+  }, [categories, category, hubId, productDisplayName]);
 
   useEffect(() => {
-    if (products.length > 0 && !products.includes(productId)) setProductId(products[0]);
-  }, [products, productId]);
+    if (products.length === 0) return;
+    const legacyDefault =
+      hubId === '0' &&
+      category === 'Clothing' &&
+      productDisplayName === 'Cotton T-Shirt (P0002)';
+    if (productDisplayName && products.includes(productDisplayName) && !legacyDefault) return;
+    const preferred = products.includes(DEFAULT_PLANNING_SCOPE.productDisplayName)
+      ? DEFAULT_PLANNING_SCOPE.productDisplayName
+      : products[0];
+    setProductDisplayName(preferred);
+  }, [products, productDisplayName, hubId, category]);
 
   useEffect(() => {
     if (dates.length > 0 && !dates.includes(simulationDate)) setSimulationDate(dates[0]);
   }, [dates, simulationDate]);
 
-  const scopeReady = Boolean(hubId && category && productId && simulationDate);
+  const scopeReady = Boolean(hubId && category && productDisplayName && simulationDate);
   const scenarioReady = Boolean(
     scenarioPatch || scenarioQuery.trim().length > 0,
   );
@@ -191,14 +262,13 @@ export default function Planning() {
       if (clarificationSession && clarificationReady) {
         const understanding = await understandPlanningScenario({
           hub_id: hubId,
-          product_id: productId,
+          product_display_name: productDisplayName,
           category,
           simulation_date: simulationDate,
           scenario_query: scenarioQuery.trim(),
           partial_patch: clarificationSession.partialPatch,
           scenario_types: clarificationSession.scenarioTypes,
           clarification_answers: clarificationSession.answers,
-          planning_window_days: planningWindowDays,
         });
 
         if (understanding.status === 'needs_clarification') {
@@ -219,11 +289,10 @@ export default function Planning() {
       } else if (!patchToUse && scenarioQuery.trim()) {
         const understanding = await understandPlanningScenario({
           hub_id: hubId,
-          product_id: productId,
+          product_display_name: productDisplayName,
           category,
           simulation_date: simulationDate,
           scenario_query: scenarioQuery.trim(),
-          planning_window_days: planningWindowDays,
         });
 
         if (understanding.status === 'needs_clarification') {
@@ -244,7 +313,7 @@ export default function Planning() {
 
       const data = await simulatePlanning({
         hub_id: hubId,
-        product_id: productId,
+        product_display_name: productDisplayName,
         category,
         simulation_date: simulationDate,
         scenario_query: scenarioQuery.trim() || undefined,
@@ -292,7 +361,7 @@ export default function Planning() {
     scenarioPatch,
     scenarioQuery,
     hubId,
-    productId,
+    productDisplayName,
     category,
     simulationDate,
     planningWindowDays,
@@ -316,7 +385,7 @@ export default function Planning() {
     try {
       const data = await simulatePlanning({
         hub_id: hubId,
-        product_id: productId,
+        product_display_name: productDisplayName,
         category,
         simulation_date: simulationDate,
         simulate_base_state: true,
@@ -350,7 +419,7 @@ export default function Planning() {
   }, [
     scopeReady,
     hubId,
-    productId,
+    productDisplayName,
     category,
     simulationDate,
     planningWindowDays,
@@ -380,6 +449,7 @@ export default function Planning() {
           enabled: policy.enabled,
           auto_execute: policy.auto_execute,
           threshold_value: policy.threshold_value,
+          utility_score_threshold: policy.utility_score_threshold ?? 0.5,
         });
         setPolicies((prev) =>
           prev.map((item) => (item.policy_type === policyType ? updated : item)),
@@ -464,8 +534,8 @@ export default function Planning() {
           setHubId={setHubId}
           category={category}
           setCategory={setCategory}
-          productId={productId}
-          setProductId={setProductId}
+          productDisplayName={productDisplayName}
+          setProductDisplayName={setProductDisplayName}
           simulationDate={simulationDate}
           setSimulationDate={setSimulationDate}
           planningWindowDays={planningWindowDays}
@@ -573,6 +643,7 @@ export default function Planning() {
       <InterventionDetailModal
         decisionId={selectedDecisionId}
         rankedDecisions={result?.ranked_decisions ?? []}
+        decisionResults={result?.decision_results ?? []}
         recommendation={result?.recommendation_summary ?? null}
         onClose={() => setSelectedDecisionId(null)}
         policyEvaluations={result?.policy_evaluations}

@@ -114,7 +114,7 @@ export default function InterventionRankingPanel({
                 </div>
               )}
               <div className="mt-2 text-xs font-semibold text-indigo-600 flex items-center gap-1">
-                View comparison
+                View details & timeline
                 <ChevronRight className="h-3 w-3" />
               </div>
             </button>

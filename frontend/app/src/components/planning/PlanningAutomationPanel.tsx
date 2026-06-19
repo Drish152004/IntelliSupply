@@ -16,6 +16,12 @@ const LABELS: Record<string, string> = {
   replenishment_order: 'Replenishment Order',
 };
 
+const AUTO_APPROVE_LIMIT_UNITS: Record<string, string> = {
+  inventory_transfer: 'units',
+  safety_stock_change_pct: '%',
+  replenishment_order: 'days',
+};
+
 export default function PlanningAutomationPanel({
   policies,
   loading,
@@ -43,7 +49,8 @@ export default function PlanningAutomationPanel({
                 <th className="px-4 py-3">Policy</th>
                 <th className="px-4 py-3">Enabled</th>
                 <th className="px-4 py-3">Auto Execute</th>
-                <th className="px-4 py-3">Threshold</th>
+                <th className="px-4 py-3">Auto-approve limit</th>
+                <th className="px-4 py-3">Min effectiveness (%)</th>
                 <th className="px-4 py-3">Action</th>
               </tr>
             </thead>
@@ -81,6 +88,24 @@ export default function PlanningAutomationPanel({
                       onChange={(event) =>
                         onChange(policy.policy_type, {
                           threshold_value: Number(event.target.value || 0),
+                        })
+                      }
+                      className="w-28 rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
+                    />
+                    <p className="mt-1 text-xs text-slate-400">
+                      {AUTO_APPROVE_LIMIT_UNITS[policy.policy_type] ?? 'limit'}
+                    </p>
+                  </td>
+                  <td className="px-4 py-3">
+                    <input
+                      type="number"
+                      step={1}
+                      min={0}
+                      max={100}
+                      value={Math.round((policy.utility_score_threshold ?? 0.5) * 100)}
+                      onChange={(event) =>
+                        onChange(policy.policy_type, {
+                          utility_score_threshold: Number(event.target.value || 0) / 100,
                         })
                       }
                       className="w-28 rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
