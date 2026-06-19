@@ -1,5 +1,5 @@
 import json
-from datetime import timedelta
+from datetime import timedelta, datetime
 from pathlib import Path
 import pandas as pd
 from rag.aura_graphdb.aura_auth import get_user_by_email, register_user_with_password
@@ -37,6 +37,22 @@ def _safe_float(value, default=None):
         return float(value)
     except (TypeError, ValueError):
         return default
+def _parse_route_start_time(route: dict) -> datetime:
+    """
+    Use route_start_time if present.
+    Otherwise use delivery_day 08:00:00.
+    """
+    delivery_day = route.get("delivery_day") or "2026-06-03"
+
+    route_start_time = route.get("route_start_time")
+    if route_start_time:
+        try:
+            return datetime.strptime(route_start_time, "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            pass
+
+    return datetime.strptime(f"{delivery_day} 08:00:00", "%Y-%m-%d %H:%M:%S")
+
 def _enrich_route_for_frontend(route: dict) -> dict:
     """
     Convert seeded assigned_routes.json into the same shape as ML-persisted routes.
