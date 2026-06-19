@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from decision_models import (
+    DEFAULT_UTILITY_SCORE_THRESHOLD,
     AutomationPolicy,
     POLICY_TYPE_INVENTORY_TRANSFER,
     POLICY_TYPE_REPLENISHMENT_ORDER,
@@ -18,7 +19,13 @@ DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 POLICIES_CSV = DATA_DIR / "automation_policies.csv"
 AUDIT_LOG_CSV = DATA_DIR / "action_audit_log.csv"
 
-POLICY_FIELDS = ["policy_type", "enabled", "auto_execute", "threshold_value"]
+POLICY_FIELDS = [
+    "policy_type",
+    "enabled",
+    "auto_execute",
+    "threshold_value",
+    "utility_score_threshold",
+]
 AUDIT_FIELDS = [
     "timestamp",
     "decision_id",
@@ -85,6 +92,7 @@ def ensure_automation_csv_files() -> None:
                         "enabled": str(policy.enabled).lower(),
                         "auto_execute": str(policy.auto_execute).lower(),
                         "threshold_value": policy.threshold_value,
+                        "utility_score_threshold": policy.utility_score_threshold,
                     }
                 )
 
@@ -99,12 +107,18 @@ def list_automation_policies() -> list[AutomationPolicy]:
     rows: list[AutomationPolicy] = []
     with POLICIES_CSV.open("r", newline="", encoding="utf-8") as handle:
         for row in csv.DictReader(handle):
+            raw_utility_threshold = row.get("utility_score_threshold")
             rows.append(
                 AutomationPolicy(
                     policy_type=str(row.get("policy_type", "")).strip(),
                     enabled=_as_bool(row.get("enabled")),
                     auto_execute=_as_bool(row.get("auto_execute")),
                     threshold_value=float(row.get("threshold_value") or 0.0),
+                    utility_score_threshold=float(
+                        raw_utility_threshold
+                        if raw_utility_threshold not in (None, "")
+                        else DEFAULT_UTILITY_SCORE_THRESHOLD
+                    ),
                 )
             )
     return rows
@@ -122,6 +136,7 @@ def upsert_automation_policy(
     enabled: bool,
     auto_execute: bool,
     threshold_value: float,
+    utility_score_threshold: float = DEFAULT_UTILITY_SCORE_THRESHOLD,
 ) -> AutomationPolicy:
     policies = list_automation_policies()
     updated = False
@@ -133,6 +148,7 @@ def upsert_automation_policy(
                 enabled=bool(enabled),
                 auto_execute=bool(auto_execute),
                 threshold_value=float(threshold_value),
+                utility_score_threshold=float(utility_score_threshold),
             )
             updated = True
             break
@@ -144,6 +160,7 @@ def upsert_automation_policy(
                 enabled=bool(enabled),
                 auto_execute=bool(auto_execute),
                 threshold_value=float(threshold_value),
+                utility_score_threshold=float(utility_score_threshold),
             )
         )
 
@@ -157,6 +174,7 @@ def upsert_automation_policy(
                     "enabled": str(policy.enabled).lower(),
                     "auto_execute": str(policy.auto_execute).lower(),
                     "threshold_value": policy.threshold_value,
+                    "utility_score_threshold": policy.utility_score_threshold,
                 }
             )
 
@@ -165,6 +183,7 @@ def upsert_automation_policy(
         enabled=enabled,
         auto_execute=auto_execute,
         threshold_value=threshold_value,
+        utility_score_threshold=utility_score_threshold,
     )
 
 

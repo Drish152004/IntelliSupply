@@ -160,11 +160,11 @@ def build_scenario_state(
     scale forecast when demand_multiplier is set (after reforecast if both apply).
     """
     ScenarioValidator.validate_against_state(patch, base_state)
-    horizon = patch.planning_window_days or planning_window_days
-    if horizon is None or horizon <= 0:
+    horizon = planning_window_days if planning_window_days is not None else 7
+    if horizon <= 0:
         raise ValueError(
             "planning_window_days is required. "
-            "Set it on the patch or pass it to build_scenario_state."
+            "Pass a positive value to build_scenario_state."
         )
     needs_reforecast = patch_affects_forecast_drivers(patch)
     if needs_reforecast:

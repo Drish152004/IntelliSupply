@@ -52,7 +52,6 @@ Rules:
 - Use event.seasonality for season changes (winter, spring, summer, autumn).
 - Use replenishment.lead_time_days_delta for lead-time increase/decrease (signed days).
 - Use replenishment.actual_delay_days_delta for replenishment delay (non-negative days).
-- Use planning_window_days when the user specifies a time window (e.g. "next week" -> 7).
 - When the user combines multiple changes in one question, populate all relevant patch
   sections and list every detected type in scenario_types.
 
@@ -69,7 +68,7 @@ Examples:
 
 User: "What if demand increases by 25% next week?"
 scenario_types: ["demand_change"]
-patch: { "planning_window_days": 7, "demand": { "demand_multiplier": 1.25 } }
+patch: { "demand": { "demand_multiplier": 1.25 } }
 
 User: "What if demand increases?"
 scenario_types: ["demand_change"]
@@ -520,9 +519,6 @@ class ScenarioValidator:
                     "Replenishment delay days must be zero or positive."
                 )
 
-        if patch.planning_window_days is not None and patch.planning_window_days <= 0:
-            raise ValueError("Planning window days must be positive.")
-
         return patch
 
     @staticmethod
@@ -600,14 +596,7 @@ def _needs_clarification_result(
 def _finalize_patch(
     patch: ScenarioPatch,
     state: Optional[SimulationState],
-    planning_window_days: Optional[int],
 ) -> ScenarioUnderstandingResult:
-    if patch.planning_window_days is None and planning_window_days is not None:
-        patch = merge_patch(
-            patch,
-            ScenarioPatch(planning_window_days=planning_window_days),
-        )
-
     patch = ScenarioValidator.validate(patch)
     if state is not None:
         ScenarioValidator.validate_against_state(patch, state)
@@ -626,7 +615,6 @@ def understand_scenario(
     partial_patch: Optional[ScenarioPatch] = None,
     scenario_types: Optional[list[ScenarioType]] = None,
     clarification_answers: Optional[dict[str, str]] = None,
-    planning_window_days: Optional[int] = None,
 ) -> ScenarioUnderstandingResult:
     if partial_patch is not None and clarification_answers is not None:
         types = list(scenario_types or [])
@@ -658,7 +646,7 @@ def understand_scenario(
         if prompts:
             return _needs_clarification_result(patch, types, prompts)
 
-        return _finalize_patch(patch, state, planning_window_days)
+        return _finalize_patch(patch, state)
 
     extraction = _extract_with_llm(scenario_text, state)
 
@@ -672,4 +660,4 @@ def understand_scenario(
     if prompts:
         return _needs_clarification_result(patch, types, prompts)
 
-    return _finalize_patch(patch, state, planning_window_days)
+    return _finalize_patch(patch, state)

@@ -39,7 +39,11 @@ def _observed_value(policy_type: str, decision: Decision) -> float:
     return 0.0
 
 
-def evaluate_policy(decision: Decision) -> ExecutionDecision:
+def evaluate_policy(
+    decision: Decision,
+    *,
+    utility_score: float | None = None,
+) -> ExecutionDecision:
     policy_type = DECISION_TYPE_TO_POLICY_TYPE.get(decision.decision_type)
     if not policy_type:
         return ExecutionDecision(
@@ -74,7 +78,22 @@ def evaluate_policy(decision: Decision) -> ExecutionDecision:
             reason="AUTO_EXECUTE_OFF",
             policy_type=policy_type,
             threshold_value=policy.threshold_value,
+            utility_score_threshold=policy.utility_score_threshold,
+            observed_utility_score=utility_score,
         )
+
+    if utility_score is not None:
+        normalized_utility = float(utility_score) / 100.0
+        if normalized_utility < float(policy.utility_score_threshold):
+            return ExecutionDecision(
+                decision=decision,
+                status=POLICY_APPROVAL_REQUIRED,
+                reason="BELOW_UTILITY_THRESHOLD",
+                policy_type=policy_type,
+                threshold_value=policy.threshold_value,
+                utility_score_threshold=policy.utility_score_threshold,
+                observed_utility_score=utility_score,
+            )
 
     observed = _observed_value(policy_type, decision)
     if observed <= float(policy.threshold_value):
@@ -85,6 +104,8 @@ def evaluate_policy(decision: Decision) -> ExecutionDecision:
             policy_type=policy_type,
             threshold_value=policy.threshold_value,
             observed_value=observed,
+            utility_score_threshold=policy.utility_score_threshold,
+            observed_utility_score=utility_score,
         )
 
     return ExecutionDecision(
@@ -94,4 +115,6 @@ def evaluate_policy(decision: Decision) -> ExecutionDecision:
         policy_type=policy_type,
         threshold_value=policy.threshold_value,
         observed_value=observed,
+        utility_score_threshold=policy.utility_score_threshold,
+        observed_utility_score=utility_score,
     )

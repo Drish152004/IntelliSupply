@@ -21,7 +21,7 @@ export default function PlanningAuditLogPanel({
             <thead className="bg-slate-50 text-xs font-bold uppercase tracking-wider text-slate-500">
               <tr>
                 <th className="px-4 py-3">Timestamp</th>
-                <th className="px-4 py-3">Decision Type</th>
+                <th className="px-4 py-3">Decision ID</th>
                 <th className="px-4 py-3">Policy</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Reason</th>
@@ -33,7 +33,7 @@ export default function PlanningAuditLogPanel({
                   <td className="px-4 py-3 text-slate-600">
                     {new Date(log.timestamp).toLocaleString()}
                   </td>
-                  <td className="px-4 py-3 text-slate-700">{log.decision_type}</td>
+                  <td className="px-4 py-3 font-mono text-xs text-slate-700">{log.decision_id}</td>
                   <td className="px-4 py-3 text-slate-700">{log.policy_type}</td>
                   <td className="px-4 py-3 font-semibold text-slate-900">{log.execution_status}</td>
                   <td className="px-4 py-3 text-slate-600">{log.reason}</td>

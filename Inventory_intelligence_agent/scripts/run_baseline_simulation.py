@@ -43,7 +43,6 @@ def _serialize(obj: Any) -> Any:
 
 def main() -> None:
     patch = ScenarioPatch(
-        planning_window_days=7,
         demand={"demand_multiplier": 1.25},
     )
 
@@ -56,6 +55,7 @@ def main() -> None:
     config = PlanningPipelineConfig(
         base_state=base_state,
         patch=patch,
+        planning_window_days=7,
         n_worlds=100,
         random_seed=42,
     )

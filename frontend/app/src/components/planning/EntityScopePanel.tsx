@@ -1,5 +1,11 @@
 import type { PlanningContext } from '@/lib/planningTypes';
 
+export const DEFAULT_PLANNING_SCOPE = {
+  hubId: '1',
+  category: 'Groceries',
+  productId: 'P0003',
+} as const;
+
 interface EntityScopePanelProps {
   hubId: string;
   setHubId: (value: string) => void;

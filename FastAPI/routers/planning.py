@@ -86,7 +86,6 @@ class UnderstandScenarioRequest(EntityScopeRequest):
     partial_patch: Optional[ScenarioPatch] = None
     scenario_types: Optional[List[str]] = None
     clarification_answers: Optional[dict[str, str]] = None
-    planning_window_days: Optional[int] = Field(default=None, ge=1, le=30)
 
 
 class SimulateRequest(EntityScopeRequest):
@@ -212,7 +211,6 @@ def understand_planning_scenario(
             partial_patch=body.partial_patch,
             scenario_types=body.scenario_types,
             clarification_answers=body.clarification_answers,
-            planning_window_days=body.planning_window_days,
         )
         return _to_jsonable(result)
     except ValueError as exc:

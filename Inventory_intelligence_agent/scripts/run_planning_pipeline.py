@@ -81,7 +81,6 @@ def main() -> None:
     args = parser.parse_args()
 
     patch = ScenarioPatch(
-        planning_window_days=7,
         demand={"demand_multiplier": 1.25},
     )
     base_state = build_base_state(
@@ -93,6 +92,7 @@ def main() -> None:
     config = PlanningPipelineConfig(
         base_state=base_state,
         patch=patch,
+        planning_window_days=7,
         n_worlds=args.n_worlds,
         random_seed=args.random_seed,
         skip_llm=args.skip_llm,

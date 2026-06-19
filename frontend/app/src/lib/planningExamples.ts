@@ -11,8 +11,7 @@ export const PLANNING_EXAMPLE_SCENARIOS: PlanningExampleScenario[] = [
   {
     id: 'promotion',
     label: 'Launch promotion',
-    scenarioQuery:
-      'What would happen over the next 7 days if I launch a promotion?',
+    scenarioQuery: 'What would happen if I launch a promotion?',
     patch: {
       event: { promotion: true },
     },

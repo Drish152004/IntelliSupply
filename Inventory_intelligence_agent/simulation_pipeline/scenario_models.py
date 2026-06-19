@@ -71,13 +71,6 @@ class ReplenishmentPatch(BaseModel):
 
 
 class ScenarioPatch(BaseModel):
-    planning_window_days: Optional[int] = Field(
-        default=None,
-        description=(
-            "Scenario planning horizon in days when the user specifies a window "
-            "(e.g. 'next week' -> 7)."
-        ),
-    )
     inventory: Optional[InventoryPatch] = None
     demand: Optional[DemandPatch] = None
     event: Optional[EventPatch] = None
