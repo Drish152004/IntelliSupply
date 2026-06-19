@@ -2,7 +2,7 @@ import Navbar from '@/components/Navbar';
 import { motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
-import { Package, Truck, TrendingUp, ShieldCheck, Users } from 'lucide-react';
+import { Package, Truck, TrendingUp, ShieldCheck, Users, Sparkles } from 'lucide-react';
 import RouteMap from '@/components/RouteMap';
 import AICopilot from '@/components/AICopilot';
 import { getDashboardSummary, listHubLocations, type DashboardSummary, type HubMapLocation } from '@/lib/api';
@@ -67,14 +67,14 @@ export default function Overview() {
       label: 'Active couriers',
       value: loaded ? String(data.active_couriers) : '—',
       detail: 'All active courier accounts',
-      color: 'border-emerald-100 bg-emerald-50 text-emerald-900',
+      color: 'border-amber-100 bg-amber-50 text-amber-900',
       icon: ShieldCheck,
     },
     {
       label: 'Directory accounts',
       value: loaded ? data.total_accounts.toLocaleString() : '—',
       detail: 'Profiles and courier accounts',
-      color: 'border-amber-100 bg-amber-50 text-amber-900',
+      color: 'border-emerald-100 bg-emerald-50 text-emerald-900',
       icon: Users,
     },
   ];
@@ -129,6 +129,30 @@ export default function Overview() {
 
         <div className="grid gap-6 xl:grid-cols-[1.6fr_0.95fr]">
           <section className="space-y-6">
+            <div className="page-card relative overflow-hidden from-violet-50 via-indigo-50 to-white">
+              <div className="absolute inset-0 bg-gradient-to-r from-emerald-50 via-cyan-50 to-white" />
+              <div className="relative z-10 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <div className="inline-flex items-center gap-2 rounded-full bg-emerald-100 text-emerald-700 px-4 py-2 text-sm font-medium">
+                    <Sparkles className="h-4 w-4 text-emerald-700 animate-pulse" />
+                    Inventory Scenario Simulation
+                  </div>
+                  <h2 className="mt-6 text-3xl font-bold tracking-tight text-slate-900">
+                    Planning Agent Workspace
+                  </h2>
+                  <p className="mt-4 max-w-3xl text-sm leading-6 text-slate-600">
+                    Select entity scope, describe a what-if scenario, and run simulation to discover outcomes, rank interventions, and generate explainability output.
+                  </p>
+                </div>
+                <button
+                  onClick={() => navigate('/planning')}
+                  className="rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white shadow-sm whitespace-nowrap shrink-0 self-start sm:self-auto hover:bg-slate-800 transition"
+                >
+                  Open planning
+                </button>
+              </div>
+            </div>
+
             <div className="page-card">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>

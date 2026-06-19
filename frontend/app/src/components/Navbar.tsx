@@ -21,6 +21,12 @@ const ALL_NAV_ITEMS = [
     roles: ['admin'] as AppRole[],
   },
   {
+    label: 'Planning Agent',
+    to: '/planning',
+    icon: Brain,
+    roles: ['admin', 'inventory_manager'] as AppRole[],
+  },
+  {
     label: 'Logistics',
     to: '/logistics',
     icon: Package,
@@ -30,12 +36,6 @@ const ALL_NAV_ITEMS = [
     label: 'Inventory',
     to: '/inventory',
     icon: Package2,
-    roles: ['admin', 'inventory_manager'] as AppRole[],
-  },
-  {
-    label: 'Planning',
-    to: '/planning',
-    icon: Brain,
     roles: ['admin', 'inventory_manager'] as AppRole[],
   },
   {
