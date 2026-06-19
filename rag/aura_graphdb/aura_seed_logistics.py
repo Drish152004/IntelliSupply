@@ -1,14 +1,13 @@
 import json
-import math
-from datetime import datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
-
 import pandas as pd
-
+from rag.aura_graphdb.aura_auth import get_user_by_email, register_user_with_password
+from rag.aura_graphdb.aura_courier import create_courier_node
 from aura_graphdb.aura_connection import AuraConnection
 from rag.supabase.supabase_connection import get_supabase_engine
 from rag.aura_graphdb.shared_cypher import PERSIST_ASSIGNED_ROUTE_QUERY
-
+from rag.aura_graphdb.aura_profiles import sync_profile_to_aura
 
 PIPELINE_DATA_DIR = (
     Path(__file__).resolve().parents[2]
@@ -38,66 +37,20 @@ def _safe_float(value, default=None):
         return float(value)
     except (TypeError, ValueError):
         return default
-
-
-def _haversine_km(lat1, lon1, lat2, lon2) -> float:
-    """
-    Calculate approximate distance between two WGS84 points.
-    Used only to create realistic ETA values for seeded assigned_routes.
-    """
-    lat1 = _safe_float(lat1)
-    lon1 = _safe_float(lon1)
-    lat2 = _safe_float(lat2)
-    lon2 = _safe_float(lon2)
-
-    if None in [lat1, lon1, lat2, lon2]:
-        return 2.0
-
-    radius_km = 6371.0
-
-    phi1 = math.radians(lat1)
-    phi2 = math.radians(lat2)
-    delta_phi = math.radians(lat2 - lat1)
-    delta_lambda = math.radians(lon2 - lon1)
-
-    a = (
-        math.sin(delta_phi / 2) ** 2
-        + math.cos(phi1)
-        * math.cos(phi2)
-        * math.sin(delta_lambda / 2) ** 2
-    )
-
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-
-    return radius_km * c
-
-
-def _parse_route_start_time(route: dict) -> datetime:
-    """
-    Use route_start_time if present.
-    Otherwise use delivery_day 08:00:00.
-    """
-    delivery_day = route.get("delivery_day") or "2026-06-03"
-
-    route_start_time = route.get("route_start_time")
-    if route_start_time:
-        try:
-            return datetime.strptime(route_start_time, "%Y-%m-%d %H:%M:%S")
-        except ValueError:
-            pass
-
-    return datetime.strptime(f"{delivery_day} 08:00:00", "%Y-%m-%d %H:%M:%S")
-
-
 def _enrich_route_for_frontend(route: dict) -> dict:
     """
     Convert seeded assigned_routes.json into the same shape as ML-persisted routes.
 
-    This adds:
+    Assumption:
+    - assigned_routes.json already contains ETA fields.
+    - We do NOT calculate synthetic ETA here.
+
+    This normalizes/adds:
     - route_prediction_id
     - predicted_eta_min
     - predicted_stops_json
-    - stops_json with ETA fields for frontend
+    - stops_json
+    - route_start_time
     """
     courier_id = route["courier_id"]
     ds = int(route.get("ds") or 318)
@@ -124,8 +77,6 @@ def _enrich_route_for_frontend(route: dict) -> dict:
     display_stops = []
 
     cumulative_eta = 0.0
-    prev_lat = None
-    prev_lon = None
 
     for index, stop in enumerate(raw_stops, start=1):
         sequence = int(stop.get("sequence") or index)
@@ -134,17 +85,25 @@ def _enrich_route_for_frontend(route: dict) -> dict:
         lat = _safe_float(stop.get("lat_wgs84"))
         lon = _safe_float(stop.get("lon_wgs84"))
 
-        if prev_lat is None or prev_lon is None:
-            distance_km = 2.0
+        # ETA values are expected to already exist in assigned_routes.json
+        leg_eta = _safe_float(stop.get("eta_minutes"), default=0.0)
+
+        eta_from_start = _safe_float(
+            stop.get("eta_from_start_minutes"),
+            default=None,
+        )
+
+        if eta_from_start is None:
+            cumulative_eta += leg_eta
+            eta_from_start = cumulative_eta
         else:
-            distance_km = _haversine_km(prev_lat, prev_lon, lat, lon)
+            cumulative_eta = eta_from_start
 
-        # Synthetic realistic ETA:
-        # city average speed around 22 km/h + 4 min stop/service buffer.
-        leg_eta = round(max(6.0, (distance_km / 22.0) * 60.0 + 4.0), 1)
+        estimated_arrival = stop.get("estimated_arrival")
 
-        cumulative_eta += leg_eta
-        arrival_time = route_start + timedelta(minutes=cumulative_eta)
+        if not estimated_arrival:
+            arrival_time = route_start + timedelta(minutes=eta_from_start)
+            estimated_arrival = arrival_time.strftime("%H:%M")
 
         geo_stops.append(
             {
@@ -163,21 +122,23 @@ def _enrich_route_for_frontend(route: dict) -> dict:
                 "to_hub_name": stop.get("to_hub_name"),
                 "city_name": route.get("city_name"),
                 "delivery_day": delivery_day,
-                "eta_minutes": leg_eta,
-                "eta_from_start_minutes": round(cumulative_eta, 1),
-                "estimated_arrival": arrival_time.strftime("%H:%M"),
+                "eta_minutes": round(leg_eta, 1),
+                "eta_from_start_minutes": round(eta_from_start, 1),
+                "estimated_arrival": estimated_arrival,
                 "lat_wgs84": lat,
                 "lon_wgs84": lon,
             }
         )
 
-        prev_lat = lat
-        prev_lon = lon
-
     route["stops"] = geo_stops
     route["predicted_stops_json"] = json.dumps(geo_stops)
     route["stops_json"] = json.dumps(display_stops)
-    route["predicted_eta_min"] = route.get("predicted_eta_min") or round(cumulative_eta, 1)
+
+    route["predicted_eta_min"] = _safe_float(
+        route.get("predicted_eta_min"),
+        default=round(cumulative_eta, 1),
+    )
+
     route["route_start_time"] = route_start_time
 
     return route
@@ -343,26 +304,21 @@ def load_hub_distances_to_aura():
 # ============================================================
 # Load synthetic couriers
 # ============================================================
-
 def load_synthetic_couriers_to_aura(json_path="synthetic_couriers.json"):
     """
-    Load synthetic couriers.
+    Load synthetic couriers as real courier users.
 
-    Required per courier:
-    - courier_id
-    - city_name
-    - hub_name
-
-    Optional:
-    - name
-    - email
+    This creates/uses:
+    - Supabase user/profile
+    - Aura Profile node through aura_auth.py
+    - Aura Courier node
+    - Courier -> Profile relationship
 
     Important:
-    - Courier start position is always taken from assigned hub lat/lng.
-    - Do not use start_lat_wgs84/start_lon_wgs84 from JSON.
+    - courier_id from JSON is preserved so assigned_routes.json still works.
+    - If a Supabase user already exists, we still sync that user to Aura
+      before creating/linking the Courier node.
     """
-    conn = AuraConnection()
-
     with open(json_path, "r", encoding="utf-8") as file:
         rows = json.load(file)
 
@@ -378,44 +334,68 @@ def load_synthetic_couriers_to_aura(json_path="synthetic_couriers.json"):
             + ", ".join(missing_hub[:20])
         )
 
+    created_count = 0
+    skipped_count = 0
+
     for index, row in enumerate(rows, start=1):
         row.setdefault("name", f"Courier {index}")
-        row.setdefault("email", f"courier{index}@intellisupply.local")
+        row.setdefault("email", f"courier{index}@intellisupply.com")
+        row.setdefault("password", "Courier@123")
+        row.setdefault("ds", 318)
 
-    query = """
-    UNWIND $rows AS row
+        email = row["email"].lower().strip()
+        name = row["name"].strip()
 
-    MATCH (city:City {city_name: row.city_name})
-    MATCH (hub:Hub {name: row.hub_name})-[:LOCATED_IN]->(city)
+        existing_user = get_user_by_email(email)
 
-    MERGE (role:Role {role_id: 2})
-    SET role.role_name = "courier"
+        if existing_user:
+            user = existing_user
+        else:
+            reg = register_user_with_password(
+                name=name,
+                email=email,
+                password=row["password"],
+                selected_role="courier",
+            )
 
-    MERGE (courier:Courier {courier_id: row.courier_id})
-    ON CREATE SET courier.created_at = datetime()
-    SET
-        courier.name = row.name,
-        courier.email = row.email,
-        courier.city_id = city.city_id,
-        courier.city_name = row.city_name,
-        courier.hub_id = hub.hub_id,
-        courier.hub_name = hub.name,
-        courier.start_lat_wgs84 = hub.lat,
-        courier.start_lon_wgs84 = hub.lng,
-        courier.is_active = true,
-        courier.updated_at = datetime()
+            if not reg.get("success"):
+                skipped_count += 1
+                print(f"Skipped courier {email}: {reg.get('message')}")
+                continue
 
-    MERGE (courier)-[:HAS_ROLE]->(role)
-    MERGE (courier)-[:OPERATES_IN]->(city)
-    MERGE (courier)-[:ASSIGNED_TO_HUB]->(hub)
-    """
+            user = reg["user"]
 
-    try:
-        conn.execute_write(query, {"rows": rows})
-        print(f"Loaded {len(rows)} synthetic couriers into Aura.")
-    finally:
-        conn.close()
+        # Important:
+        # Existing Supabase users may not yet have a Profile node in Aura
+        # because aura_reseed clears Aura but not Supabase.
+        # So always sync Profile to Aura before creating/linking Courier.
+        sync_profile_to_aura(
+            profile_id=user["id"],
+            name=user["name"],
+            email=user["email"],
+            role_id=user["role_id"],
+            role_name=user["role"],
+        )
 
+        result = create_courier_node(
+            name=name,
+            email=email,
+            city_name=row["city_name"],
+            hub_name=row["hub_name"],
+            profile_id=user["id"],
+            courier_id=row["courier_id"],
+            ds=int(row.get("ds") or 318),
+        )
+
+        if result.get("success"):
+            created_count += 1
+        else:
+            skipped_count += 1
+            print(f"Skipped courier {email}: {result.get('message')}")
+
+    print(f"Loaded/updated {created_count} synthetic courier users into Aura.")
+    if skipped_count:
+        print(f"Skipped {skipped_count} synthetic couriers.")
 
 # ============================================================
 # Load synthetic orders
@@ -560,6 +540,31 @@ def load_assigned_routes_to_aura(json_path=None):
         conn.close()
 
 
+def link_couriers_to_profiles():
+    """
+    Safety repair step after profile sync.
+
+    If a Courier already has profile_id but the LINKED_TO_PROFILE relationship
+    is missing, create the relationship.
+    """
+    conn = AuraConnection()
+
+    query = """
+    MATCH (c:Courier)
+    WHERE c.profile_id IS NOT NULL
+    MATCH (p:Profile {id: c.profile_id})
+    MERGE (c)-[:LINKED_TO_PROFILE]->(p)
+    RETURN count(c) AS linked_count
+    """
+
+    try:
+        result = conn.execute_write(query)
+        linked_count = result[0]["linked_count"] if result else 0
+        print(f"Linked couriers to profiles: {linked_count}")
+    finally:
+        conn.close()
+
+
 # ============================================================
 # Main seed function
 # ============================================================
@@ -584,6 +589,8 @@ def seed_aura_logistics():
     try:
         synced = sync_all_profiles_from_supabase()
         print(f"Synced {synced} Supabase profiles into Aura.")
+
+        link_couriers_to_profiles()
     except Exception as exc:
         print(f"Profile sync skipped/failed: {exc}")
 

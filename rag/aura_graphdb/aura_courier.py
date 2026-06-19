@@ -179,6 +179,11 @@ def create_courier_node(
     ds: int = DEFAULT_DS,
 ) -> dict[str, Any]:
     """Create an operational Courier node in Aura."""
+    if not profile_id:
+        return {
+            "success": False,
+            "message": "profile_id is required. Use create_courier_user() to create a courier with Profile + Courier nodes.",
+        }
     existing = get_courier_by_email(email)
 
     if existing:
@@ -300,11 +305,13 @@ def create_courier_user(
     password: str,
     city_name: str,
     hub_name: str,
+    courier_id: str | None = None,
     ds: int = DEFAULT_DS,
 ) -> dict[str, Any]:
     """
     Register a courier in Supabase, sync profile to Aura, and create the Courier node.
     """
+    
     reg = register_user_in_supabase(
         name=name,
         email=email,
@@ -326,14 +333,14 @@ def create_courier_user(
     )
 
     courier_result = create_courier_node(
-        name=name,
-        email=email,
-        city_name=city_name,
-        hub_name=hub_name,
-        profile_id=user["id"],
-        ds=ds,
+    name=name,
+    email=email,
+    city_name=city_name,
+    hub_name=hub_name,
+    profile_id=user["id"],
+    courier_id=courier_id,
+    ds=ds,
     )
-
     if not courier_result["success"]:
         return courier_result
 
