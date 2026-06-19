@@ -15,16 +15,12 @@ from typing import Any
 from integrations.llm_client import get_client, get_model
 from orchestrator.intent_routing import (
     domain_for_task,
-    infer_domain,
     narrow_candidate_tasks,
 )
 from orchestrator.task_registry import (
     CONFIDENCE_THRESHOLD,
     EXTREME_LOW_CONFIDENCE_THRESHOLD,
-    INVENTORY_KEYWORDS,
-    LOGISTICS_KEYWORDS,
     TASKS_BYPASS_INTENT_CLARIFICATION,
-    VALID_DOMAINS,
     VALID_TASKS,
 )
 
@@ -158,13 +154,13 @@ FEW_SHOT_EXAMPLES: list[tuple[str, dict[str, str], dict[str, Any]]] = [
         {"task": "delivery_days", "confidence": 0.95},
     ),
     (
-        "Route from Bangalore Hub to Whitefield Hub",
-        {"from_hub": "Bangalore Hub", "to_hub": "Whitefield Hub"},
+        "Route from Hub 2 to Hub 5",
+        {"from_hub": "2", "to_hub": "5"},
         {"task": "hub_route", "confidence": 0.99},
     ),
     (
-        "How many iPhones are in Shanghai?",
-        {"product_name": "iPhone", "warehouse_id": "Shanghai"},
+        "How many electronics are there?",
+        {"product_name": "electronics"},
         {"task": "inventory_nlsql", "confidence": 0.95},
     ),
 ]
@@ -178,12 +174,6 @@ def _normalize_logistics_abbreviations(user_query: str) -> str:
     normalized = re.sub(r"\bnxt\s+stp\b", "next stop", normalized, flags=re.I)
     normalized = re.sub(r"\brt\b", "route", normalized, flags=re.I)
     return normalized
-
-
-def _keyword_domain_scores(query: str) -> tuple[int, int]:
-    inventory_score = sum(1 for keyword in INVENTORY_KEYWORDS if keyword in query)
-    logistics_score = sum(1 for keyword in LOGISTICS_KEYWORDS if keyword in query)
-    return inventory_score, logistics_score
 
 
 def _build_intent_messages(
@@ -312,9 +302,6 @@ def _keyword_fallback_task(
             "confidence": confidence,
         }
 
-    if domain == "inventory":
-        return _pick("inventory_nlsql", 0.80)
-
     if "next stop" in query and "courier_route" in candidates:
         return _pick("courier_route", 0.85)
 
@@ -410,10 +397,14 @@ def build_clarification_question(user_query: str, classification: dict[str, Any]
 def classify_domain_task(
     user_query: str,
     entities: dict[str, str] | None = None,
-    domain_hint: str | None = None,
+    domain: str = "logistics",
 ) -> dict[str, Any]:
     """
-    Classify domain and task using entity narrowing and LLM intent.
+    Classify the logistics *task*. Domain is owned by coarse authorization.
+
+    Domain classification is never performed here: coarse authorization is the
+    single domain owner, and only logistics queries reach this function
+    (inventory bypasses to NL-SQL). The provided ``domain`` is trusted.
 
     Routing order:
       1. Entity extraction (provided by caller)
@@ -422,27 +413,12 @@ def classify_domain_task(
       4. Keyword fallback only when LLM fails
     """
     resolved_entities = dict(entities or {})
+    # Trust the domain owner; intent never re-infers domain. Defensively coerce
+    # any unexpected value to logistics (the only domain that reaches intent).
+    domain = "logistics"
     routing_query = _normalize_logistics_abbreviations(user_query)
-    lowered_query = routing_query.lower()
-
-    inventory_score, logistics_score = _keyword_domain_scores(lowered_query)
-    domain = infer_domain(
-        entities=resolved_entities,
-        domain_hint=domain_hint,
-        inventory_keyword_score=inventory_score,
-        logistics_keyword_score=logistics_score,
-    )
 
     candidate_tasks = narrow_candidate_tasks(resolved_entities, domain=domain)
-
-    if domain == "inventory" and candidate_tasks == ["inventory_nlsql"]:
-        return {
-            "domain": "inventory",
-            "task": "inventory_nlsql",
-            "confidence": 0.92,
-            "source": "inventory_domain",
-            "candidate_tasks": candidate_tasks,
-        }
 
     llm_result = _classify_with_llm(user_query, resolved_entities, candidate_tasks)
     if llm_result:

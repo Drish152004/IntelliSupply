@@ -3,9 +3,19 @@
 Main LangGraph orchestration workflow.
 
 init → clarification_router → semantic_cache_lookup → coarse_authorization
-  → entity_extraction → intent → entity_resolution → authorize
-  → parameter_preparation → rag_executor → response_formatter
-  → semantic_cache_store → END
+  → (domain split)
+
+Domain split after coarse_authorization (coarse is the sole domain owner):
+  inventory  → inventory_nlsql → response_formatter
+  logistics  → entity_extraction → intent → entity_resolution → authorize
+               → parameter_preparation → rag_executor → response_formatter
+
+Inventory bypasses entity extraction, intent classification, entity
+resolution, and parameter preparation: NL-SQL consumes only the raw user
+query, so those nodes add no execution value for inventory. Logistics keeps
+the full pipeline because graph functions require structured arguments.
+
+response_formatter → semantic_cache_store → END
 
 clarification_router resumes in-progress HITL turns:
   new query / domain answer → semantic_cache_lookup
@@ -61,11 +71,38 @@ def rag_executor_node(state: AgentState) -> AgentState:
     return result
 
 
+def inventory_nlsql_node(state: AgentState) -> AgentState:
+    """Execute inventory NL-SQL directly after coarse authorization.
+
+    Inventory bypasses entity extraction, intent classification, entity
+    resolution, and parameter preparation. Domain ownership stays with
+    coarse_authorization; this node trusts ``coarse_domain == "inventory"`` and
+    pins ``domain``/``task`` so downstream formatting and execution behave
+    exactly as before. NL-SQL consumes only the raw user query.
+    """
+    prepared: AgentState = {
+        **state,
+        "domain": "inventory",
+        "task": "inventory_nlsql",
+        "confidence": 1.0,
+        "classification_source": state.get("classification_source") or "coarse_domain",
+        "function_name": None,
+        "payload": {},
+        "missing_required_parameters": False,
+        "clarification_needed": False,
+    }
+    return rag_executor_node(prepared)
+
+
 def _route_after_coarse_authorization(state: AgentState) -> str:
     if state.get("clarification_failed"):
         return "response_formatter"
     if state.get("clarification_needed") or state.get("access_denied"):
         return "response_formatter"
+    # Explicit domain split. Coarse authorization is the single domain owner;
+    # inventory skips the logistics pipeline entirely.
+    if state.get("coarse_domain") == "inventory":
+        return "inventory_nlsql"
     return "entity_extraction"
 
 
@@ -114,6 +151,10 @@ def build_graph():
         traced_node("coarse_authorization", coarse_authorization),
     )
     graph.add_node(
+        "inventory_nlsql",
+        traced_node("inventory_nlsql", inventory_nlsql_node),
+    )
+    graph.add_node(
         "entity_extraction",
         traced_node("entity_extraction", extract_entities_node),
     )
@@ -147,6 +188,7 @@ def build_graph():
         "coarse_authorization",
         traced_route("coarse_authorization", _route_after_coarse_authorization),
     )
+    graph.add_edge("inventory_nlsql", "response_formatter")
     graph.add_edge("entity_extraction", "intent")
     graph.add_conditional_edges(
         "intent",
