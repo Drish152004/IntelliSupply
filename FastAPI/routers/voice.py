@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
 from dependencies.auth import TokenUser, get_current_user
 from schemas.voice import VoiceTranscribeResponse
+from security import rate_limit
 from services import voice as voice_service
 
 logger = logging.getLogger(__name__)
@@ -32,7 +33,11 @@ def health() -> dict[str, str]:
     return {"status": "healthy", "provider": "huggingface-whisper"}
 
 
-@router.post("/transcribe", response_model=VoiceTranscribeResponse)
+@router.post(
+    "/transcribe",
+    response_model=VoiceTranscribeResponse,
+    dependencies=[Depends(rate_limit(10, 60))],
+)
 async def transcribe(
     current_user: Annotated[TokenUser, Depends(get_current_user)],
     audio: UploadFile = File(..., description="Recorded microphone audio"),
