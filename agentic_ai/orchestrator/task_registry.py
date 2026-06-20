@@ -91,6 +91,10 @@ LOGISTICS_SINGLE_WORD_KEYWORDS: tuple[str, ...] = (
     "track",
     "courier",
     "dispatch",
+    "city",
+    "cities",
+    "hubs",
+    "hub"
 )
 
 LOGISTICS_PHRASE_KEYWORDS: tuple[str, ...] = (

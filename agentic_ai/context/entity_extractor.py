@@ -1,4 +1,15 @@
-"""Deterministic regex-based entity extraction for graph and context resolution."""
+"""Deterministic regex entity extraction for the logistics domain.
+
+Only logistics queries reach entity extraction. Inventory executes via NL-SQL
+and bypasses extraction entirely (NL-SQL consumes the raw user query and never
+uses extracted entities), so this module no longer carries inventory patterns.
+Keeping extraction logistics-only also guarantees inventory entities can never
+influence orchestration decisions.
+
+``EntityExtractor.extract`` produces, for the logistics domain only:
+
+    order_id, courier_name, hub_name, from_hub, to_hub, city_name, delivery_day
+"""
 
 from __future__ import annotations
 
@@ -6,154 +17,287 @@ import re
 from dataclasses import dataclass
 from datetime import date, timedelta
 
-_CITY_NAME = r"[A-Za-z][A-Za-z-]+(?:\s+[A-Za-z][A-Za-z-]+)?"
-_CITY_END = (
-    r"(?=\s+for\s+(?:next\s+)?\d+\s+(?:day|days|week|weeks)\b|\s*$|\s*,)"
-)
+# --- Domain identifiers ---------------------------------------------------
 
-_ORDER_ID_STOP_WORDS = frozenset({"ID", "ORDER", "ORD"})
+LOGISTICS_DOMAIN = "logistics"
 
-# Hyphenated logistics IDs (CQ-B-002) or plain tokens with min length 3 (excludes "id").
+
+# --- Shared helpers -------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class _EntityMatch:
+    value: str
+    score: int
+    start: int
+
+
+def _normalize_whitespace(value: str) -> str:
+    return re.sub(r"\s+", " ", value.strip())
+
+
+def _best_match(user_query: str, patterns: list[re.Pattern[str]]) -> _EntityMatch | None:
+    """Return the highest-priority regex match (earlier patterns win ties)."""
+    best: _EntityMatch | None = None
+    total = len(patterns)
+    for index, pattern in enumerate(patterns):
+        match = pattern.search(user_query)
+        if not match:
+            continue
+        score = total - index
+        candidate = _EntityMatch(
+            value=match.group(1),
+            score=score,
+            start=match.start(),
+        )
+        if best is None or candidate.score > best.score or (
+            candidate.score == best.score and candidate.start < best.start
+        ):
+            best = candidate
+    return best
+
+
+# Identifier fields stored lowercase to match GraphDB-stored IDs (e.g. "sh-b-000").
+# Text entities (courier_name, city_name, hub_name) are intentionally excluded.
+_LOWERCASE_ID_FIELDS: frozenset[str] = frozenset({
+    "order_id",
+    "courier_id",
+    "hub_id",
+})
+
+
+def _lowercase_identifier_fields(entities: dict[str, str]) -> None:
+    """Lowercase identifier values in place so lookups match stored IDs."""
+    for field in _LOWERCASE_ID_FIELDS:
+        value = entities.get(field)
+        if value:
+            entities[field] = value.lower()
+
+
+# --- Hub (shared by both domains) -----------------------------------------
+
+_HUB_NAME_PATTERNS: list[re.Pattern[str]] = [
+    re.compile(r"\bhub[\s#:_-]*(\d+)\b", re.I),
+    re.compile(r"\bHub_(\d+)\b"),
+]
+
+
+def _extract_hub_name(user_query: str) -> str | None:
+    """Extract a single hub reference and normalize to ``Hub N``."""
+    match = _best_match(user_query, _HUB_NAME_PATTERNS)
+    if not match:
+        return None
+    return f"Hub {int(match.value)}"
+
+
+# --- Logistics: order_id --------------------------------------------------
+
+# Self-identifying logistics order IDs (e.g. sh-b-000, cq-b-002): two letters,
+# a single-letter segment, then a numeric segment.
+_DIRECT_LOGISTICS_ID = r"[A-Za-z]{2}-[A-Za-z]-\d{2,4}"
+
+# Hyphenated logistics IDs, ORD-prefixed IDs, or bare tokens (min length 3).
 _LOGISTICS_ORDER_ID = (
     r"[A-Za-z0-9]+(?:-[A-Za-z0-9]+)+|"
     r"ORD[-_]?\d+[A-Za-z0-9-]*|"
     r"[A-Za-z0-9]{3,}"
 )
 
-# Hyphenated / ORD-prefixed IDs only — used with logistics-context prefixes (no bare tokens).
+# Hyphenated / ORD-prefixed IDs only — used with logistics-context prefixes.
 _CONTEXT_LOGISTICS_ORDER_ID = (
     r"[A-Za-z0-9]+(?:-[A-Za-z0-9]+)+|"
     r"ORD[-_]?\d+[A-Za-z0-9-]*"
 )
 
-# Self-identifying logistics order IDs (e.g. sh-b-000, hz-b-000, cq-b-002):
-# two letters, a single-letter segment, then a numeric segment. Specific enough
-# to be recognized anywhere in a query without surrounding logistics keywords.
-_DIRECT_LOGISTICS_ID = r"[A-Za-z]{2}-[A-Za-z]-\d{2,4}"
+_ORDER_ID_PATTERNS: list[re.Pattern[str]] = [
+    re.compile(rf"\b({_DIRECT_LOGISTICS_ID})\b", re.I),
+    re.compile(r"\b(ORD[-_]?\d+[A-Za-z0-9-]*)\b", re.I),
+    re.compile(
+        rf"\b(?:order|ord)(?:\s+id)?[\s#:_-]+({_LOGISTICS_ORDER_ID})\b",
+        re.I,
+    ),
+    re.compile(
+        rf"\b(?:"
+        rf"where\s+is|"
+        rf"(?:route|shipment|status|track(?:ing)?|eta|delivery)(?:\s+(?:for|of))?|"
+        rf"order(?:\s+(?:for|of))?"
+        rf")\s+({_CONTEXT_LOGISTICS_ORDER_ID})\b",
+        re.I,
+    ),
+]
 
-_ENTITY_PATTERNS: dict[str, list[re.Pattern[str]]] = {
-    "order_id": [
-        re.compile(rf"\b({_DIRECT_LOGISTICS_ID})\b", re.I),
-        re.compile(r"\b(ORD[-_]?\d+[A-Za-z0-9-]*)\b", re.I),
-        re.compile(
-            rf"\b(?:order|ord)(?:\s+id)?[\s#:_-]+({_LOGISTICS_ORDER_ID})\b",
-            re.I,
-        ),
-        re.compile(
-            rf"\b(?:"
-            rf"where\s+is|"
-            rf"(?:route|shipment|status|track(?:ing)?|eta|delivery)(?:\s+(?:for|of))?|"
-            rf"order(?:\s+(?:for|of))?"
-            rf")\s+({_CONTEXT_LOGISTICS_ORDER_ID})\b",
-            re.I,
-        ),
-    ],
-    "shipment_id": [
-        re.compile(r"\b(SH\d+[A-Za-z0-9-]*)\b", re.I),
-        re.compile(r"\bshipment[\s#:_-]+([A-Za-z0-9-]{3,})\b", re.I),
-        re.compile(r"\b(ord-[A-Za-z0-9-]+)\b", re.I),
-    ],
-    "hub_id": [
-        re.compile(r"\bhub[\s#:_-]*(\d+)\b", re.I),
-        re.compile(r"\bHub_(\d+)\b"),
-    ],
-    "from_hub": [
-        re.compile(r"\bfrom\s+(?:hub[\s#:_-]*)?(\d+)\b", re.I),
-        re.compile(r"\bbetween\s+hub[\s#:_-]*(\d+)\s+and\s+hub", re.I),
-        re.compile(r"\bfrom\s+([A-Za-z][A-Za-z0-9_]*)\b", re.I),
-    ],
-    "to_hub": [
-        re.compile(r"\bto\s+(?:hub[\s#:_-]*)?(\d+)\b", re.I),
-        re.compile(r"\bbetween\s+hub[\s#:_-]*\d+\s+and\s+hub[\s#:_-]*(\d+)\b", re.I),
-        re.compile(r"\bto\s+([A-Za-z][A-Za-z0-9_]*)\b", re.I),
-    ],
-    "city_name": [
-        re.compile(rf"\bin\s+({_CITY_NAME}){_CITY_END}", re.I),
-        re.compile(rf"\b(?:city)\s+({_CITY_NAME}){_CITY_END}", re.I),
-        re.compile(
-            rf"\b(?:demand|deliveries|forecast)(?:\s+\w+){{0,3}}\s+(?:in|for)\s+"
-            rf"({_CITY_NAME}){_CITY_END}",
-            re.I,
-        ),
-    ],
-    "sku_id": [
-        re.compile(r"\b(?:sku|stock\s+keeping\s+unit)[\s#:_-]*([A-Za-z0-9-]+)\b", re.I),
-        re.compile(r"\b(SKU[A-Za-z0-9-]+)\b", re.I),
-    ],
-    "warehouse_id": [
-        re.compile(r"\b(?:warehouse|wh)\b[\s#:_-]+([A-Za-z0-9-]+)\b", re.I),
-    ],
-    "product_name": [
-        re.compile(
-            r"\b(?:product|item|iphone|router|laptop|phone|tablet)\s+"
-            r"([A-Za-z0-9][A-Za-z0-9\s\-]+?)(?=\s+(?:in|at|for|stock|units?)\b|\s*$)",
-            re.I,
-        ),
-        re.compile(
-            r"\b(?:how many|stock of|units of)\s+([A-Za-z0-9][A-Za-z0-9\s\-]+?)"
-            r"(?=\s+(?:in|at|are|do)\b|\s*\?|\s*$)",
-            re.I,
-        ),
-    ],
-}
+# Command/context words that must never be captured as an order id.
+_ORDER_ID_STOP_WORDS: frozenset[str] = frozenset({
+    "ID",
+    "ORDER",
+    "ORD",
+    "STATUS",
+    "ROUTE",
+    "TRACKING",
+    "TRACK",
+    "ETA",
+    "DELIVERY",
+    "DETAILS",
+    "DETAIL",
+    "INFO",
+    "LOOKUP",
+    "NUMBER",
+    "THE",
+    "FOR",
+    "OF",
+    "IS",
+    "WHERE",
+    "SHIPMENT",
+})
 
-_HORIZON_PATTERN = re.compile(
-    r"\b(?:next|for)\s+(\d+)\s+(day|days|week|weeks)\b",
+
+def _normalize_order_id(value: str) -> str:
+    cleaned = _normalize_whitespace(value).lower()
+    if cleaned.startswith("ord-"):
+        return cleaned
+    if re.fullmatch(r"ord[a-z0-9-]+", cleaned):
+        return cleaned
+    if re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)+", cleaned):
+        return cleaned
+    if re.fullmatch(r"[a-z0-9-]+", cleaned) and not cleaned.startswith("ord"):
+        return f"ord{cleaned}" if cleaned.isalnum() and len(cleaned) >= 3 else cleaned
+    return cleaned
+
+
+def _extract_order_id(user_query: str) -> str | None:
+    match = _best_match(user_query, _ORDER_ID_PATTERNS)
+    if not match:
+        return None
+    raw = _normalize_whitespace(match.value)
+    if raw.upper() in _ORDER_ID_STOP_WORDS:
+        return None
+    value = _normalize_order_id(raw)
+    if not value or value.upper() in _ORDER_ID_STOP_WORDS:
+        return None
+    return value
+
+
+# --- Logistics: courier_name (names only, never courier IDs) ---------------
+
+_COURIER_NUMERIC_REF = re.compile(r"\bcourier[\s#:_-]+(\d+)\b", re.I)
+_COURIER_NAMED_REF = re.compile(
+    r"\bcourier[\s#:_-]+([A-Za-z][A-Za-z0-9]*(?:\s+[A-Za-z][A-Za-z0-9]+)?)\b",
     re.I,
 )
 
-_CITY_HORIZON_PREFIXED = re.compile(
-    rf"\b(?:in|for)\s+({_CITY_NAME})\s+for\s+(?:next\s+)?(\d+)\s+(day|days|week|weeks)\b",
-    re.I,
-)
-
-_CITY_HORIZON_BARE = re.compile(
-    r"\b([A-Za-z][A-Za-z-]+)\s+for\s+(?:next\s+)?(\d+)\s+(day|days|week|weeks)\b",
-    re.I,
-)
-
-_CITY_HORIZON_STOP_WORDS = frozenset({
-    "demand",
+_COURIER_NAME_STOP_WORDS: frozenset[str] = frozenset({
+    "id",
+    "name",
+    "names",
+    "status",
+    "route",
+    "routes",
+    "order",
+    "orders",
     "delivery",
     "deliveries",
-    "forecast",
-    "next",
+    "workload",
+    "info",
+    "details",
+    "detail",
+    "number",
+    "stop",
+    "stops",
+    "eta",
+    "is",
     "for",
-    "in",
+    "of",
+    "the",
+    "assigned",
 })
 
-_CITY_NAME_STOP_WORDS = frozenset({
-    "list",
-    "all",
-    "with",
-    "show",
-    "get",
-    "which",
-    "enumerate",
-    "names",
-    "pls",
-    "hubs",
-    "hub",
-    "cities",
-    "city",
-})
+_COURIER_NAME_PATTERNS: list[re.Pattern[str]] = [
+    _COURIER_NUMERIC_REF,
+    _COURIER_NAMED_REF,
+]
+
+
+def _extract_courier_name(user_query: str) -> dict[str, str]:
+    """Extract a courier *name* (e.g. "Courier 1", "John"). Never a courier id."""
+    numeric = _COURIER_NUMERIC_REF.search(user_query)
+    if numeric:
+        return {"courier_name": f"Courier {int(numeric.group(1))}"}
+
+    named = _COURIER_NAMED_REF.search(user_query)
+    if named:
+        name = _normalize_whitespace(named.group(1))
+        if name.lower() not in _COURIER_NAME_STOP_WORDS:
+            return {"courier_name": name}
+    return {}
+
+
+def has_courier_entity(entities: dict[str, str]) -> bool:
+    """Return True when entities contain any unresolved or resolved courier reference."""
+    return bool(
+        entities.get("courier_id")
+        or entities.get("courier_reference")
+        or entities.get("courier_name")
+    )
+
+
+# --- Logistics: hub_name + directional from_hub/to_hub --------------------
+
+# Precise, hub-prefixed directional patterns only (no broad "from <word>"
+# matches) so a logistics query can never bind an arbitrary token as a hub.
+_FROM_HUB_PATTERNS: list[re.Pattern[str]] = [
+    re.compile(r"\bfrom\s+hub[\s#:_-]*(\d+)\b", re.I),
+    re.compile(r"\bbetween\s+hub[\s#:_-]*(\d+)\s+and\s+hub", re.I),
+]
+_TO_HUB_PATTERNS: list[re.Pattern[str]] = [
+    re.compile(r"\bto\s+hub[\s#:_-]*(\d+)\b", re.I),
+    re.compile(r"\bbetween\s+hub[\s#:_-]*\d+\s+and\s+hub[\s#:_-]*(\d+)\b", re.I),
+]
+
+
+def _extract_logistics_hubs(user_query: str) -> dict[str, str]:
+    """Return directional from/to hubs when both are present, else a single hub_name."""
+    from_match = _best_match(user_query, _FROM_HUB_PATTERNS)
+    to_match = _best_match(user_query, _TO_HUB_PATTERNS)
+    if from_match and to_match:
+        return {
+            "from_hub": str(int(from_match.value)),
+            "to_hub": str(int(to_match.value)),
+        }
+
+    hub_name = _extract_hub_name(user_query)
+    if hub_name:
+        return {"hub_name": hub_name}
+    return {}
+
+
+# --- Logistics: city_name (fixed supported set) ---------------------------
+
+LOGISTICS_CITIES: dict[str, str] = {
+    "shanghai": "Shanghai",
+    "yantai": "Yantai",
+    "beijing": "Beijing",
+    "shenzhen": "Shenzhen",
+    "guangzhou": "Guangzhou",
+}
+
+_CITY_ALTERNATION = "|".join(sorted(LOGISTICS_CITIES, key=len, reverse=True))
+_CITY_PATTERN = re.compile(rf"\b({_CITY_ALTERNATION})\b", re.I)
+
+
+def _extract_city_name(user_query: str) -> str | None:
+    match = _CITY_PATTERN.search(user_query)
+    if not match:
+        return None
+    return LOGISTICS_CITIES[match.group(1).lower()]
+
+
+# --- Logistics: delivery_day (all formats -> YYYY-MM-DD) ------------------
 
 _MONTH_TOKEN = (
     r"january|february|march|april|may|june|july|august|"
     r"september|october|november|december|"
     r"jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec"
 )
-
-_ISO_DELIVERY_DAY = re.compile(r"\b(?:on\s+)?(\d{4}-\d{2}-\d{2})\b", re.I)
-_MONTH_DAY_DELIVERY = re.compile(
-    rf"\b(?:on\s+)?({_MONTH_TOKEN})\s+(\d{{1,2}})(?:st|nd|rd|th)?\b",
-    re.I,
-)
-_DAY_MONTH_DELIVERY = re.compile(
-    rf"\b(?:on\s+)?(\d{{1,2}})(?:st|nd|rd|th)?\s+({_MONTH_TOKEN})\b",
-    re.I,
-)
-_RELATIVE_DELIVERY_DAY = re.compile(r"\b(?:on\s+)?(today|tomorrow)\b", re.I)
 
 _MONTH_TO_NUMBER: dict[str, int] = {
     "january": 1,
@@ -182,197 +326,35 @@ _MONTH_TO_NUMBER: dict[str, int] = {
     "dec": 12,
 }
 
-@dataclass(frozen=True)
-class _EntityMatch:
-    value: str
-    score: int
-    start: int
-
-
-def _normalize_whitespace(value: str) -> str:
-    return re.sub(r"\s+", " ", value.strip())
-
-
-def _normalize_order_id(value: str) -> str:
-    cleaned = _normalize_whitespace(value).lower()
-    if cleaned.upper() in _ORDER_ID_STOP_WORDS:
-        return ""
-    if cleaned.startswith("ord-"):
-        return cleaned
-    if re.fullmatch(r"ord[a-z0-9-]+", cleaned):
-        return cleaned
-    if re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)+", cleaned):
-        return cleaned
-    if re.fullmatch(r"[a-z0-9-]+", cleaned) and not cleaned.startswith("ord"):
-        return f"ord{cleaned}" if cleaned.isalnum() and len(cleaned) >= 3 else cleaned
-    return cleaned
-
-
-def _is_valid_order_id(value: str) -> bool:
-    if not value:
-        return False
-    return value.upper() not in _ORDER_ID_STOP_WORDS
-
-
-def _normalize_last_completed_order(value: str) -> str:
-    cleaned = _normalize_whitespace(value)
-    if cleaned.upper().startswith("SH"):
-        return _normalize_shipment_id(cleaned)
-    return _normalize_order_id(cleaned)
-
-
-def _normalize_shipment_id(value: str) -> str:
-    return _normalize_whitespace(value).lower()
-
-
-_COURIER_TITLED_NUMERIC = re.compile(r"\bCourier\s+(\d+)\b")
-_COURIER_CODE = re.compile(r"\bC(\d+)\b", re.I)
-_COURIER_NUMERIC_REF = re.compile(r"\bcourier[\s#:_-]+(\d+)\b", re.I)
-_COURIER_NAMED_REF = re.compile(
-    r"\bcourier[\s#:_-]+([A-Za-z][A-Za-z0-9]*(?:\s+[A-Za-z][A-Za-z0-9]+)?)\b",
+# 2026-06-21
+_ISO_DELIVERY_DAY = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b")
+# 21/06/2026 or 21-06-2026 (day-first, matching IntelliSupply locale)
+_NUMERIC_DMY_DELIVERY = re.compile(r"\b(\d{1,2})[/-](\d{1,2})[/-](\d{4})\b")
+# 21 June 2026 / 21st June 2026
+_DAY_MONTH_YEAR_DELIVERY = re.compile(
+    rf"\b(\d{{1,2}})(?:st|nd|rd|th)?\s+({_MONTH_TOKEN})\s+(\d{{4}})\b",
     re.I,
 )
-_COURIER_CANONICAL_ID = re.compile(
-    r"\bcourier[\s#:_-]*("
-    r"[0-9a-f]{32}|"
-    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|"
-    r"[0-9a-f]{24}"
-    r")\b",
+# June 21 2026 / June 21, 2026
+_MONTH_DAY_YEAR_DELIVERY = re.compile(
+    rf"\b({_MONTH_TOKEN})\s+(\d{{1,2}})(?:st|nd|rd|th)?,?\s+(\d{{4}})\b",
     re.I,
 )
+# 21 June / 21st June (year inferred from reference date)
+_DAY_MONTH_DELIVERY = re.compile(
+    rf"\b(\d{{1,2}})(?:st|nd|rd|th)?\s+({_MONTH_TOKEN})\b",
+    re.I,
+)
+# June 21 (year inferred from reference date)
+_MONTH_DAY_DELIVERY = re.compile(
+    rf"\b({_MONTH_TOKEN})\s+(\d{{1,2}})(?:st|nd|rd|th)?\b",
+    re.I,
+)
+_RELATIVE_DELIVERY_DAY = re.compile(r"\b(today|tomorrow|yesterday)\b", re.I)
 
 
-def has_courier_entity(entities: dict[str, str]) -> bool:
-    """Return True when entities contain any unresolved or resolved courier reference."""
-    return bool(
-        entities.get("courier_id")
-        or entities.get("courier_reference")
-        or entities.get("courier_name")
-    )
-
-
-def _extract_courier_entities(user_query: str) -> dict[str, str]:
-    """
-    Extract raw courier references from user text.
-
-    Does not normalize to business IDs (e.g. C11) or resolve graph identifiers.
-    """
-    canonical = _COURIER_CANONICAL_ID.search(user_query)
-    if canonical:
-        return {"courier_id": canonical.group(1).strip()}
-
-    titled = _COURIER_TITLED_NUMERIC.search(user_query)
-    if titled:
-        return {"courier_name": f"Courier {titled.group(1)}"}
-
-    code = _COURIER_CODE.search(user_query)
-    if code:
-        return {"courier_reference": code.group(1)}
-
-    numeric = _COURIER_NUMERIC_REF.search(user_query)
-    if numeric:
-        return {"courier_reference": numeric.group(1)}
-
-    named = _COURIER_NAMED_REF.search(user_query)
-    if named:
-        return {"courier_name": _normalize_whitespace(named.group(1))}
-
-    return {}
-
-
-def _normalize_hub_ref(value: str) -> str:
-    cleaned = _normalize_whitespace(value)
-    if cleaned.isdigit():
-        return f"Hub_{int(cleaned)}"
-    if cleaned.lower().startswith("hub_"):
-        parts = cleaned.split("_", 1)
-        if len(parts) == 2 and parts[1].isdigit():
-            return f"Hub_{int(parts[1])}"
-    if cleaned.lower().startswith("hub") and cleaned[3:].isdigit():
-        return f"Hub_{int(cleaned[3:])}"
-    hub_match = re.search(r"hub[\s#:_-]*(\d+)", cleaned, re.I)
-    if hub_match:
-        return f"Hub_{int(hub_match.group(1))}"
-    return cleaned
-
-
-def _normalize_sku_id(value: str) -> str:
-    cleaned = _normalize_whitespace(value).upper()
-    return cleaned if cleaned.startswith("SKU") else f"SKU{cleaned}"
-
-
-def _normalize_warehouse_id(value: str) -> str:
-    return _normalize_whitespace(value).upper()
-
-
-def _normalize_product_name(value: str) -> str:
-    return _normalize_whitespace(value)
-
-
-def _normalize_city_name(value: str) -> str:
-    return _normalize_whitespace(value)
-
-
-_ENTITY_NORMALIZERS: dict[str, callable] = {
-    "order_id": _normalize_order_id,
-    "shipment_id": _normalize_shipment_id,
-    "hub_id": _normalize_hub_ref,
-    "from_hub": _normalize_hub_ref,
-    "to_hub": _normalize_hub_ref,
-    "city_name": _normalize_city_name,
-    "sku_id": _normalize_sku_id,
-    "warehouse_id": _normalize_warehouse_id,
-    "product_name": _normalize_product_name,
-}
-
-# Identifier fields stored lowercase to match GraphDB-stored IDs (e.g. "sh-b-000").
-# Text entities (courier_name, city_name, hub_name) are intentionally excluded.
-_LOWERCASE_ID_FIELDS: frozenset[str] = frozenset({
-    "order_id",
-    "shipment_id",
-    "courier_id",
-    "hub_id",
-    "route_prediction_id",
-})
-
-
-def _lowercase_identifier_fields(entities: dict[str, str]) -> None:
-    """Lowercase identifier values in place so lookups match stored IDs."""
-    for field in _LOWERCASE_ID_FIELDS:
-        value = entities.get(field)
-        if value:
-            entities[field] = value.lower()
-
-
-def _is_valid_hub_id(value: str) -> bool:
-    return bool(re.fullmatch(r"Hub_\d+", value, re.I))
-
-
-def _is_valid_city_name(value: str) -> bool:
-    normalized = value.strip().lower()
-    if not normalized or normalized in _CITY_NAME_STOP_WORDS:
-        return False
-    return bool(re.fullmatch(r"[a-z][a-z-]+(?:\s+[a-z][a-z-]+)?", normalized, re.I))
-
-
-def _apply_horizon(entities: dict[str, str], count: int, unit: str) -> None:
-    if unit.startswith("week"):
-        entities["horizon"] = str(count)
-        entities["granularity"] = "weekly"
-    else:
-        entities["horizon"] = str(count)
-        entities["granularity"] = "daily"
-
-
-def _extract_city_horizon(user_query: str) -> re.Match[str] | None:
-    prefixed = _CITY_HORIZON_PREFIXED.search(user_query)
-    if prefixed:
-        return prefixed
-
-    for match in _CITY_HORIZON_BARE.finditer(user_query):
-        if match.group(1).lower() not in _CITY_HORIZON_STOP_WORDS:
-            return match
-    return None
+def _month_number(token: str) -> int | None:
+    return _MONTH_TO_NUMBER.get(token.strip().lower())
 
 
 def _canonical_delivery_day(year: int, month: int, day: int) -> str | None:
@@ -382,177 +364,139 @@ def _canonical_delivery_day(year: int, month: int, day: int) -> str | None:
         return None
 
 
-def _month_number(token: str) -> int | None:
-    return _MONTH_TO_NUMBER.get(token.strip().lower())
-
-
 def _extract_delivery_day(
     user_query: str,
     *,
     reference: date | None = None,
 ) -> str | None:
-    """Extract and normalize a delivery day to YYYY-MM-DD."""
+    """Extract a delivery day in any supported format and normalize to YYYY-MM-DD."""
     ref = reference or date.today()
 
-    iso_match = _ISO_DELIVERY_DAY.search(user_query)
-    if iso_match:
-        try:
-            return date.fromisoformat(iso_match.group(1)).isoformat()
-        except ValueError:
-            pass
+    iso = _ISO_DELIVERY_DAY.search(user_query)
+    if iso:
+        canonical = _canonical_delivery_day(
+            int(iso.group(1)), int(iso.group(2)), int(iso.group(3))
+        )
+        if canonical:
+            return canonical
 
-    month_day_match = _MONTH_DAY_DELIVERY.search(user_query)
-    if month_day_match:
-        month = _month_number(month_day_match.group(1))
+    numeric = _NUMERIC_DMY_DELIVERY.search(user_query)
+    if numeric:
+        canonical = _canonical_delivery_day(
+            int(numeric.group(3)), int(numeric.group(2)), int(numeric.group(1))
+        )
+        if canonical:
+            return canonical
+
+    day_month_year = _DAY_MONTH_YEAR_DELIVERY.search(user_query)
+    if day_month_year:
+        month = _month_number(day_month_year.group(2))
         if month is not None:
-            day = int(month_day_match.group(2))
-            canonical = _canonical_delivery_day(ref.year, month, day)
+            canonical = _canonical_delivery_day(
+                int(day_month_year.group(3)), month, int(day_month_year.group(1))
+            )
             if canonical:
                 return canonical
 
-    day_month_match = _DAY_MONTH_DELIVERY.search(user_query)
-    if day_month_match:
-        month = _month_number(day_month_match.group(2))
+    month_day_year = _MONTH_DAY_YEAR_DELIVERY.search(user_query)
+    if month_day_year:
+        month = _month_number(month_day_year.group(1))
         if month is not None:
-            day = int(day_month_match.group(1))
-            canonical = _canonical_delivery_day(ref.year, month, day)
+            canonical = _canonical_delivery_day(
+                int(month_day_year.group(3)), month, int(month_day_year.group(2))
+            )
             if canonical:
                 return canonical
 
-    relative_match = _RELATIVE_DELIVERY_DAY.search(user_query)
-    if relative_match:
-        token = relative_match.group(1).lower()
+    day_month = _DAY_MONTH_DELIVERY.search(user_query)
+    if day_month:
+        month = _month_number(day_month.group(2))
+        if month is not None:
+            canonical = _canonical_delivery_day(ref.year, month, int(day_month.group(1)))
+            if canonical:
+                return canonical
+
+    month_day = _MONTH_DAY_DELIVERY.search(user_query)
+    if month_day:
+        month = _month_number(month_day.group(1))
+        if month is not None:
+            canonical = _canonical_delivery_day(ref.year, month, int(month_day.group(2)))
+            if canonical:
+                return canonical
+
+    relative = _RELATIVE_DELIVERY_DAY.search(user_query)
+    if relative:
+        token = relative.group(1).lower()
         if token == "today":
             return ref.isoformat()
         if token == "tomorrow":
             return (ref + timedelta(days=1)).isoformat()
+        if token == "yesterday":
+            return (ref - timedelta(days=1)).isoformat()
 
     return None
 
 
-def _best_match(user_query: str, patterns: list[re.Pattern[str]]) -> _EntityMatch | None:
-    best: _EntityMatch | None = None
-    total = len(patterns)
-    for index, pattern in enumerate(patterns):
-        match = pattern.search(user_query)
-        if not match:
-            continue
-        score = total - index
-        candidate = _EntityMatch(
-            value=match.group(1),
-            score=score,
-            start=match.start(),
-        )
-        if best is None or candidate.score > best.score or (
-            candidate.score == best.score and candidate.start < best.start
-        ):
-            best = candidate
-    return best
+# Pattern set exposed for the logistics domain. ``courier_name`` and
+# ``delivery_day`` are produced by dedicated helpers (stop-word filtering and
+# multi-format normalization respectively); the lists document their drivers.
+LOGISTICS_ENTITY_PATTERNS: dict[str, list[re.Pattern[str]]] = {
+    "order_id": list(_ORDER_ID_PATTERNS),
+    "courier_name": list(_COURIER_NAME_PATTERNS),
+    "hub_name": list(_HUB_NAME_PATTERNS),
+    "from_hub": list(_FROM_HUB_PATTERNS),
+    "to_hub": list(_TO_HUB_PATTERNS),
+    "city_name": [_CITY_PATTERN],
+    "delivery_day": [
+        _ISO_DELIVERY_DAY,
+        _NUMERIC_DMY_DELIVERY,
+        _DAY_MONTH_YEAR_DELIVERY,
+        _MONTH_DAY_YEAR_DELIVERY,
+        _DAY_MONTH_DELIVERY,
+        _MONTH_DAY_DELIVERY,
+        _RELATIVE_DELIVERY_DAY,
+    ],
+}
+
+
+# --- Public extractor -----------------------------------------------------
 
 
 class EntityExtractor:
-    """Extract graph lookup entities from natural language queries."""
+    """Logistics graph-lookup entity extraction.
+
+    Inventory bypasses extraction entirely, so extraction only runs for the
+    logistics domain. The ``domain`` argument is retained as a defensive guard:
+    any non-logistics value yields no entities, guaranteeing that a non-logistics
+    query can never produce logistics entities.
+    """
 
     @staticmethod
-    def extract(user_query: str) -> dict[str, str]:
-        """Return extracted entity identifiers keyed by entity type."""
+    def extract(user_query: str, domain: str = LOGISTICS_DOMAIN) -> dict[str, str]:
+        """Return logistics entities. Non-logistics domains yield ``{}``."""
+        normalized_domain = (domain or "").strip().lower()
+        if normalized_domain == LOGISTICS_DOMAIN:
+            return EntityExtractor._extract_logistics(user_query)
+        return {}
+
+    @staticmethod
+    def _extract_logistics(user_query: str) -> dict[str, str]:
         entities: dict[str, str] = {}
-        for entity_name, patterns in _ENTITY_PATTERNS.items():
-            match = _best_match(user_query, patterns)
-            if match:
-                normalizer = _ENTITY_NORMALIZERS.get(entity_name, _normalize_whitespace)
-                value = normalizer(match.value)
-                if entity_name == "hub_id" and not _is_valid_hub_id(value):
-                    continue
-                if entity_name == "order_id" and not _is_valid_order_id(value):
-                    continue
-                if entity_name == "city_name" and not _is_valid_city_name(value):
-                    continue
-                entities[entity_name] = value
 
-        city_horizon_match = _extract_city_horizon(user_query)
-        if city_horizon_match:
-            city_candidate = _normalize_city_name(city_horizon_match.group(1))
-            if _is_valid_city_name(city_candidate):
-                entities["city_name"] = city_candidate
-                _apply_horizon(
-                    entities,
-                    int(city_horizon_match.group(2)),
-                    city_horizon_match.group(3).lower(),
-                )
-        else:
-            horizon_match = _HORIZON_PATTERN.search(user_query)
-            if horizon_match:
-                _apply_horizon(
-                    entities,
-                    int(horizon_match.group(1)),
-                    horizon_match.group(2).lower(),
-                )
+        order_id = _extract_order_id(user_query)
+        if order_id:
+            entities["order_id"] = order_id
 
-        if "city_name" in entities and "city" not in entities:
-            entities["city"] = entities["city_name"]
+        entities.update(_extract_courier_name(user_query))
+        entities.update(_extract_logistics_hubs(user_query))
+
+        city_name = _extract_city_name(user_query)
+        if city_name:
+            entities["city_name"] = city_name
 
         delivery_day = _extract_delivery_day(user_query)
         if delivery_day:
             entities["delivery_day"] = delivery_day
 
-        entities.update(_extract_courier_entities(user_query))
-
         _lowercase_identifier_fields(entities)
-
         return entities
-
-    @staticmethod
-    def extract_next_stop_position(user_query: str) -> dict[str, str]:
-        """Extract position context for courier_route HITL resume answers."""
-        current_stop_patterns = [
-            re.compile(
-                r"\bcurrent\s+stop\s+(Hub[\s#:_-]*\d+|Hub_\d+)\b",
-                re.I,
-            ),
-            re.compile(r"\b(Hub_?\d+)\b", re.I),
-            re.compile(r"\bhub[\s#:_-]*(\d+)\b", re.I),
-        ]
-        current_match = _best_match(user_query, current_stop_patterns)
-        if current_match:
-            hub_value = _normalize_hub_ref(current_match.value)
-            if _is_valid_hub_id(hub_value):
-                return {"current_stop": hub_value}
-
-        completed_order = re.search(
-            r"\bcompleted\s+(ORD[-_]?\d+[A-Za-z0-9-]*)\b",
-            user_query,
-            re.I,
-        )
-        if completed_order:
-            return {
-                "last_completed_order": _normalize_last_completed_order(
-                    completed_order.group(1),
-                ),
-            }
-
-        completed_shipment = re.search(
-            r"\bcompleted\s+(SH\d+[A-Za-z0-9-]*)\b",
-            user_query,
-            re.I,
-        )
-        if completed_shipment:
-            return {
-                "last_completed_order": _normalize_last_completed_order(
-                    completed_shipment.group(1),
-                ),
-            }
-
-        entities = EntityExtractor.extract(user_query)
-        if entities.get("hub_id"):
-            return {"current_stop": entities["hub_id"]}
-
-        if entities.get("order_id"):
-            return {"last_completed_order": entities["order_id"]}
-
-        if entities.get("shipment_id"):
-            return {"last_completed_order": _normalize_last_completed_order(
-                entities["shipment_id"],
-            )}
-
-        return {}

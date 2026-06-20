@@ -99,11 +99,11 @@ def detect_intent(state: AgentState) -> AgentState:
         return _apply_classification({**state, "user_query": original}, classification)
 
     if stage == STAGE_INTENT:
-        domain_hint = state.get("domain") or state.get("coarse_domain")
+        domain = state.get("domain") or state.get("coarse_domain") or "logistics"
         classification = classify_domain_task(
             state["user_query"],
             entities=state.get("entities") or {},
-            domain_hint=domain_hint if domain_hint else None,
+            domain=domain,
         )
         # Coarse RBAC was skipped this turn; pin the domain to the authorized one
         # so an intent answer can never silently cross into another domain.
@@ -117,10 +117,13 @@ def detect_intent(state: AgentState) -> AgentState:
         )
         return _apply_classification(state, classification)
 
-    coarse = state.get("coarse_domain")
+    coarse = state.get("coarse_domain") or "logistics"
     classification = classify_domain_task(
         state["user_query"],
         entities=state.get("entities") or {},
-        domain_hint=coarse if coarse else None,
+        domain=coarse,
     )
+    # Hard domain pin: coarse authorization is the single domain owner. Intent
+    # only selects the logistics task; it can never relabel the domain.
+    classification["domain"] = coarse
     return _apply_classification(state, classification)

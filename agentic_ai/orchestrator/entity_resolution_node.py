@@ -36,11 +36,15 @@ _HUB_UNDERSCORE = re.compile(r"^Hub_(\d+)$", re.I)
 _COURIER_REFERENCE_KEY = "courier_reference"
 _COURIER_NAME_KEY = "courier_name"
 _COURIER_ENTITY_KEY = "courier_id"
-_HUB_ENTITY_KEYS = ("hub_id", "from_hub", "to_hub")
+_HUB_ENTITY_KEYS = ("hub_id", "hub_name", "from_hub", "to_hub")
 _HUB_ID_OUTPUT_KEYS = {
     "from_hub": "from_hub_id",
     "to_hub": "to_hub_id",
     "hub_id": "hub_id",
+    # Domain-aware extraction emits the user-facing ``hub_name`` ("Hub 1");
+    # resolve it to the canonical numeric hub_id so parameter preparation does
+    # not treat it as an unresolved entity.
+    "hub_name": "hub_id",
 }
 
 ResolutionStatus = Literal["success", "failure", "unchanged"]
