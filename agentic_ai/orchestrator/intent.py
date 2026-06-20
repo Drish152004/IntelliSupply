@@ -123,4 +123,7 @@ def detect_intent(state: AgentState) -> AgentState:
         entities=state.get("entities") or {},
         domain=coarse,
     )
+    # Hard domain pin: coarse authorization is the single domain owner. Intent
+    # only selects the logistics task; it can never relabel the domain.
+    classification["domain"] = coarse
     return _apply_classification(state, classification)

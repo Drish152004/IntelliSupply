@@ -1,8 +1,14 @@
 """
-Domain and task classification for the orchestration layer.
+Logistics task classification for the orchestration layer.
+
+Domain ownership belongs entirely to coarse authorization. Inventory queries
+bypass this node (coarse_authorization -> inventory_nlsql), so every query that
+reaches intent is already logistics. This module therefore only selects which
+logistics *task* should execute; it never classifies or overwrites the domain
+and contains no inventory tasks, examples, or routing.
 
 Pipeline:
-  Entity extraction → candidate narrowing → LLM intent classification
+  Entity extraction → candidate narrowing → LLM logistics task classification
 """
 
 from __future__ import annotations
@@ -13,20 +19,33 @@ import re
 from typing import Any
 
 from integrations.llm_client import get_client, get_model
-from orchestrator.intent_routing import (
-    domain_for_task,
-    narrow_candidate_tasks,
-)
+from orchestrator.intent_routing import narrow_candidate_tasks
 from orchestrator.task_registry import (
     CONFIDENCE_THRESHOLD,
     EXTREME_LOW_CONFIDENCE_THRESHOLD,
-    TASKS_BYPASS_INTENT_CLARIFICATION,
-    VALID_TASKS,
+    LOGISTICS_RETRIEVAL_TASKS,
 )
 
 logger = logging.getLogger(__name__)
 
-INTENT_SYSTEM_PROMPT = """You are IntelliSupply's logistics intent classifier.
+# The only domain that reaches intent. Used as the hard domain pin so the task
+# classifier can never relabel the turn's domain.
+_LOGISTICS_DOMAIN = "logistics"
+
+# Valid task outputs for the logistics-only classifier. inventory_nlsql is
+# intentionally excluded: it is unreachable here and must never be selected.
+_LOGISTICS_VALID_TASKS = frozenset(LOGISTICS_RETRIEVAL_TASKS)
+
+INTENT_SYSTEM_PROMPT = """You are IntelliSupply's logistics task classifier.
+
+Every query reaching this classifier has already been classified as logistics
+by coarse authorization.
+
+Your job is only to determine which logistics task should execute.
+
+Never classify inventory tasks.
+Never reclassify the domain.
+Domain selection has already been completed.
 
 Return ONLY valid JSON.
 
@@ -37,9 +56,8 @@ Schema:
 "confidence": <0.0-1.0>
 }
 
-Allowed tasks:
+Allowed tasks (logistics only):
 
-inventory_nlsql
 order_lookup
 courier_orders
 courier_route
@@ -48,9 +66,6 @@ delivery_days
 hub_route
 
 Definitions:
-
-inventory_nlsql:
-inventory, stock, products, warehouse inventory, analytics
 
 order_lookup:
 order status, route, courier assignment, ETA, order details
@@ -72,8 +87,8 @@ route between source and destination hubs
 
 Rules:
 
-* Choose exactly one task.
-* Never invent tasks.
+* Choose exactly one task from the allowed logistics tasks.
+* Never invent tasks. Never output inventory tasks.
 * Use extracted entities as context.
 * "next stop" ALWAYS means courier_route.
 * "remaining stops" ALWAYS means courier_route.
@@ -83,7 +98,8 @@ Rules:
 * "available delivery dates" ALWAYS means delivery_days.
 * Route between hubs ALWAYS means hub_route.
 * Order ID questions generally mean order_lookup.
-* Confidence should be below 0.70 only if genuinely ambiguous.
+* If the query does not clearly match a logistics task, pick the closest one
+  and set confidence below 0.70 so the system can ask for clarification.
 
 Return JSON only."""
 
@@ -158,11 +174,6 @@ FEW_SHOT_EXAMPLES: list[tuple[str, dict[str, str], dict[str, Any]]] = [
         {"from_hub": "2", "to_hub": "5"},
         {"task": "hub_route", "confidence": 0.99},
     ),
-    (
-        "How many electronics are there?",
-        {"product_name": "electronics"},
-        {"task": "inventory_nlsql", "confidence": 0.95},
-    ),
 ]
 
 
@@ -185,7 +196,7 @@ def _build_intent_messages(
     messages: list[dict[str, str]] = [{"role": "system", "content": INTENT_SYSTEM_PROMPT}]
 
     for question, example_entities, label in FEW_SHOT_EXAMPLES:
-        if label["task"] not in candidate_tasks and label["task"] != "inventory_nlsql":
+        if label["task"] not in candidate_tasks:
             continue
         messages.append(
             {
@@ -250,10 +261,17 @@ def _normalize_task_result(
     *,
     candidate_tasks: list[str],
 ) -> dict[str, Any] | None:
+    """Normalize the LLM output to a logistics task + confidence.
+
+    The classifier returns only ``task`` and ``confidence``; domain is never
+    derived from the task here. Any non-logistics task (e.g. inventory_nlsql)
+    is rejected outright so it can never leak through.
+    """
     task = str(raw.get("task", "")).strip().lower()
     confidence = _coerce_confidence(raw.get("confidence", 0.5))
 
-    if task not in VALID_TASKS:
+    if task not in _LOGISTICS_VALID_TASKS:
+        logger.warning("LLM returned non-logistics task %s; rejecting", task)
         return None
     if task not in candidate_tasks:
         logger.warning("LLM chose task %s outside candidates %s", task, candidate_tasks)
@@ -263,8 +281,7 @@ def _normalize_task_result(
         else:
             confidence = min(confidence, 0.55)
 
-    domain = domain_for_task(task)
-    return {"domain": domain, "task": task, "confidence": confidence}
+    return {"task": task, "confidence": confidence}
 
 
 def _parse_intent_response(
@@ -356,9 +373,7 @@ def _classify_with_llm(
 def needs_intent_clarification(task: str, confidence: float) -> bool:
     if confidence < EXTREME_LOW_CONFIDENCE_THRESHOLD:
         return True
-    if task in TASKS_BYPASS_INTENT_CLARIFICATION:
-        return False
-    if not task or task not in VALID_TASKS:
+    if not task or task not in _LOGISTICS_VALID_TASKS:
         return True
     if confidence < CONFIDENCE_THRESHOLD:
         return True
@@ -388,9 +403,6 @@ def build_clarification_question(user_query: str, classification: dict[str, Any]
     if "delivery" in query:
         return "Do you want recent deliveries, delivery schedules, or order details?"
 
-    if classification and classification.get("domain") == "inventory":
-        return "Could you clarify which product or warehouse you want inventory information for?"
-
     return ClarificationManager.intent_question()
 
 
@@ -413,9 +425,11 @@ def classify_domain_task(
       4. Keyword fallback only when LLM fails
     """
     resolved_entities = dict(entities or {})
-    # Trust the domain owner; intent never re-infers domain. Defensively coerce
-    # any unexpected value to logistics (the only domain that reaches intent).
-    domain = "logistics"
+    # Hard domain pin: intent never infers or overwrites the domain. Only
+    # logistics reaches this node, so the domain is always logistics regardless
+    # of the classifier output. ``domain`` is accepted for call-site clarity but
+    # can never flip the turn to inventory.
+    domain = _LOGISTICS_DOMAIN
     routing_query = _normalize_logistics_abbreviations(user_query)
 
     candidate_tasks = narrow_candidate_tasks(resolved_entities, domain=domain)
@@ -424,6 +438,7 @@ def classify_domain_task(
     if llm_result:
         return {
             **llm_result,
+            "domain": domain,
             "source": "llm_intent_classifier",
             "candidate_tasks": candidate_tasks,
         }
@@ -435,6 +450,7 @@ def classify_domain_task(
     )
     return {
         **fallback,
+        "domain": domain,
         "source": "keyword_fallback",
         "candidate_tasks": candidate_tasks,
     }
