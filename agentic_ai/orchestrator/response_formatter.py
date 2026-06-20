@@ -20,6 +20,8 @@ from orchestrator.state import AgentState
 
 logger = logging.getLogger(__name__)
 
+_UNAVAILABLE_MESSAGE = "That information isn't currently available."
+
 _GRAPH_MESSAGES: dict[str, str] = {
     "order_lookup": "Order details retrieved from knowledge graph",
     "courier_orders": "Courier orders retrieved from knowledge graph",
@@ -113,7 +115,7 @@ class ResponseFormatter:
         return {
             "status": "error",
             "stage": raw.get("stage", "rag_execution"),
-            "message": state.get("execution_error") or raw.get("message", "Request failed"),
+            "message": state.get("execution_error") or raw.get("message") or _UNAVAILABLE_MESSAGE,
             "details": {"task": state.get("task", "")},
         }
 
@@ -229,11 +231,14 @@ class ResponseFormatter:
         graph_data = graph_result.get("data") if isinstance(graph_result, dict) else None
         answer = synthesize_answer(state.get("user_query", ""), task, graph_data)
 
+        has_data = graph_data not in (None, [], {}, "")
+        message = _GRAPH_MESSAGES.get(task, answer) if has_data else answer
+
         return {
             "status": "success",
             "source": "graph",
             "task": task,
-            "message": _GRAPH_MESSAGES.get(task, answer),
+            "message": message,
             "data": {
                 "graph_result": graph_result,
                 "answer": answer,

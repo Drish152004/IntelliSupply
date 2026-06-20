@@ -16,7 +16,9 @@ from orchestrator.hitl_session import (
     clarification_type_for_stage,
     get_active_hitl_session,
 )
+from orchestrator.resource_rbac import DEFER_SELF_SCOPE_REASON
 from orchestrator.state import AgentState
+from orchestrator.task_registry import DYNAMIC_GRAPH_QUERY
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +36,10 @@ _SUPPORTED_TASKS: frozenset[str] = frozenset({
     "recent_routes",
     "delivery_days",
     "hub_route",
+    DYNAMIC_GRAPH_QUERY,
 })
+
+_SELF_SCOPE_QUESTION = "Do you want to see your own data for this request?"
 
 _NUMERIC_HUB_ID = re.compile(r"^\d+$")
 
@@ -220,6 +225,60 @@ def prepare_task_parameters(task: str, entities: dict[str, str]) -> PreparationR
     return PreparationResult(clarification_needed=False, function_name=None, payload={})
 
 
+def _prepare_dynamic(updated: AgentState, state: AgentState) -> AgentState:
+    """Prepare a dynamic GraphDB query, cooperating with deferred authorization.
+
+    DEFER (courier, scope missing) -> ask a self-scope confirmation via the
+    existing STAGE_PARAMETER HITL; the affirmative resume lets authorize bind the
+    courier's own id and ALLOW. ALLOW -> build the dynamic payload (the executor
+    also reads question/scope from state; the payload mirrors them for tracing).
+    """
+    if state.get("authorization_deferred"):
+        return _request_self_scope_confirmation(updated, state)
+
+    return {
+        **updated,
+        "function_name": None,
+        "payload": {
+            "question": state.get("user_query", ""),
+            "scope": state.get("authorization_scope"),
+            "entities": dict(state.get("entities") or {}),
+        },
+    }
+
+
+def _request_self_scope_confirmation(updated: AgentState, state: AgentState) -> AgentState:
+    """Raise a STAGE_PARAMETER clarification confirming a self-scoped dynamic query."""
+    agent_response = json.dumps(
+        {
+            "status": "awaiting_input",
+            "clarification_type": ClarificationType.ENTITY.value,
+            "question": _SELF_SCOPE_QUESTION,
+            "missing_entities": ["self_scope"],
+        },
+        indent=2,
+    )
+    session = build_clarification_session(
+        updated,
+        stage=STAGE_PARAMETER,
+        clarification_type=clarification_type_for_stage(STAGE_PARAMETER),
+        base_session=get_active_hitl_session(state),
+    )
+    # Marker read by resource_rbac on the affirmative resume to bind self-scope.
+    session["defer_reason"] = DEFER_SELF_SCOPE_REASON
+    patched = attach_clarification_session(updated, session, stage=STAGE_PARAMETER)
+    return {
+        **patched,
+        "missing_required_parameters": True,
+        "clarification_needed": True,
+        "clarification_stage": STAGE_PARAMETER,
+        "clarification_type": ClarificationType.ENTITY.value,
+        "clarification_question": _SELF_SCOPE_QUESTION,
+        "missing_fields": ["self_scope"],
+        "agent_response": agent_response,
+    }
+
+
 def prepare_parameters(state: AgentState) -> AgentState:
     """
     Validate required entities, build execution payload, and select Aura function.
@@ -244,6 +303,13 @@ def prepare_parameters(state: AgentState) -> AgentState:
         "function_name": None,
         "payload": {},
     }
+
+    # Dynamic GraphDB fallback cooperates with deferred authorization: when
+    # authorize could not yet evaluate ownership (scope missing), collect the
+    # missing scope via the existing STAGE_PARAMETER HITL; otherwise build the
+    # dynamic payload for the executor.
+    if task == DYNAMIC_GRAPH_QUERY:
+        return _prepare_dynamic(updated, state)
 
     result = prepare_task_parameters(task, entities)
 

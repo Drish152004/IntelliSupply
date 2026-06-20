@@ -22,6 +22,7 @@ from integrations.llm_client import get_client, get_model
 from orchestrator.intent_routing import narrow_candidate_tasks
 from orchestrator.task_registry import (
     CONFIDENCE_THRESHOLD,
+    DYNAMIC_GRAPH_QUERY,
     EXTREME_LOW_CONFIDENCE_THRESHOLD,
     LOGISTICS_RETRIEVAL_TASKS,
 )
@@ -41,7 +42,9 @@ INTENT_SYSTEM_PROMPT = """You are IntelliSupply's logistics task classifier.
 Every query reaching this classifier has already been classified as logistics
 by coarse authorization.
 
-Your job is only to determine which logistics task should execute.
+Your PRIMARY job is to decide whether ANY of the six deterministic logistics
+tasks below can FULLY answer the query. Only once you have confirmed that one
+can do you then decide which task to choose.
 
 Never classify inventory tasks.
 Never reclassify the domain.
@@ -52,8 +55,9 @@ Return ONLY valid JSON.
 Schema:
 
 {
-"task": "<task>",
-"confidence": <0.0-1.0>
+"task": "<task or null>",
+"confidence": <0.0-1.0>,
+"out_of_scope": <true|false>
 }
 
 Allowed tasks (logistics only):
@@ -68,28 +72,57 @@ hub_route
 Definitions:
 
 order_lookup:
-order status, route, courier assignment, ETA, order details
+status, route, courier assignment, ETA, or details for ONE specific order
 
 courier_orders:
-orders assigned to courier, courier deliveries, courier workload
+orders assigned to ONE specific courier (courier deliveries, courier workload)
 
 courier_route:
-next stop, today's route, remaining stops, route sequence, optimized route
+next stop, today's route, remaining stops, or route sequence for ONE specific courier
 
 recent_routes:
-recent deliveries, latest orders, newest routes
+the most recent deliveries, latest orders, or newest routes
 
 delivery_days:
 available delivery dates or schedules
 
 hub_route:
-route between source and destination hubs
+the route between a specific source hub and a specific destination hub
 
-Rules:
+CAPABILITY LIMITS (read carefully):
+Every deterministic task answers a question about a SPECIFIC entity (a specific
+order, a specific courier, a route between specific hubs) or returns a fixed
+recent/scheduled slice. NONE of these tasks can COUNT, LIST, ENUMERATE,
+AGGREGATE, RANK, COMPARE, or otherwise describe the overall population of
+couriers, hubs, cities, routes, or categories.
 
-* Choose exactly one task from the allowed logistics tasks.
-* Never invent tasks. Never output inventory tasks.
-* Use extracted entities as context.
+STEP 1 — SCOPE (always do this first):
+Determine whether any of the six tasks can FULLY answer the query.
+
+If NO task can fully answer it, return exactly:
+
+{
+"task": null,
+"out_of_scope": true,
+"confidence": 0.95
+}
+
+A query is out_of_scope when no deterministic task can fully answer it,
+including (not exhaustive):
+* counting — "how many couriers are there?", "count active deliveries"
+* listing / enumerating populations — "list all couriers", "show all hubs",
+  "what hubs exist?", "what cities do we operate in?", "show all route types",
+  "what courier categories exist?"
+* aggregation, ranking, "most/least/top/highest/lowest"
+* comparisons, trends, per-period analytics
+* any graph exploration that none of the six tasks perform
+
+If one or more tasks CAN fully answer the query, set out_of_scope=false and
+proceed to STEP 2.
+
+STEP 2 — TASK (only when in scope):
+Choose the single best deterministic task.
+
 * "next stop" ALWAYS means courier_route.
 * "remaining stops" ALWAYS means courier_route.
 * "today's route" ALWAYS means courier_route.
@@ -98,8 +131,21 @@ Rules:
 * "available delivery dates" ALWAYS means delivery_days.
 * Route between hubs ALWAYS means hub_route.
 * Order ID questions generally mean order_lookup.
-* If the query does not clearly match a logistics task, pick the closest one
-  and set confidence below 0.70 so the system can ask for clarification.
+* If a deterministic task is clearly the right FAMILY but you are unsure WHICH of
+  the six it is, still set out_of_scope=false and set confidence below 0.70 so
+  the system can ask the user to clarify.
+
+CRITICAL DISTINCTION (do not confuse these):
+* Vague but task-shaped queries that target a SPECIFIC entity ("show route",
+  "show orders", "show deliveries") are IN scope (out_of_scope=false) with LOW
+  confidence — a deterministic task exists, it is just unclear which one. These
+  are NEVER out of scope.
+* Queries that count, list, enumerate, or aggregate over the whole population
+  ("how many couriers", "list all hubs", "what cities do we serve") are OUT of
+  scope even though they mention couriers, hubs, or cities.
+
+Never invent tasks. Never output inventory tasks. Use extracted entities as
+context.
 
 Return JSON only."""
 
@@ -174,6 +220,46 @@ FEW_SHOT_EXAMPLES: list[tuple[str, dict[str, str], dict[str, Any]]] = [
         {"from_hub": "2", "to_hub": "5"},
         {"task": "hub_route", "confidence": 0.99},
     ),
+    # Ambiguous-but-supported queries: a deterministic task is the right family,
+    # but it is unclear WHICH one. These stay in scope with LOW confidence so the
+    # system asks for clarification — they must NOT be treated as out-of-scope.
+    # This is the exact regression (low confidence -> dynamic) being guarded.
+    (
+        "show route",
+        {},
+        {"task": "courier_route", "confidence": 0.45},
+    ),
+    (
+        "show orders",
+        {},
+        {"task": "courier_orders", "confidence": 0.45},
+    ),
+]
+
+# Unsupported queries that none of the six deterministic tasks can FULLY answer.
+# These teach the scope decision and are candidate-independent, so they are always
+# included in the prompt regardless of which tasks were narrowed. They cover BOTH
+# analytical queries (rank/compare/trend) AND population queries (count/list/
+# enumerate) — the latter are the regression this prompt is built to fix: they
+# mention couriers/hubs/cities but no deterministic task can count or list them.
+OUT_OF_SCOPE_EXAMPLES: list[tuple[str, dict[str, str]]] = [
+    # Counting / aggregation
+    ("How many couriers are there?", {}),
+    ("Count active deliveries", {}),
+    # Listing / enumerating populations
+    ("List all couriers", {}),
+    ("List all hubs", {}),
+    ("Show all hubs", {}),
+    ("What hubs exist?", {}),
+    ("Show all delivery cities", {}),
+    ("What cities do we operate in?", {}),
+    ("Show all route types", {}),
+    ("What courier categories exist?", {}),
+    # Ranking / comparison / trends
+    ("Which courier delivered the most orders last month?", {}),
+    ("Compare hub performance", {}),
+    ("Show delivery trends by city", {}),
+    ("Rank couriers by completed deliveries", {}),
 ]
 
 
@@ -208,7 +294,31 @@ def _build_intent_messages(
                 ),
             }
         )
-        messages.append({"role": "assistant", "content": json.dumps(label)})
+        messages.append(
+            {"role": "assistant", "content": json.dumps({**label, "out_of_scope": False})}
+        )
+
+    # Scope exemplars are candidate-independent: always include them so the model
+    # learns to distinguish "unsupported analytical" from "ambiguous deterministic".
+    for question, example_entities in OUT_OF_SCOPE_EXAMPLES:
+        messages.append(
+            {
+                "role": "user",
+                "content": (
+                    f"Query:\n{question}\n\n"
+                    f"Entities:\n{json.dumps(example_entities)}\n\n"
+                    f"Candidate tasks:\n{candidate_block}"
+                ),
+            }
+        )
+        messages.append(
+            {
+                "role": "assistant",
+                "content": json.dumps(
+                    {"task": None, "confidence": 0.95, "out_of_scope": True}
+                ),
+            }
+        )
 
     messages.append(
         {
@@ -217,7 +327,16 @@ def _build_intent_messages(
                 f"Query:\n{user_query}\n\n"
                 f"Entities:\n{json.dumps(entities)}\n\n"
                 f"Candidate tasks:\n{candidate_block}\n\n"
-                "Choose exactly one task from the candidate list."
+                "STEP 1: Decide whether any candidate task can FULLY answer this "
+                "query. If none can (it counts, lists, enumerates, aggregates, "
+                "ranks, compares, or describes the overall population of couriers, "
+                "hubs, cities, routes, or categories), return "
+                '{"task": null, "out_of_scope": true, "confidence": 0.95}.\n'
+                "STEP 2: If one or more candidates CAN fully answer it, choose the "
+                "single best candidate task. If the right family is clear but the "
+                "exact task is not, keep out_of_scope=false with confidence below "
+                "0.70.\n"
+                "Return JSON only."
             ),
         }
     )
@@ -261,14 +380,22 @@ def _normalize_task_result(
     *,
     candidate_tasks: list[str],
 ) -> dict[str, Any] | None:
-    """Normalize the LLM output to a logistics task + confidence.
+    """Normalize the LLM output to a logistics task + confidence + scope.
 
-    The classifier returns only ``task`` and ``confidence``; domain is never
-    derived from the task here. Any non-logistics task (e.g. inventory_nlsql)
-    is rejected outright so it can never leak through.
+    The classifier returns ``task``, ``confidence`` and ``out_of_scope``; domain
+    is never derived from the task here. Any non-logistics task (e.g.
+    inventory_nlsql) is rejected outright so it can never leak through.
+
+    ``out_of_scope=true`` is a deliberate verdict ("none of the six tasks fit")
+    and is preserved with ``task=None`` — it must not be rejected as an invalid
+    task, otherwise the analytical/dynamic signal would be silently dropped.
     """
-    task = str(raw.get("task", "")).strip().lower()
     confidence = _coerce_confidence(raw.get("confidence", 0.5))
+
+    if bool(raw.get("out_of_scope")):
+        return {"task": None, "confidence": confidence, "out_of_scope": True}
+
+    task = str(raw.get("task", "")).strip().lower()
 
     if task not in _LOGISTICS_VALID_TASKS:
         logger.warning("LLM returned non-logistics task %s; rejecting", task)
@@ -281,7 +408,7 @@ def _normalize_task_result(
         else:
             confidence = min(confidence, 0.55)
 
-    return {"task": task, "confidence": confidence}
+    return {"task": task, "confidence": confidence, "out_of_scope": False}
 
 
 def _parse_intent_response(
@@ -371,6 +498,12 @@ def _classify_with_llm(
 
 
 def needs_intent_clarification(task: str, confidence: float) -> bool:
+    # The dynamic GraphDB fallback is a resolved terminal task (assigned by the
+    # intent node, never by this classifier). It must never be treated as
+    # needing intent clarification, otherwise _route_after_intent would bounce
+    # it to the response formatter.
+    if task == DYNAMIC_GRAPH_QUERY:
+        return False
     if confidence < EXTREME_LOW_CONFIDENCE_THRESHOLD:
         return True
     if not task or task not in _LOGISTICS_VALID_TASKS:
@@ -436,20 +569,41 @@ def classify_domain_task(
 
     llm_result = _classify_with_llm(user_query, resolved_entities, candidate_tasks)
     if llm_result:
+        # Protection guard: a single narrowed candidate means an entity pinned a
+        # deterministic task unambiguously (order_id -> order_lookup, hub pair ->
+        # hub_route). That entity signal is authoritative and must override any
+        # out-of-scope verdict, so the query can never be diverted to dynamic.
+        if len(candidate_tasks) == 1 and llm_result.get("out_of_scope"):
+            logger.info(
+                "intent scope guard: single candidate %s overrides out_of_scope",
+                candidate_tasks[0],
+            )
+            llm_result = {
+                "task": candidate_tasks[0],
+                "confidence": max(_coerce_confidence(llm_result.get("confidence")), 0.7),
+                "out_of_scope": False,
+            }
         return {
-            **llm_result,
+            "task": llm_result.get("task"),
+            "confidence": llm_result.get("confidence"),
+            "out_of_scope": bool(llm_result.get("out_of_scope")),
             "domain": domain,
             "source": "llm_intent_classifier",
             "candidate_tasks": candidate_tasks,
         }
 
+    # Keyword fallback only runs when the LLM call fails. It never emits an
+    # out-of-scope verdict, so a classifier outage safely degrades to a
+    # deterministic task / clarification rather than to the dynamic path.
     fallback = _keyword_fallback_task(
         routing_query,
         candidate_tasks=candidate_tasks,
         domain=domain,
     )
     return {
-        **fallback,
+        "task": fallback["task"],
+        "confidence": fallback["confidence"],
+        "out_of_scope": False,
         "domain": domain,
         "source": "keyword_fallback",
         "candidate_tasks": candidate_tasks,
