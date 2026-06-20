@@ -77,6 +77,8 @@ def synthesize_answer(user_query: str, task: str, graph_result: Any) -> str:
         return _synthesize_delivery_days(graph_result)
     if task == "hub_route":
         return _synthesize_hub_route(graph_result)
+    if task == "dynamic_graph_query":
+        return _synthesize_dynamic(graph_result)
 
     return _synthesize_generic(graph_result)
 
@@ -265,6 +267,32 @@ def _synthesize_hub_route(data: Any) -> str:
     if from_name and to_name:
         return f"Route: {from_name} → {to_name}."
     return "Route hubs resolved."
+
+
+def _synthesize_dynamic(data: Any) -> str:
+    """Render dynamic GraphDB rows. Handles single-row aggregations and lists.
+
+    Dynamic queries return arbitrary projected rows (counts, aggregations,
+    rankings, lists), so this favors readability over task-specific shaping.
+    """
+    rows = data if isinstance(data, list) else ([data] if data else [])
+    if not rows:
+        return "No matching records were found."
+
+    # Single-row result (typical for counts/aggregations): state each field.
+    if len(rows) == 1 and isinstance(rows[0], dict) and rows[0]:
+        pairs = [f"{str(key).replace('_', ' ')}: {value}" for key, value in rows[0].items()]
+        return "; ".join(pairs) + "."
+
+    samples: list[str] = []
+    for row in rows[:5]:
+        if isinstance(row, dict) and row:
+            samples.append(", ".join(f"{key}={value}" for key, value in list(row.items())[:3]))
+    detail = "; ".join(sample for sample in samples if sample)
+    if detail:
+        suffix = "" if len(rows) <= 5 else f" (showing first 5 of {len(rows)})"
+        return f"{len(rows)} results: {detail}{suffix}."
+    return f"{len(rows)} results found."
 
 
 def _synthesize_generic(data: Any) -> str:

@@ -516,17 +516,81 @@ def _rows_to_dicts(rows: Any) -> list[dict[str, Any]]:
     return output
 
 
+def _scope_instruction(scope: dict[str, Any] | None) -> str:
+    """Build a mandatory courier scope block injected into the generation prompt.
+
+    Returns an empty string when there is no courier scope (ADMIN / LOGISTICS).
+    This is one defense layer only: the orchestrator's authorize node guarantees
+    the scope, and run_dynamic_cypher post-filters rows as the authoritative guard.
+    """
+    if not scope:
+        return ""
+    courier_id = str((scope or {}).get("courier_id") or "").strip()
+    if not courier_id:
+        return ""
+    return f"""
+====================
+MANDATORY SECURITY SCOPE
+====================
+
+You may ONLY return data belonging to the courier whose courier_id = "{courier_id}".
+Whenever the query touches Courier, Order, or RoutePrediction, you MUST filter to this courier:
+- Courier: WHERE c.courier_id = "{courier_id}"
+- Order assignment: MATCH (o:Order)-[:ASSIGNED_TO]->(c:Courier) WHERE c.courier_id = "{courier_id}"
+- RoutePrediction: MATCH (rp:RoutePrediction)-[:FOR_COURIER]->(c:Courier) WHERE c.courier_id = "{courier_id}"
+Never return data for any other courier. Never aggregate across couriers.
+""".strip()
+
+
+def _apply_scope_filter(
+    rows: list[dict[str, Any]],
+    scope: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    """Authoritative defense-in-depth: drop rows referencing another courier_id.
+
+    Rows that carry a ``courier_id``-like column whose value differs from the
+    bound courier are removed. Rows without any courier identifier are retained
+    (the prompt scope already constrained them).
+    """
+    if not scope:
+        return rows
+    courier_id = str((scope or {}).get("courier_id") or "").strip()
+    if not courier_id:
+        return rows
+
+    filtered: list[dict[str, Any]] = []
+    for row in rows:
+        mismatched = False
+        for key, value in row.items():
+            if "courier_id" in str(key).lower():
+                cell = str(value).strip()
+                if cell and cell != courier_id:
+                    mismatched = True
+                    break
+        if not mismatched:
+            filtered.append(row)
+    return filtered
+
+
 def generate_dynamic_cypher(
     question: str,
     *,
     default_limit: int = 50,
+    scope: dict[str, Any] | None = None,
 ) -> str:
-    """Generate a read-only Cypher query from a natural-language question."""
+    """Generate a read-only Cypher query from a natural-language question.
+
+    When ``scope`` carries a courier_id, a mandatory scope block is injected so
+    the generated Cypher is constrained to that courier's data.
+    """
     if not os.getenv("NVIDIA_API_KEY"):
         raise ValueError("NVIDIA_API_KEY is not set.")
 
+    scope_block = _scope_instruction(scope)
+
     prompt = f"""
 {AURA_GRAPH_SCHEMA}
+{scope_block}
 
 User question:
 {question}
@@ -568,14 +632,22 @@ def run_dynamic_cypher(
     question: str,
     *,
     default_limit: int = 50,
+    scope: dict[str, Any] | None = None,
+    entities: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Generate Cypher from a question, execute it on Aura, and return rows."""
+    """Generate Cypher from a question, execute it on Aura, and return rows.
+
+    ``scope`` (e.g. {"courier_id": ...}) restricts results to a single courier:
+    it is injected into the generation prompt and enforced again by an
+    authoritative post-execution row filter. ``entities`` is accepted for future
+    canonical-id hints; it is currently unused by generation.
+    """
     conn = AuraConnection()
 
     try:
-        cypher = generate_dynamic_cypher(question, default_limit=default_limit)
+        cypher = generate_dynamic_cypher(question, default_limit=default_limit, scope=scope)
         rows = conn.execute_query(cypher)
-        result_rows = _rows_to_dicts(rows)
+        result_rows = _apply_scope_filter(_rows_to_dicts(rows), scope)
 
         return {
             "success": True,

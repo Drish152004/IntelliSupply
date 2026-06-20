@@ -21,6 +21,8 @@ from observability.trace_events import (
 
 logger = logging.getLogger(__name__)
 
+_UNAVAILABLE_MESSAGE = "That information isn't currently available."
+
 _AURA_ROOT = REPO_ROOT / "rag" / "aura_graphdb"
 _imports_ready = False
 _graph_observer_registered = False
@@ -77,6 +79,59 @@ def fetch_order_route(order_id: str) -> dict[str, Any] | None:
     return get_order_route(order_id)
 
 
+def execute_dynamic_cypher(
+    *,
+    question: str,
+    scope: dict[str, Any] | None = None,
+    entities: dict[str, Any] | None = None,
+    trace_id: str | None = None,
+) -> dict[str, Any]:
+    """Run the dynamic (read-only) Cypher path with tracing parity.
+
+    Mirrors execute_aura_function's tracing so dynamic queries appear in the
+    same observability stream. The courier ``scope`` is forwarded to the
+    generator (prompt injection) and enforced by the cypher layer's post-filter.
+    """
+    _ensure_aura_imports()
+    _register_graph_observer()
+
+    resolved_trace_id = trace_id or get_current_trace_id()
+    graph_prompt = (
+        f"Dynamic Cypher\n"
+        f"Question: {question}\n"
+        f"Scope: {json.dumps(scope, default=str)}"
+    )
+    capture_prompt(resolved_trace_id or "unknown", "dynamic_cypher_prompt", graph_prompt)
+    trace_graph_request(
+        {
+            "question": question,
+            "function_name": "dynamic_graph_query",
+            "payload": {"scope": scope},
+        },
+        trace_id=resolved_trace_id,
+    )
+
+    try:
+        from aura_dynamic_cypher import run_dynamic_cypher  # noqa: WPS433
+
+        result = run_dynamic_cypher(question, scope=scope, entities=entities)
+    except Exception:
+        logger.exception("Dynamic Cypher execution failed")
+        result = {
+            "success": False,
+            "rows": [],
+            "count": 0,
+            "cypher": None,
+            "message": _UNAVAILABLE_MESSAGE,
+        }
+
+    trace_graph_result(
+        summarize_graph_records(result.get("rows")),
+        trace_id=resolved_trace_id,
+    )
+    return result
+
+
 def execute_aura_function(
     *,
     function_name: str,
@@ -111,12 +166,12 @@ def execute_aura_function(
             payload=payload,
             prefetched_order_route=prefetched_order_route,
         )
-    except Exception as exc:
+    except Exception:
         logger.exception("Aura function %s failed", function_name)
         result = {
             "success": False,
             "data": None,
-            "error": str(exc),
+            "error": _UNAVAILABLE_MESSAGE,
         }
 
     trace_graph_result(
@@ -155,6 +210,11 @@ def _dispatch_aura_function(
             "success": False,
             "data": None,
             "summary": "Order not found",
+            "error": (
+                f"Details for order {order_id} aren't currently available."
+                if order_id
+                else _UNAVAILABLE_MESSAGE
+            ),
         }
 
     if function_name == "get_orders_for_courier":
@@ -230,12 +290,14 @@ def _dispatch_aura_function(
                 "success": False,
                 "data": None,
                 "summary": "From hub not found",
+                "error": "The requested origin hub isn't currently available.",
             }
         if not to_hub:
             return {
                 "success": False,
                 "data": None,
                 "summary": "To hub not found",
+                "error": "The requested destination hub isn't currently available.",
             }
 
         from_name = from_hub.get("name") or from_hub.get("hub_name") or str(from_hub_id)

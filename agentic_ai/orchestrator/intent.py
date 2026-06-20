@@ -20,6 +20,7 @@ from orchestrator.intent_task_classifier import (
     needs_intent_clarification,
 )
 from orchestrator.state import AgentState
+from orchestrator.task_registry import DYNAMIC_ALLOWED_ROLES, DYNAMIC_GRAPH_QUERY
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,31 @@ def _apply_classification(state: AgentState, classification: dict) -> AgentState
     task = classification["task"]
     confidence = classification["confidence"]
     source = classification.get("source", "intent_classifier")
+
+    # Dynamic fallback: route to dynamic_graph_query ONLY when the classifier
+    # explicitly judged the query out of scope for every deterministic task
+    # (analytics, ranking, comparison, trends). Low confidence on a supported
+    # task is NOT a dynamic trigger — it falls through to the existing INTENT
+    # clarification flow below. The role check is a permission gate only; roles
+    # outside DYNAMIC_ALLOWED_ROLES degrade to clarification instead of dynamic.
+    if classification.get("out_of_scope") and state.get("user_role") in DYNAMIC_ALLOWED_ROLES:
+        logger.info(
+            "intent dynamic fallback: role=%s prev_task=%s confidence=%s out_of_scope=True",
+            state.get("user_role"),
+            task,
+            confidence,
+        )
+        return {
+            **state,
+            "domain": domain,
+            "task": DYNAMIC_GRAPH_QUERY,
+            "confidence": 1.0,
+            "classification_source": "dynamic_fallback",
+            "clarification_needed": False,
+            "clarification_stage": None,
+            "clarification_type": None,
+            "clarification_question": None,
+        }
 
     updated: AgentState = {
         **state,
@@ -90,6 +116,10 @@ def detect_intent(state: AgentState) -> AgentState:
             "task": state.get("task") or "order_lookup",
             "confidence": 1.0,
             "source": "parameter_resume",
+            # Parameter resume restores an already-resolved deterministic task; it
+            # is never reclassified, so it can never be out of scope. Set
+            # explicitly so the dynamic trigger is unambiguously skipped here.
+            "out_of_scope": False,
         }
         logger.info(
             "Intent parameter resume: domain=%s task=%s",

@@ -34,7 +34,15 @@ FUTURE_LOGISTICS_ML_TASKS: frozenset[str] = frozenset({
 
 LOGISTICS_TASKS: frozenset[str] = LOGISTICS_RETRIEVAL_TASKS | FUTURE_LOGISTICS_ML_TASKS
 
-VALID_TASKS: frozenset[str] = INVENTORY_TASKS | LOGISTICS_RETRIEVAL_TASKS
+# Dynamic GraphDB fallback task. Selected by the intent node (never by the
+# deterministic classifier) when no deterministic logistics task confidently
+# maps. Kept OUT of LOGISTICS_RETRIEVAL_TASKS so it never enters candidate
+# narrowing or the classifier's valid-output set.
+DYNAMIC_GRAPH_QUERY: str = "dynamic_graph_query"
+
+DYNAMIC_TASKS: frozenset[str] = frozenset({DYNAMIC_GRAPH_QUERY})
+
+VALID_TASKS: frozenset[str] = INVENTORY_TASKS | LOGISTICS_RETRIEVAL_TASKS | DYNAMIC_TASKS
 
 DOMAIN_TASK_MAP: dict[str, frozenset[str]] = {
     "inventory": INVENTORY_TASKS,
@@ -90,11 +98,13 @@ LOGISTICS_SINGLE_WORD_KEYWORDS: tuple[str, ...] = (
     "tracking",
     "track",
     "courier",
+    "couriers",
     "dispatch",
     "city",
     "cities",
     "hubs",
-    "hub"
+    "hub",
+    "routes"
 )
 
 LOGISTICS_PHRASE_KEYWORDS: tuple[str, ...] = (
@@ -109,16 +119,21 @@ LOGISTICS_KEYWORDS: tuple[str, ...] = LOGISTICS_SINGLE_WORD_KEYWORDS + LOGISTICS
 # --- Role permissions (task-level, enforced after intent) ---
 
 ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
-    "ADMIN": INVENTORY_TASKS | LOGISTICS_TASKS,
-    "LOGISTICS": LOGISTICS_TASKS,
+    "ADMIN": INVENTORY_TASKS | LOGISTICS_TASKS | DYNAMIC_TASKS,
+    "LOGISTICS": LOGISTICS_TASKS | DYNAMIC_TASKS,
     "INVENTORY": INVENTORY_TASKS,
     "COURIER": frozenset({
         "order_lookup",
         "courier_orders",
         "courier_route",
         "recent_routes",
-    }),
+    }) | DYNAMIC_TASKS,
 }
+
+# Roles permitted to use the dynamic GraphDB fallback path. INVENTORY is absent:
+# inventory queries never reach intent (coarse authorization routes them to
+# NL-SQL), so they can never select the dynamic task.
+DYNAMIC_ALLOWED_ROLES: frozenset[str] = frozenset({"ADMIN", "LOGISTICS", "COURIER"})
 
 VALID_ROLES: frozenset[str] = frozenset(ROLE_PERMISSIONS)
 
