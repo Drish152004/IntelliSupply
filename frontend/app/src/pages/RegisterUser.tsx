@@ -139,7 +139,7 @@ export default function RegisterUser() {
 
         <div className="grid gap-6 xl:grid-cols-[1.3fr_0.7fr]">
           {/* LEFT — Form */}
-          <section className="rounded-[2rem] border border-border bg-white p-6 shadow-sm space-y-6">
+          <section className="app-panel-lg p-6 space-y-6">
             {/* User type selector */}
             <div>
               <p className="text-sm font-semibold text-foreground mb-3">User type</p>
@@ -250,7 +250,7 @@ export default function RegisterUser() {
 
           {/* RIGHT — Summary */}
           <aside className="space-y-5">
-            <div className="rounded-[2rem] border border-border bg-white p-5 shadow-sm">
+            <div className="app-panel-lg p-5">
               <div className="flex items-center gap-3 mb-4">
                 <ShieldCheck className="h-5 w-5 text-emerald-600" />
                 <div>
@@ -282,7 +282,7 @@ export default function RegisterUser() {
               </div>
             </div>
 
-            <div className="rounded-[2rem] border border-border bg-white p-5 shadow-sm">
+            <div className="app-panel-lg p-5">
               <p className="text-xs font-semibold text-foreground mb-3">Onboarding notes</p>
               <div className="space-y-2">
                 {['Credentials set on creation', 'Session active on first login', 'Role enforced via RBAC'].map((item) => (

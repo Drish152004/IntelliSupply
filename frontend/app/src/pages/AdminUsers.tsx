@@ -74,7 +74,7 @@ export default function AdminUsers() {
         </div>
 
         <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-          <section className="rounded-[2rem] border border-border bg-white p-6 shadow-sm">
+          <section className="app-panel-lg p-6">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between mb-6">
               <div>
                 <p className="text-sm font-semibold text-foreground">Team access</p>
@@ -132,7 +132,7 @@ export default function AdminUsers() {
           </section>
 
           <aside className="space-y-6">
-            <div className="rounded-[2rem] border border-border bg-white p-6 shadow-sm">
+            <div className="app-panel-lg p-6">
               <div className="flex items-center gap-3 mb-4">
                 <ShieldCheck className="h-5 w-5 text-sky-600" />
                 <div>
@@ -158,7 +158,7 @@ export default function AdminUsers() {
               </div>
             </div>
 
-            <div className="rounded-[2rem] border border-border bg-white p-6 shadow-sm">
+            <div className="app-panel-lg p-6">
               <div className="flex items-center gap-3 mb-4">
                 <Users className="h-5 w-5 text-emerald-600" />
                 <div>

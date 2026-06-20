@@ -313,7 +313,7 @@ export default function Inventory() {
   ).length;
 
   return (
-    <div className="min-h-screen bg-[#f6f8fb] text-slate-950">
+    <div className="min-h-screen bg-background text-foreground">
       <Navbar />
 
       <main className="max-w-[1750px] mx-auto px-6 lg:px-10 py-8">
@@ -342,7 +342,7 @@ export default function Inventory() {
         </section>
 
         <section className="grid gap-4 md:grid-cols-3 mb-6">
-          <div className="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="app-panel p-4">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs text-slate-500">
@@ -358,7 +358,7 @@ export default function Inventory() {
             </div>
           </div>
 
-          <div className="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="app-panel p-4">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs text-slate-500">
@@ -374,7 +374,7 @@ export default function Inventory() {
             </div>
           </div>
 
-          <div className="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="app-panel p-4">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs text-slate-500">
@@ -396,7 +396,7 @@ export default function Inventory() {
         )}
 
         <section className="grid gap-6 xl:grid-cols-[1.45fr_0.55fr]">
-          <div className="rounded-[2rem] border border-slate-200 bg-white shadow-sm overflow-hidden">
+          <div className="app-panel-lg overflow-hidden">
             <div className="border-b border-slate-200 p-4">
               <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
                 <div className="relative w-full xl:max-w-sm">
@@ -414,7 +414,7 @@ export default function Inventory() {
                     <select
                       value={categoryFilter}
                       onChange={(e) => setCategoryFilter(e.target.value)}
-                      className="h-10 appearance-none rounded-full border border-slate-200 bg-white px-4 pr-9 text-sm font-medium outline-none"
+                      className="h-10 appearance-none rounded-full border border-border bg-card shadow-surface px-4 pr-9 text-sm font-medium outline-none"
                     >
                       {filterCategories.map((category) => (
                         <option key={category}>{category}</option>
@@ -427,7 +427,7 @@ export default function Inventory() {
                     <select
                       value={statusFilter}
                       onChange={(e) => setStatusFilter(e.target.value)}
-                      className="h-10 appearance-none rounded-full border border-slate-200 bg-white px-4 pr-9 text-sm font-medium outline-none"
+                      className="h-10 appearance-none rounded-full border border-border bg-card shadow-surface px-4 pr-9 text-sm font-medium outline-none"
                     >
                       {statuses.map((status) => (
                         <option key={status}>{status}</option>
@@ -518,7 +518,7 @@ export default function Inventory() {
 
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-2">
-                              <button className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white transition hover:bg-slate-100">
+                              <button className="flex h-8 w-8 items-center justify-center rounded-full border border-border bg-card shadow-surface transition hover:bg-slate-100">
                                 <Pencil className="h-3.5 w-3.5 text-slate-700" />
                               </button>
                               <button
@@ -550,7 +550,7 @@ export default function Inventory() {
           </div>
 
           <aside className="space-y-6">
-            <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="app-panel-lg p-6">
               <div className="flex items-center gap-3 mb-4">
                 <ShieldCheck className="h-5 w-5 text-sky-600" />
                 <div>
@@ -576,7 +576,7 @@ export default function Inventory() {
               </Dialog>
             </div>
 
-            <div className="rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="app-panel p-5">
               {selectedProduct ? (
                 <>
                   <div className="flex h-14 w-14 items-center justify-center rounded-[1.25rem] bg-slate-100">
@@ -611,7 +611,7 @@ export default function Inventory() {
                   </div>
 
                   <div className="mt-4 flex gap-2">
-                    <button className="flex-1 rounded-full border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100">
+                    <button className="flex-1 rounded-full border border-border bg-card shadow-surface px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100">
                       Edit
                     </button>
                     <button
@@ -957,7 +957,7 @@ export default function Inventory() {
                 </div>
               </div>
 
-              <div className="mt-3 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs text-slate-400">
+              <div className="mt-3 rounded-xl border border-border bg-card shadow-surface px-4 py-2.5 text-xs text-slate-400">
                 <span className="font-medium text-slate-600">date</span> is set by the backend.
               </div>
             </div>

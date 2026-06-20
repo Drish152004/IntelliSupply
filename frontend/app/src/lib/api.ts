@@ -736,7 +736,7 @@ export async function upsertAutomationPolicy(
   policyType: string,
   payload: Pick<
     AutomationPolicy,
-    'enabled' | 'auto_execute' | 'threshold_value' | 'utility_score_threshold'
+    'enabled' | 'auto_execute' | 'threshold_value'
   >,
 ): Promise<AutomationPolicy> {
   const data = await apiFetch<{ policy: AutomationPolicy }>(

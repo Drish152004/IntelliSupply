@@ -25,7 +25,7 @@ class RankedDecision:
     rank: int
     decision: Decision
     comparison: DecisionComparison
-    utility_score: float
+    impact_score: float
 
 
 @dataclass
@@ -35,25 +35,8 @@ class RecommendationSummary:
 
 
 @dataclass
-class ExplainabilityPayload:
-    scenario_summary: dict[str, Any]
-    baseline_summary: dict[str, Any]
-    recommendation_summary: dict[str, Any]
-    ranked_decisions_summary: list[dict[str, Any]]
-    best_case_summary: dict[str, Any]
-    most_likely_summary: dict[str, Any]
-    worst_case_summary: dict[str, Any]
-
-
-@dataclass
 class LLMExplanation:
-    executive_summary: str
-    recommended_action: str
-    baseline_analysis: str
-    decision_comparison: str
-    best_case_analysis: str
-    most_likely_analysis: str
-    worst_case_analysis: str
+    analyst_report: str
 
 
 @dataclass
@@ -94,5 +77,4 @@ class PlanningPipelineResult:
     recommendation_summary: RecommendationSummary
     policy_evaluations: list[ExecutionDecision]
     execution_results: list[ActionExecutionResult]
-    explainability_payload: ExplainabilityPayload
     llm_explanation: LLMExplanation

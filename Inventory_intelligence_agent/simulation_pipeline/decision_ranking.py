@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from recommendation_models import DecisionComparison, RankedDecision
+from simulation_models import OutcomeSummary
 
 _WEIGHTS = {
     "stockout": 0.40,
@@ -8,10 +9,6 @@ _WEIGHTS = {
     "days_ss": 0.20,
     "ending_inv": 0.10,
 }
-
-_SHORTAGE_CAP = 500.0
-_DAYS_BELOW_SAFETY_STOCK_CAP = 7.0
-_ENDING_INVENTORY_CAP = 500.0
 
 
 def _benefit_values(comparison: DecisionComparison) -> dict[str, float]:
@@ -23,32 +20,41 @@ def _benefit_values(comparison: DecisionComparison) -> dict[str, float]:
     }
 
 
-def absolute_utility_score(comparison: DecisionComparison) -> float:
-    """Absolute intervention effectiveness on a 0–100 scale (not peer-normalized)."""
+def _relative_improvement(baseline: float, benefit: float) -> float:
+    if baseline == 0:
+        return 1.0 if benefit > 0 else 0.0
+    return max(0.0, benefit / abs(baseline))
+
+
+def absolute_impact_score(
+    comparison: DecisionComparison,
+    baseline: OutcomeSummary,
+) -> float:
+    """Relative intervention effectiveness vs baseline on a 0–100 scale."""
     benefits = _benefit_values(comparison)
-    stockout_benefit = max(0.0, benefits["stockout"])
-    shortage_benefit = min(1.0, max(0.0, benefits["shortage"] / _SHORTAGE_CAP))
-    days_benefit = min(
-        1.0,
-        max(0.0, benefits["days_ss"] / _DAYS_BELOW_SAFETY_STOCK_CAP),
+    baseline_values = {
+        "stockout": baseline.stockout_probability,
+        "shortage": baseline.avg_shortage_quantity,
+        "days_ss": baseline.avg_days_below_safety_stock,
+        "ending_inv": baseline.avg_ending_inventory,
+    }
+    weighted = sum(
+        _WEIGHTS[key] * _relative_improvement(baseline_values[key], benefits[key])
+        for key in _WEIGHTS
     )
-    ending_benefit = min(1.0, max(0.0, benefits["ending_inv"] / _ENDING_INVENTORY_CAP))
-    weighted = sum(_WEIGHTS[key] * value for key, value in {
-        "stockout": stockout_benefit,
-        "shortage": shortage_benefit,
-        "days_ss": days_benefit,
-        "ending_inv": ending_benefit,
-    }.items())
     return round(min(100.0, max(0.0, weighted * 100.0)), 1)
 
 
-def rank_decisions(comparisons: list[DecisionComparison]) -> list[RankedDecision]:
+def rank_decisions(
+    comparisons: list[DecisionComparison],
+    baseline: OutcomeSummary,
+) -> list[RankedDecision]:
     if not comparisons:
         return []
 
     scored = [
         (
-            absolute_utility_score(comparison),
+            absolute_impact_score(comparison, baseline),
             comparison.decision.decision_id,
             comparison,
         )
@@ -61,7 +67,7 @@ def rank_decisions(comparisons: list[DecisionComparison]) -> list[RankedDecision
             rank=rank,
             decision=comparison.decision,
             comparison=comparison,
-            utility_score=utility,
+            impact_score=impact,
         )
-        for rank, (utility, _decision_id, comparison) in enumerate(scored, start=1)
+        for rank, (impact, _decision_id, comparison) in enumerate(scored, start=1)
     ]

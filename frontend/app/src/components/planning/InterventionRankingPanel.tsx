@@ -8,7 +8,9 @@ import {
 } from 'lucide-react';
 import DecisionExecuteButton from '@/components/planning/DecisionExecuteButton';
 import {
-  formatUtilityScore,
+  isPolicyExecutable,
+  wasAutoExecuted,
+  type ActionExecutionResult,
   type ExecutionDecision,
   type ManualExecutionStatus,
   type RankedDecision,
@@ -21,6 +23,7 @@ interface InterventionRankingPanelProps {
   selectedDecisionId: string | null;
   onSelectDecision: (decisionId: string) => void;
   policyEvaluations?: ExecutionDecision[];
+  executionResults?: ActionExecutionResult[];
   manualExecutionState?: Record<string, ManualExecutionStatus>;
   onExecuteDecision?: (decisionId: string) => void;
 }
@@ -42,6 +45,7 @@ export default function InterventionRankingPanel({
   selectedDecisionId,
   onSelectDecision,
   policyEvaluations = [],
+  executionResults = [],
   manualExecutionState = {},
   onExecuteDecision,
 }: InterventionRankingPanelProps) {
@@ -52,8 +56,8 @@ export default function InterventionRankingPanel({
 
   if (rankedDecisions.length === 0) {
     return (
-      <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500">
-        No interventions were generated for this scenario.
+      <div className="app-surface p-6 text-sm text-slate-500">
+        No interventions with positive impact were found for this scenario.
       </div>
     );
   }
@@ -72,6 +76,9 @@ export default function InterventionRankingPanel({
           const Icon = iconForType(rd.decision.decision_type);
           const isSelected = selectedDecisionId === rd.decision.decision_id;
           const isRecommended = recommendedId === rd.decision.decision_id;
+          const policyEvaluation = policyByDecisionId(rd.decision.decision_id);
+          const showExecute =
+            onExecuteDecision && isPolicyExecutable(policyEvaluation);
 
           return (
             <button
@@ -100,14 +107,12 @@ export default function InterventionRankingPanel({
               </div>
               <h4 className="font-bold text-slate-900">{rd.decision.title}</h4>
               <p className="mt-2 text-xs text-slate-500 line-clamp-3">{rd.decision.rationale}</p>
-              <p className="mt-3 text-xs font-semibold text-indigo-600">
-                Effectiveness: {formatUtilityScore(rd)}
-              </p>
-              {isRecommended && onExecuteDecision && (
+              {showExecute && (
                 <div className="mt-3">
                   <DecisionExecuteButton
                     decisionId={rd.decision.decision_id}
-                    policyEvaluation={policyByDecisionId(rd.decision.decision_id)}
+                    policyEvaluation={policyEvaluation}
+                    autoExecuted={wasAutoExecuted(rd.decision.decision_id, executionResults)}
                     manualStatus={manualExecutionState[rd.decision.decision_id] ?? 'idle'}
                     onExecute={onExecuteDecision}
                   />

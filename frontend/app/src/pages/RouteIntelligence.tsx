@@ -38,12 +38,12 @@ export default function RouteIntelligence() {
         </div>
 
         <div className="grid gap-6 xl:grid-cols-[1.7fr_0.9fr]">
-          <div className="rounded-[2rem] border border-border bg-white shadow-sm overflow-hidden min-h-[720px]">
+          <div className="app-panel-lg overflow-hidden min-h-[720px]">
             <RouteMap selectedRouteId={selectedRouteId} onRouteSelect={setSelectedRouteId} />
           </div>
 
           <aside className="space-y-6">
-            <div className="rounded-[2rem] border border-border bg-white p-6 shadow-sm">
+            <div className="app-panel-lg p-6">
               <div className="flex items-start justify-between gap-4 mb-5">
                 <div>
                   <p className="text-sm uppercase tracking-[0.24em] text-muted-foreground">Selected route</p>
@@ -81,7 +81,7 @@ export default function RouteIntelligence() {
               </div>
             </div>
 
-            <div className="rounded-[2rem] border border-border bg-white p-6 shadow-sm">
+            <div className="app-panel-lg p-6">
               <div className="flex items-center gap-3 mb-5">
                 <Sparkles className="h-5 w-5 text-sky-600" />
                 <div>
@@ -105,7 +105,7 @@ export default function RouteIntelligence() {
               </ol>
             </div>
 
-            <div className="rounded-[2rem] border border-border bg-white p-6 shadow-sm">
+            <div className="app-panel-lg p-6">
               <div className="flex items-center gap-3 mb-5">
                 <Truck className="h-5 w-5 text-sky-600" />
                 <div>
@@ -125,7 +125,7 @@ export default function RouteIntelligence() {
               </div>
             </div>
 
-            <div className="rounded-[2rem] border border-border bg-white p-6 shadow-sm">
+            <div className="app-panel-lg p-6">
               <div className="flex items-center gap-3 mb-5">
                 <ShieldCheck className="h-5 w-5 text-emerald-600" />
                 <div>

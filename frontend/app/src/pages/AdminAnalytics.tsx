@@ -99,7 +99,7 @@ export default function AdminAnalytics() {
 
         <section className="grid grid-cols-1 gap-4 lg:grid-cols-4 mb-8">
           {kpis.map((metric) => (
-            <div key={metric.label} className="rounded-[2rem] border border-border bg-white p-6 shadow-sm">
+            <div key={metric.label} className="app-panel-lg p-6">
               <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">{metric.label}</p>
               <h2 className="mt-4 text-3xl font-semibold text-foreground">{metric.value}</h2>
               <p className="mt-3 text-sm text-muted-foreground">{metric.detail}</p>
@@ -109,7 +109,7 @@ export default function AdminAnalytics() {
 
         {roleDistribution.length > 0 && (
           <section className="grid gap-6 xl:grid-cols-[1fr_1fr] mb-8">
-            <div className="rounded-[2rem] border border-border bg-white p-6 shadow-sm">
+            <div className="app-panel-lg p-6">
               <div className="flex items-center justify-between gap-4 mb-5">
                 <div>
                   <p className="text-sm font-semibold text-foreground">Role distribution</p>
@@ -146,7 +146,7 @@ export default function AdminAnalytics() {
               </div>
             </div>
 
-            <div className="rounded-[2rem] border border-border bg-white p-6 shadow-sm">
+            <div className="app-panel-lg p-6">
               <div className="flex items-center justify-between gap-4 mb-5">
                 <div>
                   <p className="text-sm font-semibold text-foreground">Operational callouts</p>
@@ -175,7 +175,7 @@ export default function AdminAnalytics() {
           {secondaryTiles.map((tile) => {
             const Icon = tile.icon;
             return (
-              <div key={tile.label} className="rounded-[2rem] border border-border bg-white p-6 shadow-sm">
+              <div key={tile.label} className="app-panel-lg p-6">
                 <div className="flex items-center gap-3 mb-4">
                   <Icon className="h-5 w-5 text-emerald-600" />
                   <div>

@@ -284,7 +284,7 @@ export default function Courier() {
           {/* RIGHT PANEL */}
           <aside className="space-y-6 flex flex-col min-h-0">
             {/* Copilot */}
-            <div className="rounded-[2rem] border border-border bg-white p-6 shadow-sm shrink-0">
+            <div className="app-panel-lg p-6 shrink-0">
               <div className="flex items-center gap-3 mb-4">
                 <ShieldCheck className="h-5 w-5 text-sky-600" />
                 <div>

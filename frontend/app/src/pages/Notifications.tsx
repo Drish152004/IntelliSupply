@@ -292,7 +292,7 @@ export default function Notifications() {
                   return (
                     <article
                       key={item.notification_id}
-                      className={`rounded-2xl border border-border bg-white p-4 sm:p-5 shadow-sm transition ${
+                      className={`app-panel p-4 sm:p-5 transition ${
                         isUnread ? 'ring-1 ring-slate-200 border-slate-300' : ''
                       }`}
                     >

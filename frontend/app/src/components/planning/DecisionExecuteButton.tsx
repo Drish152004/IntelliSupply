@@ -1,9 +1,11 @@
 import type { ExecutionDecision, ManualExecutionStatus } from '@/lib/planningTypes';
+import { isPolicyExecutable } from '@/lib/planningTypes';
 
 interface DecisionExecuteButtonProps {
   decisionId: string;
   policyEvaluation?: ExecutionDecision;
   manualStatus: ManualExecutionStatus;
+  autoExecuted?: boolean;
   onExecute: (decisionId: string) => void;
   className?: string;
 }
@@ -12,11 +14,20 @@ export default function DecisionExecuteButton({
   decisionId,
   policyEvaluation,
   manualStatus,
+  autoExecuted = false,
   onExecute,
   className = '',
 }: DecisionExecuteButtonProps) {
-  if (policyEvaluation?.status !== 'APPROVAL_REQUIRED') {
+  if (!isPolicyExecutable(policyEvaluation)) {
     return null;
+  }
+
+  if (autoExecuted) {
+    return (
+      <p className={`text-xs font-semibold text-emerald-700 ${className}`}>
+        Applied automatically
+      </p>
+    );
   }
 
   if (manualStatus === 'success') {

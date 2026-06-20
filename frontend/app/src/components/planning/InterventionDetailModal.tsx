@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CheckCircle2, Sparkles } from 'lucide-react';
+import { ArrowDown, ArrowUp, CheckCircle2, Sparkles } from 'lucide-react';
 import DecisionExecuteButton from '@/components/planning/DecisionExecuteButton';
 import TimelineTable from '@/components/planning/TimelineTable';
 import {
@@ -10,13 +10,22 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import type {
+  ActionExecutionResult,
   DecisionSimulationResult,
   ExecutionDecision,
   ManualExecutionStatus,
+  OutcomeSummary,
   RankedDecision,
   RecommendationSummary,
 } from '@/lib/planningTypes';
-import { formatPercentFraction, formatUtilityScore, mapDailyLog } from '@/lib/planningTypes';
+import {
+  computeMetricComparison,
+  formatInterventionPreviewSummary,
+  formatPercentFraction,
+  isPolicyExecutable,
+  mapDailyLog,
+  wasAutoExecuted,
+} from '@/lib/planningTypes';
 
 type CaseId = 'best' | 'likely' | 'worst';
 
@@ -24,9 +33,11 @@ interface InterventionDetailModalProps {
   decisionId: string | null;
   rankedDecisions: RankedDecision[];
   decisionResults?: DecisionSimulationResult[];
+  baselineOutcomes?: OutcomeSummary | null;
   recommendation: RecommendationSummary | null;
   onClose: () => void;
   policyEvaluations?: ExecutionDecision[];
+  executionResults?: ActionExecutionResult[];
   manualExecutionState?: Record<string, ManualExecutionStatus>;
   onExecuteDecision?: (decisionId: string) => void;
 }
@@ -35,9 +46,11 @@ export default function InterventionDetailModal({
   decisionId,
   rankedDecisions,
   decisionResults = [],
+  baselineOutcomes = null,
   recommendation,
   onClose,
   policyEvaluations = [],
+  executionResults = [],
   manualExecutionState = {},
   onExecuteDecision,
 }: InterventionDetailModalProps) {
@@ -59,6 +72,25 @@ export default function InterventionDetailModal({
     (item) => item.decision.decision_id === decisionId,
   );
 
+  const postOutcome = decisionResult?.outcome;
+  const baselineStockout = baselineOutcomes?.stockout_probability ?? 0;
+  const baselineShortage = baselineOutcomes?.avg_shortage_quantity ?? 0;
+  const baselineDaysSs = baselineOutcomes?.avg_days_below_safety_stock ?? 0;
+  const baselineEndingInv = baselineOutcomes?.avg_ending_inventory ?? 0;
+
+  const postStockout =
+    postOutcome?.stockout_probability ??
+    baselineStockout + comp.stockout_probability_change;
+  const postShortage =
+    postOutcome?.avg_shortage_quantity ??
+    baselineShortage - comp.shortage_reduction;
+  const postDaysSs =
+    postOutcome?.avg_days_below_safety_stock ??
+    baselineDaysSs + comp.days_below_safety_stock_change;
+  const postEndingInv =
+    postOutcome?.avg_ending_inventory ??
+    baselineEndingInv + comp.ending_inventory_change;
+
   const world =
     decisionResult && caseId === 'best'
       ? decisionResult.outcome.best_case_world
@@ -77,7 +109,7 @@ export default function InterventionDetailModal({
             {rd.decision.title}
           </DialogTitle>
           <DialogDescription>
-            Rank #{rd.rank} · Effectiveness {formatUtilityScore(rd)} · {rd.decision.decision_type}
+            Rank #{rd.rank} · {formatInterventionPreviewSummary(rd)} · {rd.decision.decision_type}
           </DialogDescription>
         </DialogHeader>
 
@@ -105,22 +137,47 @@ export default function InterventionDetailModal({
                 <p className="text-sm text-slate-700">{rd.decision.rationale}</p>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <Metric label="Stockout prob. change" value={formatPercentFraction(comp.stockout_probability_change)} />
-                <Metric label="Shortage reduction" value={Math.round(comp.shortage_reduction).toLocaleString()} />
-                <Metric label="Ending inventory change" value={Math.round(comp.ending_inventory_change).toLocaleString()} />
-                <Metric label="Days below SS change" value={comp.days_below_safety_stock_change.toFixed(1)} />
-              </div>
-
-              {decisionResult && (
-                <div className="grid grid-cols-2 gap-3">
-                  <Metric
-                    label="Simulated stockout prob."
-                    value={formatPercentFraction(decisionResult.outcome.stockout_probability)}
+              {baselineOutcomes && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <MetricBeforeAfter
+                    label="Stockout Risk"
+                    comparison={computeMetricComparison(
+                      baselineStockout,
+                      postStockout,
+                      true,
+                      (v) => formatPercentFraction(v),
+                    )}
+                    lowerIsBetter
                   />
-                  <Metric
-                    label="Avg ending inventory"
-                    value={`${Math.round(decisionResult.outcome.avg_ending_inventory).toLocaleString()} units`}
+                  <MetricBeforeAfter
+                    label="Expected Shortage"
+                    comparison={computeMetricComparison(
+                      baselineShortage,
+                      postShortage,
+                      true,
+                      (v) => Math.round(v).toLocaleString(),
+                    )}
+                    lowerIsBetter
+                  />
+                  <MetricBeforeAfter
+                    label="Days Below Safety Stock"
+                    comparison={computeMetricComparison(
+                      baselineDaysSs,
+                      postDaysSs,
+                      true,
+                      (v) => v.toFixed(1),
+                    )}
+                    lowerIsBetter
+                  />
+                  <MetricBeforeAfter
+                    label="Ending Inventory"
+                    comparison={computeMetricComparison(
+                      baselineEndingInv,
+                      postEndingInv,
+                      false,
+                      (v) => Math.round(v).toLocaleString(),
+                    )}
+                    lowerIsBetter={false}
                   />
                 </div>
               )}
@@ -149,19 +206,22 @@ export default function InterventionDetailModal({
                 </div>
               )}
 
-              {isRecommended && onExecuteDecision && (
+              {onExecuteDecision && isPolicyExecutable(policyEvaluation) && (
                 <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50/50 p-4">
                   <div>
                     <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                      Manual Approval
+                      Execution
                     </p>
                     <p className="mt-1 text-sm text-slate-600">
-                      This action requires human approval before execution.
+                      {policyEvaluation?.status === 'APPROVAL_REQUIRED'
+                        ? 'This action requires human approval before execution.'
+                        : 'This action can be applied from the planning workspace.'}
                     </p>
                   </div>
                   <DecisionExecuteButton
                     decisionId={rd.decision.decision_id}
                     policyEvaluation={policyEvaluation}
+                    autoExecuted={wasAutoExecuted(rd.decision.decision_id, executionResults)}
                     manualStatus={manualExecutionState[rd.decision.decision_id] ?? 'idle'}
                     onExecute={onExecuteDecision}
                   />
@@ -209,11 +269,43 @@ export default function InterventionDetailModal({
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function MetricBeforeAfter({
+  label,
+  comparison,
+  lowerIsBetter,
+}: {
+  label: string;
+  comparison: ReturnType<typeof computeMetricComparison>;
+  lowerIsBetter: boolean;
+}) {
+  const ArrowIcon = lowerIsBetter
+    ? comparison.improved
+      ? ArrowDown
+      : ArrowUp
+    : comparison.improved
+      ? ArrowUp
+      : ArrowDown;
+
+  const changeColor = comparison.unchanged
+    ? 'text-slate-500'
+    : comparison.improved
+      ? 'text-emerald-600'
+      : 'text-red-600';
+
   return (
     <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-3">
       <p className="text-xs font-bold uppercase tracking-wider text-slate-500">{label}</p>
-      <p className="mt-1 text-sm font-semibold text-slate-800">{value}</p>
+      <div className="mt-1 flex flex-wrap items-center gap-2">
+        <p className="text-sm font-semibold text-slate-800">
+          {comparison.before} → {comparison.after}
+        </p>
+        {!comparison.unchanged && (
+          <span className={`inline-flex items-center gap-0.5 text-xs font-bold ${changeColor}`}>
+            <ArrowIcon className="h-3.5 w-3.5" />
+            {comparison.pctChange}%
+          </span>
+        )}
+      </div>
     </div>
   );
 }

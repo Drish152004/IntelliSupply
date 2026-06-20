@@ -32,7 +32,6 @@ class UpdateAutomationPolicyRequest(BaseModel):
     enabled: bool
     auto_execute: bool
     threshold_value: float = Field(..., ge=0)
-    utility_score_threshold: float = Field(default=0.5, ge=0, le=1)
 
 
 class ExecuteDecisionRequest(BaseModel):
@@ -59,7 +58,6 @@ def update_automation_policy(
             enabled=body.enabled,
             auto_execute=body.auto_execute,
             threshold_value=body.threshold_value,
-            utility_score_threshold=body.utility_score_threshold,
         )
         return {"policy": policy.__dict__}
     except Exception as exc:

@@ -37,7 +37,7 @@ export default function Landing() {
   const navigate = useNavigate();
 
   return (
-    <div className="min-h-screen bg-[#f5f7fb] overflow-hidden">
+    <div className="min-h-screen bg-background text-foreground overflow-hidden">
       <main className="max-w-[1400px] mx-auto px-6 lg:px-10 py-10">
         {/* HERO */}
         <section className="flex flex-col items-center text-center">
@@ -46,7 +46,7 @@ export default function Landing() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
           >
-            <div className="inline-flex items-center rounded-full border border-slate-200 bg-white px-5 py-2.5 shadow-sm">
+            <div className="inline-flex items-center rounded-full border border-border bg-card shadow-surface px-5 py-2.5 shadow-sm">
               <span className="text-base font-semibold tracking-tight text-slate-900">
                 Intelli<span className="text-sky-600">Supply</span>
               </span>

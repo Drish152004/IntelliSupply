@@ -66,7 +66,7 @@ export default function Profile() {
 
         <div className="grid gap-6 xl:grid-cols-[1.3fr_0.7fr]">
           <section className="space-y-6">
-            <div className="rounded-[2rem] border border-border bg-white p-6 shadow-sm">
+            <div className="app-panel-lg p-6">
               <div className="flex flex-col sm:flex-row sm:items-center gap-5">
                 <div className="flex h-24 w-24 items-center justify-center rounded-full bg-slate-100 text-3xl font-semibold text-slate-700">
                   {initials}
@@ -83,7 +83,7 @@ export default function Profile() {
               </div>
             </div>
 
-            <div className="rounded-[2rem] border border-border bg-white p-6 shadow-sm">
+            <div className="app-panel-lg p-6">
               <div className="mb-6">
                 <h3 className="text-xl font-semibold text-foreground">Personal information</h3>
                 <p className="text-sm text-muted-foreground mt-1">Update your account details.</p>
@@ -109,7 +109,7 @@ export default function Profile() {
               </div>
             </div>
 
-            <div className="rounded-[2rem] border border-border bg-white p-6 shadow-sm">
+            <div className="app-panel-lg p-6">
               <div className="mb-6">
                 <h3 className="text-xl font-semibold text-foreground">Security</h3>
                 <p className="text-sm text-muted-foreground mt-1">JWT session authentication is active for API access.</p>
@@ -143,7 +143,7 @@ export default function Profile() {
           </section>
 
           <aside className="space-y-6">
-            <div className="rounded-[2rem] border border-border bg-white p-6 shadow-sm">
+            <div className="app-panel-lg p-6">
               <div className="flex items-center gap-3 mb-5">
                 <User className="h-5 w-5 text-sky-600" />
                 <div>
@@ -164,7 +164,7 @@ export default function Profile() {
               </div>
             </div>
 
-            <div className="rounded-[2rem] border border-border bg-white p-6 shadow-sm">
+            <div className="app-panel-lg p-6">
               <div className="flex items-center gap-3 mb-5">
                 <Bell className="h-5 w-5 text-amber-600" />
                 <div>

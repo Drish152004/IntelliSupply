@@ -191,7 +191,7 @@ export interface RankedDecision {
   rank: number;
   decision: Decision;
   comparison: DecisionComparison;
-  utility_score: number;
+  impact_score: number;
 }
 
 export interface RecommendationSummary {
@@ -212,8 +212,6 @@ export interface ExecutionDecision {
   policy_type: string;
   threshold_value?: number | null;
   observed_value?: number | null;
-  utility_score_threshold?: number | null;
-  observed_utility_score?: number | null;
 }
 
 export interface ActionExecutionResult {
@@ -227,7 +225,6 @@ export interface AutomationPolicy {
   enabled: boolean;
   auto_execute: boolean;
   threshold_value: number;
-  utility_score_threshold: number;
 }
 
 export interface ActionAuditLog {
@@ -255,13 +252,7 @@ export interface ExecutePlanningDecisionResult {
 }
 
 export interface LLMExplanation {
-  executive_summary: string;
-  recommended_action: string;
-  baseline_analysis: string;
-  decision_comparison: string;
-  best_case_analysis: string;
-  most_likely_analysis: string;
-  worst_case_analysis: string;
+  analyst_report: string;
 }
 
 export interface PlanningSimulationResult {
@@ -334,9 +325,96 @@ export function formatPercentValue(value: number, digits = 1): string {
   return `${value.toFixed(digits)}%`;
 }
 
-/** Format backend utility_score (0–100) for display. */
-export function formatUtilityScore(rd: RankedDecision): string {
-  return `${Math.round(rd.utility_score)}/100`;
+/** Interventions shown in the UI must have a positive simulated impact. */
+export function filterPositiveImpactDecisions(
+  rankedDecisions: RankedDecision[],
+): RankedDecision[] {
+  return rankedDecisions.filter((rd) => rd.impact_score > 0);
+}
+
+export function isPolicyExecutable(evaluation?: ExecutionDecision): boolean {
+  return evaluation != null && evaluation.status !== 'DISABLED';
+}
+
+export function wasAutoExecuted(
+  decisionId: string,
+  executionResults?: ActionExecutionResult[],
+): boolean {
+  return (executionResults ?? []).some(
+    (result) => result.decision.decision_id === decisionId && result.success,
+  );
+}
+
+function formatSignedDelta(value: number, unit: string): string {
+  if (value === 0) return '';
+  const sign = value > 0 ? '−' : '+';
+  return `${sign}${Math.abs(value)} ${unit}`;
+}
+
+/** One-line outcome summary for intervention detail views. */
+export function formatInterventionPreviewSummary(rd: RankedDecision): string {
+  const { comparison } = rd;
+  const stockoutPts = Math.round(-comparison.stockout_probability_change * 100);
+  if (stockoutPts !== 0) {
+    const sign = stockoutPts > 0 ? '−' : '+';
+    return `${sign}${Math.abs(stockoutPts)} pts stockout risk`;
+  }
+
+  const shortageUnits = Math.round(comparison.shortage_reduction);
+  if (shortageUnits !== 0) {
+    return `${formatSignedDelta(shortageUnits, 'units avg shortage')}`;
+  }
+
+  const daysSs = Math.round(-comparison.days_below_safety_stock_change * 10) / 10;
+  if (daysSs !== 0) {
+    return `${formatSignedDelta(daysSs, 'days below safety stock')}`;
+  }
+
+  const endingInv = Math.round(comparison.ending_inventory_change);
+  if (endingInv !== 0) {
+    const sign = endingInv > 0 ? '+' : '−';
+    return `${sign}${Math.abs(endingInv)} units ending inventory`;
+  }
+
+  return 'No material change';
+}
+
+export interface MetricComparison {
+  before: string;
+  after: string;
+  pctChange: number;
+  improved: boolean;
+  unchanged: boolean;
+}
+
+export function computeMetricComparison(
+  baseline: number,
+  post: number,
+  lowerIsBetter: boolean,
+  formatValue: (value: number) => string,
+): MetricComparison {
+  const unchanged = post === baseline;
+  const improved = lowerIsBetter ? post < baseline : post > baseline;
+
+  let pctChange = 0;
+  if (!unchanged) {
+    if (baseline === 0) {
+      pctChange = 100;
+    } else {
+      const rawChange = lowerIsBetter
+        ? ((baseline - post) / Math.abs(baseline)) * 100
+        : ((post - baseline) / Math.abs(baseline)) * 100;
+      pctChange = Math.abs(rawChange);
+    }
+  }
+
+  return {
+    before: formatValue(baseline),
+    after: formatValue(post),
+    pctChange: Math.round(pctChange),
+    improved,
+    unchanged,
+  };
 }
 
 export function formatPatchLabels(patch: ScenarioPatch | null | undefined): string[] {

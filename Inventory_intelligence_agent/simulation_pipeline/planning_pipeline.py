@@ -8,21 +8,19 @@ if str(_AGENT_ROOT) not in sys.path:
     sys.path.insert(0, str(_AGENT_ROOT))
 import env_setup  # noqa: F401 — loads repo root .env
 
-from base_state import build_base_state
 from baseline_des import simulate_worlds
 from decision_comparison import compare_decisions
 from decision_generation import generate_decisions
 from action_executors import execute_decision_if_auto_approved
 from automation_policy_store import append_action_audit_log, ensure_automation_csv_files
-from decision_models import ActionExecutionResult, Decision, ExecutionDecision
+from decision_models import ActionExecutionResult, ExecutionDecision
 from decision_ranking import rank_decisions
 from decision_selection import (
     build_decision_selection_request,
     resolve_selected_decisions,
 )
 from decision_simulation import simulate_decisions
-from decision_simulation_models import DecisionSimulationResult
-from explainability_payload import build_explainability_payload
+from explainability_payload import build_analyst_brief
 from llm_explanation import generate_llm_explanation
 from monte_carlo_world_generator import generate_simulated_worlds
 from outcome_discovery import discover_outcomes
@@ -33,10 +31,7 @@ from recommendation_models import (
     PlanningPipelineResult,
 )
 from policy_evaluator import evaluate_policy
-from scenario_models import ScenarioPatch
 from scenario_state_builder import build_scenario_state
-from simulation_models import OutcomeSummary
-from state_models import ScenarioState, SimulationState
 
 DEFAULT_DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
@@ -95,7 +90,7 @@ def run_decision_evaluation_and_recommendation(
         data_dir=data_dir,
     )
     comparisons = compare_decisions(baseline.outcomes, decision_results)
-    ranked = rank_decisions(comparisons)
+    ranked = rank_decisions(comparisons, baseline.outcomes)
     recommendation = build_recommendation_summary(
         baseline.outcomes,
         ranked,
@@ -104,13 +99,16 @@ def run_decision_evaluation_and_recommendation(
     policy_evaluations: list[ExecutionDecision] = []
     execution_results: list[ActionExecutionResult] = []
 
+    for result in decision_results:
+        policy_evaluations.append(evaluate_policy(result.decision))
+
     recommended = recommendation.recommended_decision
     if recommended is not None:
-        execution_decision = evaluate_policy(
-            recommended.decision,
-            utility_score=recommended.utility_score,
+        execution_decision = next(
+            evaluation
+            for evaluation in policy_evaluations
+            if evaluation.decision.decision_id == recommended.decision.decision_id
         )
-        policy_evaluations.append(execution_decision)
         execution_result = execute_decision_if_auto_approved(
             execution_decision,
             baseline.scenario,
@@ -132,14 +130,14 @@ def run_decision_evaluation_and_recommendation(
             after_state=after_state,
         )
 
-    payload = build_explainability_payload(
+    brief = build_analyst_brief(
         baseline.scenario,
         baseline.outcomes,
         recommendation,
         ranked,
         decision_results,
     )
-    explanation = generate_llm_explanation(payload, skip_llm=config.skip_llm)
+    explanation = generate_llm_explanation(brief, skip_llm=config.skip_llm)
     return PlanningPipelineResult(
         scenario=baseline.scenario,
         outcomes=baseline.outcomes,
@@ -150,7 +148,6 @@ def run_decision_evaluation_and_recommendation(
         recommendation_summary=recommendation,
         policy_evaluations=policy_evaluations,
         execution_results=execution_results,
-        explainability_payload=payload,
         llm_explanation=explanation,
     )
 
@@ -173,57 +170,3 @@ def run_full_planning_pipeline(
         selected_decision_ids,
         config,
     )
-
-
-def simulate_selected_decisions(
-    *,
-    baseline_scenario: ScenarioState,
-    selected_decisions: list[Decision],
-    planning_window_days: int | None = None,
-    n_worlds: int = 1000,
-    random_seed: int | None = None,
-    data_dir: Path | None = None,
-    peer_hub_states: list[SimulationState] | None = None,
-) -> list[DecisionSimulationResult]:
-    """Stage-7-only wrapper for callers that do not need stages 8–12."""
-    _ = planning_window_days, peer_hub_states
-    return simulate_decisions(
-        baseline_scenario,
-        selected_decisions,
-        n_worlds=n_worlds,
-        random_seed=random_seed,
-        data_dir=data_dir or DEFAULT_DATA_DIR,
-    )
-
-
-def run_baseline_simulation(
-    *,
-    hub_id: str,
-    product_id: str,
-    category: str,
-    simulation_date: str,
-    patch: ScenarioPatch,
-    planning_window_days: int | None = None,
-    n_worlds: int = 1000,
-    random_seed: int | None = None,
-    data_dir: Path | None = None,
-    peer_hub_states: list[SimulationState] | None = None,
-) -> tuple[OutcomeSummary, list[Decision]]:
-    """Backward-compatible helper returning (outcomes, decisions)."""
-    base_state = build_base_state(
-        hub_id=hub_id,
-        product_id=product_id,
-        category=category,
-        simulation_date=simulation_date,
-    )
-    config = PlanningPipelineConfig(
-        base_state=base_state,
-        patch=patch,
-        planning_window_days=planning_window_days,
-        n_worlds=n_worlds,
-        random_seed=random_seed,
-        data_dir=data_dir,
-        peer_hub_states=peer_hub_states,
-    )
-    result = run_baseline_planning(config)
-    return result.outcomes, result.decisions

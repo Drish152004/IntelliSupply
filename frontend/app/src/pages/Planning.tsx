@@ -27,14 +27,15 @@ import {
   understandPlanningScenario,
   PlanningClarificationError,
 } from '@/lib/api';
-import type {
-  ActionAuditLog,
-  AutomationPolicy,
-  ClarificationSession,
-  ManualExecutionStatus,
-  PlanningContext,
-  PlanningSimulationResult,
-  ScenarioPatch,
+import {
+  filterPositiveImpactDecisions,
+  type ActionAuditLog,
+  type AutomationPolicy,
+  type ClarificationSession,
+  type ManualExecutionStatus,
+  type PlanningContext,
+  type PlanningSimulationResult,
+  type ScenarioPatch,
 } from '@/lib/planningTypes';
 import type { PLANNING_EXAMPLE_SCENARIOS } from '@/lib/planningExamples';
 
@@ -74,6 +75,11 @@ export default function Planning() {
   const [result, setResult] = useSessionStorageState<PlanningSimulationResult | null>('planning_result', null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const displayedInterventions = useMemo(
+    () => filterPositiveImpactDecisions(result?.ranked_decisions ?? []),
+    [result?.ranked_decisions],
+  );
 
   const [selectedStateCard, setSelectedStateCard] = useSessionStorageState<string | null>('planning_state_card', null);
   const [selectedCase, setSelectedCase] = useSessionStorageState<'best' | 'likely' | 'worst' | null>('planning_case', null);
@@ -449,7 +455,6 @@ export default function Planning() {
           enabled: policy.enabled,
           auto_execute: policy.auto_execute,
           threshold_value: policy.threshold_value,
-          utility_score_threshold: policy.utility_score_threshold ?? 0.5,
         });
         setPolicies((prev) =>
           prev.map((item) => (item.policy_type === policyType ? updated : item)),
@@ -600,11 +605,12 @@ export default function Planning() {
             />
 
             <InterventionRankingPanel
-              rankedDecisions={result.ranked_decisions}
+              rankedDecisions={displayedInterventions}
               recommendation={result.recommendation_summary}
               selectedDecisionId={selectedDecisionId}
               onSelectDecision={setSelectedDecisionId}
               policyEvaluations={result.policy_evaluations}
+              executionResults={result.execution_results}
               manualExecutionState={manualExecutionState}
               onExecuteDecision={handleExecuteDecision}
             />
@@ -642,11 +648,13 @@ export default function Planning() {
 
       <InterventionDetailModal
         decisionId={selectedDecisionId}
-        rankedDecisions={result?.ranked_decisions ?? []}
+        rankedDecisions={displayedInterventions}
         decisionResults={result?.decision_results ?? []}
+        baselineOutcomes={result?.outcomes ?? null}
         recommendation={result?.recommendation_summary ?? null}
         onClose={() => setSelectedDecisionId(null)}
         policyEvaluations={result?.policy_evaluations}
+        executionResults={result?.execution_results}
         manualExecutionState={manualExecutionState}
         onExecuteDecision={handleExecuteDecision}
       />

@@ -879,7 +879,7 @@ export default function LogisticsDashboard() {
           <aside className="space-y-6">
             {/* Copilot (managers only) */}
             {isManager && (
-              <div className="rounded-[2rem] border border-border bg-white p-6 shadow-sm">
+              <div className="app-panel-lg p-6">
                 <div className="flex items-center gap-3 mb-4">
                   <ShieldCheck className="h-5 w-5 text-sky-600" />
                   <div>

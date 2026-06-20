@@ -162,7 +162,7 @@ export default function Login() {
           initial={{ opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.45 }}
-          className="w-full max-w-[520px] rounded-[2.5rem] border border-slate-200 bg-white p-7 lg:p-10 shadow-sm"
+          className="w-full max-w-[520px] rounded-[2.5rem] border border-border bg-card shadow-surface p-7 lg:p-10 shadow-sm"
         >
           <div className="inline-flex items-center rounded-full bg-sky-50 px-4 py-2">
             <span className="text-sm font-semibold text-sky-900">

@@ -111,7 +111,7 @@ export default function Overview() {
           {summaryCards.map((card) => {
             const Icon = card.icon;
             return (
-              <div key={card.label} className={`rounded-[1.75rem] border p-6 shadow-sm ${card.color}`}>
+              <div key={card.label} className={`app-panel p-6 shadow-panel ${card.color}`}>
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <p className="text-xs uppercase tracking-[0.24em] font-semibold">{card.label}</p>
@@ -170,7 +170,7 @@ export default function Overview() {
                 {salesCards.map((card) => {
                   const Icon = card.icon;
                   return (
-                    <div key={card.title} className="rounded-[1.75rem] border border-border bg-white p-5 shadow-sm">
+                    <div key={card.title} className="app-panel p-5">
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <p className="text-xs uppercase tracking-[0.22em] font-semibold text-muted-foreground">{card.title}</p>
