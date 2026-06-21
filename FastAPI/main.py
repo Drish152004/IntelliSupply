@@ -26,7 +26,6 @@ from routers import (
     inventory,
     notifications,
     orders,
-    eta_prediction,
     users,
     voice,
     planning,
@@ -75,7 +74,6 @@ app.include_router(auth.router)
 
 # ✅ OTHER ROUTERS (UNCHANGED)
 app.include_router(copilot.router)
-app.include_router(eta_prediction.router)
 app.include_router(orders.router)
 app.include_router(orders.couriers_router)
 app.include_router(users.router)
@@ -109,6 +107,5 @@ def root():
             "couriers": "/couriers",
             "route": "/route",
             "demand": "/demand",
-            "eta": "/eta",
         },
     }

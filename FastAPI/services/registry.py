@@ -14,7 +14,6 @@ from config import (
 
 _route_predictor: Any | None = None
 _eta_predictor: Any | None = None
-_eta_ready: bool = False
 
 
 def _ensure_route_path() -> None:
@@ -59,16 +58,6 @@ def get_eta_predictor():
     return _eta_predictor
 
 
-def init_eta_service() -> None:
-    global _eta_ready
-    get_eta_predictor()
-    _eta_ready = True
-
-
-def ensure_eta_service() -> None:
-    get_eta_predictor()
-
-
 def init_all_services() -> dict[str, str]:
     """Warm all models; returns per-service status messages."""
     status: dict[str, str] = {}
@@ -79,7 +68,7 @@ def init_all_services() -> dict[str, str]:
         status["route_prediction"] = f"error: {exc}"
 
     try:
-        init_eta_service()
+        get_eta_predictor()
         status["eta_prediction"] = "ok"
     except Exception as exc:
         status["eta_prediction"] = f"error: {exc}"

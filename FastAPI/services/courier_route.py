@@ -259,29 +259,9 @@ def predict_courier_route(
         predictor = get_route_predictor()
         route_df = _orders_to_predictor_df(prepared)
         predicted_sequence = predictor.predict_full_sequence(route_df)
-
-        predicted_sequence = [
-            order_id
-            for order_id in predicted_sequence
-            if order_id in orders_by_id
-        ]
-
-        missing_order_ids = [
-            order_id
-            for order_id in orders_by_id.keys()
-            if order_id not in predicted_sequence
-        ]
-
-        if missing_order_ids:
-            predicted_sequence.extend(missing_order_ids)
-
         route_source = "ml_model"
-
     except Exception as exc:
         print(f"ML route predictor unavailable. Using assigned-order fallback: {exc}")
-
-        # Fallback: show all assigned orders in existing order sequence.
-        # This prevents route modal from crashing when sklearn/model is missing.
         predicted_sequence = list(orders_by_id.keys())
         route_source = "graph_built"
 
@@ -290,13 +270,11 @@ def predict_courier_route(
         for order_id in predicted_sequence
         if order_id in orders_by_id
     ]
-
     missing_order_ids = [
         order_id
         for order_id in orders_by_id.keys()
         if order_id not in predicted_sequence
     ]
-
     if missing_order_ids:
         predicted_sequence.extend(missing_order_ids)
 

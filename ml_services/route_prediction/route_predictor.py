@@ -10,41 +10,6 @@ import pandas as pd
 
 MINUTES_PER_STOP_EST = 8.0
 
-FEATURE_COLS = [
-    "poi_lat",
-    "poi_lng",
-    "dist_to_candidate",
-    "log_dist_to_candidate",
-    "bearing_sin",
-    "bearing_cos",
-    "hour_of_day",
-    "minute",
-    "is_morning",
-    "is_afternoon",
-    "is_evening",
-    "city_name_enc",
-    "typecode_enc",
-    "aoi_id_enc",
-    "stops_completed",
-    "stops_remaining",
-    "elapsed_minutes",
-    "receipt_hour",
-    "wait_since_receipt_min",
-    "log_wait_since_receipt",
-]
-
-REQUIRED_ORDER_COLUMNS = [
-    "order_id",
-    "poi_lat",
-    "poi_lng",
-    "receipt_time",
-    "receipt_lat",
-    "receipt_lng",
-    "city_name",
-    "typecode",
-    "aoi_id",
-]
-
 
 def add_time_features(frame: pd.DataFrame) -> pd.DataFrame:
     out = frame.copy()
@@ -104,21 +69,6 @@ def augment_candidate_features(
     return out
 
 
-def orders_to_dataframe(orders: list[dict]) -> pd.DataFrame:
-    """Validate and build a route orders DataFrame from API/JSON payloads."""
-    if not orders:
-        raise ValueError("At least one order is required")
-    missing = [c for c in REQUIRED_ORDER_COLUMNS if c not in orders[0]]
-    if missing:
-        raise ValueError(f"Missing required fields on first order: {missing}")
-    df = pd.DataFrame(orders)
-    for col in REQUIRED_ORDER_COLUMNS:
-        if col not in df.columns:
-            raise ValueError(f"Missing column: {col}")
-    df["receipt_time"] = pd.to_datetime(df["receipt_time"])
-    return df
-
-
 class _RoutePredictorUnpickler(pickle.Unpickler):
     """Load pickles saved from the notebook (__main__.RoutePredictor)."""
 
@@ -146,10 +96,6 @@ class RoutePredictor:
         self.aoi_map = aoi_map
         self.version = version
         self.minutes_per_stop_est = minutes_per_stop_est
-
-    @classmethod
-    def from_artifacts(cls, booster, feature_cols, label_encoders, aoi_map):
-        return cls(booster, feature_cols, label_encoders, aoi_map)
 
     def _prepare_orders(self, orders_df: pd.DataFrame) -> pd.DataFrame:
         out = add_time_features(orders_df.copy())

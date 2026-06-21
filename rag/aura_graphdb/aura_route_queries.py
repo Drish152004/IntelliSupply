@@ -1,5 +1,4 @@
 import json
-import math
 from typing import Any
 
 from aura_graphdb.aura_connection import AuraConnection
@@ -14,31 +13,6 @@ def _float_or_none(value: Any) -> float | None:
     except (TypeError, ValueError):
         return None
 
-
-def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    r = 6371.0
-    p1, p2 = math.radians(lat1), math.radians(lat2)
-    dlat = math.radians(lat2 - lat1)
-    dlon = math.radians(lon2 - lon1)
-    a = math.sin(dlat / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dlon / 2) ** 2
-    return 2 * r * math.asin(math.sqrt(a))
-
-
-def _estimate_leg_minutes(order: dict[str, Any], default_minutes: float = 20.0) -> float:
-    from_lat = _float_or_none(order.get("from_lat"))
-    from_lon = _float_or_none(order.get("from_lon"))
-    to_lat = _float_or_none(order.get("to_lat"))
-    to_lon = _float_or_none(order.get("to_lon"))
-    if from_lat is None or from_lon is None:
-        from_lat = _float_or_none(order.get("receipt_lat_wgs84"))
-        from_lon = _float_or_none(order.get("receipt_lon_wgs84"))
-    if to_lat is None or to_lon is None:
-        to_lat = _float_or_none(order.get("lat_wgs84"))
-        to_lon = _float_or_none(order.get("lon_wgs84"))
-    if None in (from_lat, from_lon, to_lat, to_lon):
-        return default_minutes
-    km = _haversine_km(from_lat, from_lon, to_lat, to_lon)
-    return max(default_minutes, round(km * 3.0, 1))
 
 def get_orders_for_courier_name_day(
     courier_name: str,
@@ -88,84 +62,6 @@ def resolve_route_hubs(
         "success": True,
         "from_hub": from_hub,
         "to_hub": to_hub,
-    }
-def build_route_stops_from_orders(
-    orders: list[dict[str, Any]],
-    courier: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Build ordered route stops from assigned orders without ML."""
-    if not orders:
-        return {
-            "order_ids": [],
-            "predicted_sequence": [],
-            "stops": [],
-            "geo_stops": [],
-            "total_eta_minutes": 0.0,
-            "city_name": None,
-        }
-
-    def sort_key(order: dict[str, Any]) -> tuple:
-        seq = order.get("route_sequence")
-        if seq is not None:
-            try:
-                return (0, int(seq))
-            except (TypeError, ValueError):
-                pass
-        receipt = str(order.get("receipt_time") or "")
-        return (1, receipt, str(order.get("order_id") or ""))
-
-    ordered = sorted(orders, key=sort_key)
-    predicted_sequence = [o["order_id"] for o in ordered if o.get("order_id")]
-
-    cumulative = 0.0
-    stops: list[dict[str, Any]] = []
-    geo_stops: list[dict[str, Any]] = []
-
-    for seq, order in enumerate(ordered, start=1):
-        leg_minutes = _estimate_leg_minutes(order)
-        cumulative += leg_minutes
-        from_lat = _float_or_none(order.get("from_lat"))
-        from_lng = _float_or_none(order.get("from_lon")) or _float_or_none(order.get("from_lng"))
-        to_lat = _float_or_none(order.get("to_lat"))
-        to_lng = _float_or_none(order.get("to_lon")) or _float_or_none(order.get("to_lng"))
-        lat_wgs84 = _float_or_none(order.get("lat_wgs84")) or to_lat
-        lon_wgs84 = _float_or_none(order.get("lon_wgs84")) or to_lng
-
-        stops.append(
-            {
-                "sequence": seq,
-                "order_id": order["order_id"],
-                "from_hub_name": order.get("from_hub_name"),
-                "to_hub_name": order.get("to_hub_name"),
-                "from_lat": from_lat,
-                "from_lng": from_lng,
-                "to_lat": to_lat,
-                "to_lng": to_lng,
-                "lat_wgs84": lat_wgs84,
-                "lon_wgs84": lon_wgs84,
-                "city_name": order.get("city_name"),
-                "delivery_day": order.get("delivery_day"),
-                "eta_minutes": round(leg_minutes, 1),
-                "eta_from_start_minutes": round(cumulative, 1),
-                "estimated_arrival": f"{int(9 + cumulative // 60):02d}:{int(cumulative % 60):02d}",
-            }
-        )
-        geo_stops.append(
-            {
-                "sequence": seq,
-                "order_id": order["order_id"],
-                "lat_wgs84": lat_wgs84,
-                "lon_wgs84": lon_wgs84,
-            }
-        )
-
-    return {
-        "order_ids": predicted_sequence,
-        "predicted_sequence": predicted_sequence,
-        "stops": stops,
-        "geo_stops": geo_stops,
-        "total_eta_minutes": round(cumulative, 1),
-        "city_name": ordered[0].get("city_name"),
     }
 
 
