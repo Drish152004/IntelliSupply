@@ -184,6 +184,62 @@ HAS_STOP properties:
 - lon_wgs84
 
 ====================
+INTENT INTERPRETATION RULES
+====================
+
+Before generating Cypher:
+
+STEP 1:
+Determine which business entity the question is PRIMARILY about.
+Possible primary entities:
+- Order
+- Courier
+- RoutePrediction
+- Hub
+- City
+
+STEP 2:
+Generate Cypher anchored on that primary entity.
+Never choose an Order pattern simply because Order nodes exist in the graph.
+The presence of orders is not a reason to use Order-[:ASSIGNED_TO]->Courier.
+
+ROUTE INTERPRETATION RULES:
+If the user asks about any of:
+- route, routes, assigned routes, courier routes, route plan,
+- route prediction, predicted route, delivery route,
+- route sequence, stop sequence
+then the primary entity is RoutePrediction.
+Use RoutePrediction relationships first:
+  MATCH (rp:RoutePrediction)-[:FOR_COURIER]->(c:Courier)
+Do NOT default to:
+  MATCH (o:Order)-[:ASSIGNED_TO]->(c:Courier)
+unless the user EXPLICITLY asks about orders.
+A "route assigned to a courier" is a RoutePrediction, NOT a list of assigned orders.
+
+ORDER INTERPRETATION RULES:
+Use Order only when the question is explicitly about:
+- orders, deliveries, packages, assigned orders, order counts,
+- order lookup, order destinations, order hubs
+Only then use:
+  MATCH (o:Order)-[:ASSIGNED_TO]->(c:Courier)
+
+HUB INTERPRETATION RULES:
+If the user asks about:
+- route between hubs, connected hubs, path between hubs, travel between hubs
+then prefer:
+  (:Hub)-[:CONNECTED_TO]->(:Hub)
+Do not use Order relationships for hub-connectivity questions.
+
+ENTITY PRIORITY (when multiple entities could match):
+- RoutePrediction > Order  (when the question is about routes)
+- Hub connectivity > Order  (when the question is about hub-to-hub paths)
+- Courier route > assigned orders  (when the question is about a courier's route)
+
+Worked examples:
+- "What routes have been assigned to each courier?" -> primary entity RoutePrediction, NOT Order.
+- "What orders are assigned to each courier?" -> primary entity Order.
+
+====================
 IMPORTANT INTERPRETATION RULES
 ====================
 
@@ -248,7 +304,10 @@ QUERY RULES
   count(DISTINCT c) AS city_count
   count(DISTINCT c) AS courier_count
   count(DISTINCT o) AS order_count
-- For route/order sequence, order by o.route_sequence when available.
+- When listing a single courier's ORDERS, order by o.route_sequence when available.
+  This applies only to order listings; it does NOT mean "route" questions use Order.
+- For courier ROUTE questions, use RoutePrediction (see INTENT INTERPRETATION RULES),
+  and use rp.predicted_sequence / rp.stop_count rather than Order.route_sequence.
 - For RoutePrediction stops, order by HAS_STOP.sequence.
 
 ====================
@@ -371,6 +430,83 @@ RETURN
     rp.predicted_sequence AS predicted_sequence,
     rp.predicted_eta_min AS predicted_eta_min,
     rp.stop_count AS stop_count
+LIMIT 50
+
+User question:
+what routes have been assigned to each courier
+
+Cypher:
+MATCH (rp:RoutePrediction)-[:FOR_COURIER]->(c:Courier)
+RETURN
+    c.name AS courier_name,
+    rp.predicted_sequence AS route_sequence,
+    rp.stop_count AS stop_count,
+    rp.predicted_eta_min AS predicted_eta_min
+ORDER BY courier_name
+LIMIT 50
+
+User question:
+show all courier routes
+
+Cypher:
+MATCH (rp:RoutePrediction)-[:FOR_COURIER]->(c:Courier)
+RETURN
+    c.name AS courier_name,
+    rp.predicted_sequence AS route_sequence,
+    rp.delivery_day AS delivery_day,
+    rp.stop_count AS stop_count
+ORDER BY courier_name
+LIMIT 50
+
+User question:
+which couriers have active routes
+
+Cypher:
+MATCH (rp:RoutePrediction)-[:FOR_COURIER]->(c:Courier)
+RETURN
+    c.name AS courier_name,
+    rp.delivery_day AS delivery_day,
+    rp.stop_count AS stop_count
+ORDER BY courier_name
+LIMIT 50
+
+User question:
+show routes for Courier 4
+
+Cypher:
+MATCH (rp:RoutePrediction)-[:FOR_COURIER]->(c:Courier)
+WHERE c.name = "Courier 4"
+RETURN
+    c.name AS courier_name,
+    rp.predicted_sequence AS route_sequence,
+    rp.predicted_eta_min AS predicted_eta_min,
+    rp.stop_count AS stop_count
+LIMIT 50
+
+User question:
+show route assignments by courier
+
+Cypher:
+MATCH (rp:RoutePrediction)-[:FOR_COURIER]->(c:Courier)
+RETURN
+    c.name AS courier_name,
+    rp.route_prediction_id AS route_id,
+    rp.stop_count AS stop_count
+ORDER BY courier_name
+LIMIT 50
+
+User question:
+show the route between Hub 2 and Hub 5
+
+Cypher:
+MATCH (fromHub:Hub)-[r:CONNECTED_TO]->(toHub:Hub)
+WHERE coalesce(fromHub.name, fromHub.hub_name) = "Hub 2"
+  AND coalesce(toHub.name, toHub.hub_name) = "Hub 5"
+RETURN
+    coalesce(fromHub.name, fromHub.hub_name) AS from_hub,
+    coalesce(toHub.name, toHub.hub_name) AS to_hub,
+    r.map_distance_km AS map_distance_km,
+    r.estimated_time_min AS estimated_time_min
 LIMIT 50
 """
 READ_ONLY_ALLOWED_STARTS = (
@@ -605,6 +741,10 @@ Generate only the Cypher query.
                 "role": "system",
                 "content": (
                     "You are a Neo4j Cypher generator for a logistics AuraDB graph. "
+                    "First resolve the user's intent: decide the PRIMARY business "
+                    "entity (Order, Courier, RoutePrediction, Hub, or City) per the "
+                    "INTENT INTERPRETATION RULES, then anchor the query on it. "
+                    "Route questions use RoutePrediction, not Order assignments. "
                     "Return only one safe read-only Cypher query. "
                     "Do not explain. Do not use markdown. "
                     "Follow the schema and few-shot examples exactly."

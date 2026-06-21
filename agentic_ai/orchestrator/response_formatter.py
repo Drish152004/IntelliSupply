@@ -9,6 +9,8 @@ import logging
 from typing import Any
 
 from context.clarification_manager import ClarificationType
+from orchestrator.answer_generation import generate_answer
+from orchestrator.result_normalizer import normalize_result_for_answer
 from orchestrator.hitl_session import (
     STAGE_DOMAIN,
     clear_all_hitl_sessions,
@@ -21,6 +23,7 @@ from orchestrator.state import AgentState
 logger = logging.getLogger(__name__)
 
 _UNAVAILABLE_MESSAGE = "That information isn't currently available."
+_EMPTY_RESULT_MESSAGE = "No matching records were found."
 
 _GRAPH_MESSAGES: dict[str, str] = {
     "order_lookup": "Order details retrieved from knowledge graph",
@@ -218,21 +221,28 @@ class ResponseFormatter:
         raw: dict[str, Any],
         task: str,
     ) -> dict[str, Any]:
-        """Preserve the full Aura Bridge payload and synthesize the answer.
+        """Preserve the full Aura Bridge payload and generate the answer.
 
         The raw GraphDB result is kept intact under ``data.graph_result`` so
         no fields are dropped or flattened. The human-readable answer is
-        generated here from ``user_query`` + ``task`` + raw graph data.
+        produced by the LLM answer layer from ``user_query`` + ``task`` +
+        ``domain`` + raw graph rows. Empty results are answered deterministically
+        without an LLM call; the rule-based synthesizer is the fallback whenever
+        the LLM call fails, parses badly, or returns an empty answer.
         """
         graph_result = raw.get("graph_result")
         if graph_result is None:
             graph_result = raw.get("result") or {}
 
         graph_data = graph_result.get("data") if isinstance(graph_result, dict) else None
-        answer = synthesize_answer(state.get("user_query", ""), task, graph_data)
-
         has_data = graph_data not in (None, [], {}, "")
-        message = _GRAPH_MESSAGES.get(task, answer) if has_data else answer
+
+        if not has_data:
+            answer = _EMPTY_RESULT_MESSAGE
+            message = answer
+        else:
+            answer = self._generate_graph_answer(state, task, graph_result, graph_data)
+            message = _GRAPH_MESSAGES.get(task, answer)
 
         return {
             "status": "success",
@@ -244,6 +254,41 @@ class ResponseFormatter:
                 "answer": answer,
             },
         }
+
+    @staticmethod
+    def _generate_graph_answer(
+        state: AgentState,
+        task: str,
+        graph_result: dict[str, Any] | Any,
+        graph_data: Any,
+    ) -> str:
+        """LLM answer with a rule-based fallback.
+
+        Only the result rows reach the LLM: cypher/sql, prompts, and execution
+        metadata are never forwarded. On any LLM failure (exception, unparseable
+        output, or empty answer) this falls back to the existing synthesizer.
+        """
+        user_query = state.get("user_query", "")
+        domain = state.get("domain") or "logistics"
+
+        # Normalize raw rows into analyst-ready data immediately before the
+        # answer model. Only the LLM input is reshaped; the original raw
+        # graph_data is preserved by the caller and used by the fallback.
+        normalized = normalize_result_for_answer(graph_data)
+
+        answer = generate_answer(
+            user_query=user_query,
+            task=task,
+            domain=domain,
+            result=normalized,
+            count=normalized.get("total_records"),
+        )
+        if answer:
+            logger.info("answer_llm_success task=%s domain=%s", task, domain)
+            return answer
+
+        logger.info("answer_llm_fallback task=%s domain=%s", task, domain)
+        return synthesize_answer(user_query, task, graph_data)
 
     @staticmethod
     def _format_generic_error(

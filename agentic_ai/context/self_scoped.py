@@ -15,6 +15,8 @@ SELF_SCOPED_PATTERNS: tuple[str, ...] = (
     "assigned to me",
     "to me",
     "for me",
+    "do I have",
+    "do i have"
 )
 
 _MY_PATTERN = re.compile(r"\b(?:my|mine)\b", re.I)
