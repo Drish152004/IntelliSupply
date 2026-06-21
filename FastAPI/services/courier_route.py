@@ -17,7 +17,7 @@ import pandas as pd
 from aura_graphdb.aura_courier import get_courier_by_id
 from aura_graphdb.aura_route_prediction import persist_ml_courier_route
 from aura_graphdb.aura_route_queries import get_orders_for_courier_day, get_saved_courier_route
-from ml_services.route_prediction.full_pipeline.coordinates import enrich_order_dict
+from ml_services.coordinate_mapping import enrich_order_dict, wgs84_to_web_mercator
 from services.eta_prediction import predict_eta
 from services.registry import get_route_predictor
 
@@ -44,14 +44,8 @@ def _orders_to_predictor_df(orders: list[dict[str, Any]]) -> pd.DataFrame:
 
 def _mercator_from_wgs84(lat_wgs84: float, lon_wgs84: float) -> tuple[float, float]:
     """Convert WGS84 to Web Mercator (poi_lat, poi_lng) for ETA model input."""
-    dummy = {
-        "lat_wgs84": lat_wgs84,
-        "lon_wgs84": lon_wgs84,
-        "receipt_lat_wgs84": lat_wgs84,
-        "receipt_lon_wgs84": lon_wgs84,
-    }
-    enriched = enrich_order_dict(dummy)
-    return float(enriched["poi_lat"]), float(enriched["poi_lng"])
+    poi_lng, poi_lat = wgs84_to_web_mercator(lat_wgs84, lon_wgs84)
+    return poi_lat, poi_lng
 
 
 def _float_or_none(value: Any) -> float | None:
