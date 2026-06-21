@@ -140,7 +140,6 @@ export default function LogisticsDashboard() {
   const [kpisLoading, setKpisLoading] = useState(false);
 
   // ── Weather Intelligence ───────────────────────────────────────────────
-  const [weatherTab, setWeatherTab] = useState<'hourly' | 'daily'>('hourly');
   const [weatherData, setWeatherData] = useState<{
     temp: number;
     humidity: number;
@@ -154,13 +153,6 @@ export default function LogisticsDashboard() {
     hourly: {
       time: string;
       temp: number;
-      code: number;
-      rainChance: number;
-    }[];
-    daily: {
-      date: string;
-      tempMax: number;
-      tempMin: number;
       code: number;
       rainChance: number;
     }[];
@@ -241,7 +233,7 @@ export default function LogisticsDashboard() {
           
           const hourlyList = [];
           if (data.hourly) {
-            for (let i = 0; i < 6; i++) {
+            for (let i = 0; i < 12; i++) {
               const idx = currentHour + i;
               if (idx < data.hourly.time.length) {
                 hourlyList.push({
@@ -249,21 +241,6 @@ export default function LogisticsDashboard() {
                   temp: Math.round(data.hourly.temperature_2m[idx]),
                   code: data.hourly.weather_code[idx],
                   rainChance: data.hourly.precipitation_probability[idx]
-                });
-              }
-            }
-          }
-
-          const dailyList = [];
-          if (data.daily) {
-            for (let i = 0; i < 5; i++) {
-              if (i < data.daily.time.length) {
-                dailyList.push({
-                  date: data.daily.time[i],
-                  tempMax: Math.round(data.daily.temperature_2m_max[i]),
-                  tempMin: Math.round(data.daily.temperature_2m_min[i]),
-                  code: data.daily.weather_code[i],
-                  rainChance: data.daily.precipitation_probability_max[i]
                 });
               }
             }
@@ -279,8 +256,7 @@ export default function LogisticsDashboard() {
             tempMax: data.daily?.temperature_2m_max?.[0] ? Math.round(data.daily.temperature_2m_max[0]) : Math.round(data.current.temperature_2m),
             tempMin: data.daily?.temperature_2m_min?.[0] ? Math.round(data.daily.temperature_2m_min[0]) : Math.round(data.current.temperature_2m),
             rainChance: currentRainChance,
-            hourly: hourlyList,
-            daily: dailyList
+            hourly: hourlyList
           });
         }
       } catch (err) {
@@ -1216,193 +1192,87 @@ export default function LogisticsDashboard() {
                           <span className="text-sky-600">↓ {weatherData.tempMin}°C</span>
                         </span>
                       </div>
-
-                      {/* Details Rows (Feels Like & Rain Chance) */}
-                      <div className="mt-4 pt-3 border-t border-slate-200/60 space-y-2">
-                        <div className="flex items-center justify-between text-xs bg-white p-2.5 rounded-lg border border-slate-200 shadow-sm">
-                          <span className="flex items-center gap-2 text-slate-600 font-medium">
-                            <span className="text-sm">🌡️</span>
-                            Feels Like
-                          </span>
-                          <span className="font-bold text-slate-900">
-                            {Math.round(weatherData.apparentTemp)}°C
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between text-xs bg-white p-2.5 rounded-lg border border-slate-200 shadow-sm">
-                          <span className="flex items-center gap-2 text-slate-600 font-medium">
-                            <span className="text-sm">☔</span>
-                            Chances of Rain
-                          </span>
-                          <span className="font-bold text-slate-900">
-                            {weatherData.rainChance}%
-                          </span>
-                        </div>
-                      </div>
                     </div>
 
-                    {/* Forecast Switcher Tab Row */}
+                    {/* 12-Hour Scrollable Hourly Forecast */}
                     <div className="mt-6">
-                      <div className="bg-slate-100 p-0.5 rounded-lg flex gap-1 mb-4 text-[10px] font-bold w-fit border border-slate-200">
-                        <button
-                          type="button"
-                          onClick={() => setWeatherTab('hourly')}
-                          className={cn(
-                            "rounded px-3 py-1.5 transition-all",
-                            weatherTab === 'hourly'
-                              ? "bg-white text-slate-900 shadow-sm border border-slate-200/50 font-bold"
-                              : "text-slate-500 hover:text-slate-800"
-                          )}
-                        >
-                          Hourly
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setWeatherTab('daily')}
-                          className={cn(
-                            "rounded px-3 py-1.5 transition-all",
-                            weatherTab === 'daily'
-                              ? "bg-white text-slate-900 shadow-sm border border-slate-200/50 font-bold"
-                              : "text-slate-500 hover:text-slate-800"
-                          )}
-                        >
-                          Daily
-                        </button>
-                      </div>
-
-                      {/* Hourly forecast panel */}
-                      {weatherTab === 'hourly' && weatherData.hourly && weatherData.hourly.length > 0 && (
-                        <div className="bg-slate-50/50 rounded-xl p-3 border border-slate-200">
-                          <div className="flex w-full items-center justify-between">
-                            {weatherData.hourly.map((item, idx) => (
-                              <div key={idx} className="flex flex-col items-center flex-1">
-                                <span className="text-[9px] text-slate-500 font-semibold">
-                                  {formatHourlyTime(item.time, idx === 0)}
-                                </span>
-                                <span className="mt-1.5 text-lg p-0.5">
-                                  {getWeatherConfig(item.code).emoji}
-                                </span>
-                                <span className="mt-1 text-xs font-bold text-slate-800">
-                                  {item.temp}°
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                          
-                          {/* SVG Sparkline Graph */}
-                          {(() => {
-                            const temps = weatherData.hourly.map((h) => h.temp);
-                            const maxT = Math.max(...temps);
-                            const minT = Math.min(...temps);
-                            const points = weatherData.hourly.map((h, i) => {
-                              const x = i * 100 + 50;
-                              const y = maxT === minT ? 16 : 26 - ((h.temp - minT) / (maxT - minT)) * 20;
-                              return { x, y };
-                            });
-                            const pts = points.map((p) => `${p.x},${p.y}`).join(' ');
-                            
-                            return (
-                              <div className="relative mt-2">
-                                <svg
-                                  viewBox="0 0 600 32"
-                                  width="100%"
-                                  height="32"
-                                  preserveAspectRatio="none"
-                                  className="overflow-visible"
-                                >
-                                  <defs>
-                                    <linearGradient id="sparklineGrad" x1="0" y1="0" x2="0" y2="1">
-                                      <stop offset="0%" stopColor="#0284c7" stopOpacity="0.08" />
-                                      <stop offset="100%" stopColor="#0284c7" stopOpacity="0" />
-                                    </linearGradient>
-                                  </defs>
-                                  <path
-                                    d={`M 50,32 L 50,${points[0].y} L 150,${points[1].y} L 250,${points[2].y} L 350,${points[3].y} L 450,${points[4].y} L 550,${points[5].y} L 550,32 Z`}
-                                    fill="url(#sparklineGrad)"
-                                  />
-                                  <polyline
-                                    fill="none"
-                                    stroke="#0284c7"
-                                    strokeWidth="2"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    points={pts}
-                                  />
-                                  {points.map((p, idx) => (
-                                    <circle
-                                      key={idx}
-                                      cx={p.x}
-                                      cy={p.y}
-                                      r="3.5"
-                                      fill="#0284c7"
-                                      stroke="#ffffff"
-                                      strokeWidth="2"
-                                    />
-                                  ))}
-                                </svg>
-                              </div>
-                            );
-                          })()}
-                        </div>
-                      )}
-
-                      {/* Daily forecast panel */}
-                      {weatherTab === 'daily' && weatherData.daily && weatherData.daily.length > 0 && (
-                        <div className="bg-slate-50/50 rounded-xl p-3 border border-slate-200 divide-y divide-slate-200/80">
-                          {weatherData.daily.map((item, idx) => (
-                            <div key={idx} className="flex items-center justify-between text-xs py-2.5 first:pt-0 last:pb-0">
-                              <span className="w-16 font-semibold text-slate-600">
-                                {formatDailyDate(item.date, idx === 0)}
-                              </span>
-                              <span className="flex items-center gap-2">
-                                <span className="text-base">
-                                  {getWeatherConfig(item.code).emoji}
-                                </span>
-                                {item.rainChance > 10 && (
-                                  <span className="text-[9px] font-bold text-sky-600 bg-sky-50 px-1 py-0.5 rounded border border-sky-100">
-                                    ☔ {item.rainChance}%
+                      {weatherData.hourly && weatherData.hourly.length > 0 && (
+                        <div className="overflow-x-auto custom-scrollbar pb-2">
+                          <div style={{ width: '240%' }} className="bg-slate-50/50 rounded-xl p-3 border border-slate-200 relative">
+                            <div className="flex w-full items-center justify-between relative z-10">
+                              {weatherData.hourly.map((item, idx) => (
+                                <div key={idx} className="flex flex-col items-center flex-1">
+                                  <span className="text-[11px] text-slate-500 font-bold">
+                                    {formatHourlyTime(item.time, idx === 0)}
                                   </span>
-                                )}
-                              </span>
-                              <span className="font-bold text-slate-800">
-                                {item.tempMin}° / {item.tempMax}°
-                              </span>
+                                  <span className="mt-1 text-xl">
+                                    {getWeatherConfig(item.code).emoji}
+                                  </span>
+                                  <span className="mt-0.5 text-sm font-extrabold text-slate-800">
+                                    {item.temp}°
+                                  </span>
+                                  <span className="text-[10px] text-sky-600 font-bold mt-1 flex items-center gap-0.5">
+                                    <span>☔</span>
+                                    <span>{item.rainChance}%</span>
+                                  </span>
+                                </div>
+                              ))}
                             </div>
-                          ))}
+                            
+                            {/* SVG Sparkline Graph of Rain Probability */}
+                            {(() => {
+                              const points = weatherData.hourly.map((h, i) => {
+                                const x = i * 100 + 50;
+                                const y = 28 - (h.rainChance / 100) * 24;
+                                return { x, y };
+                              });
+                              const pts = points.map((p) => `${p.x},${p.y}`).join(' ');
+                              
+                              return (
+                                <div className="relative mt-3 h-[32px]">
+                                  <svg
+                                    viewBox="0 0 1200 32"
+                                    width="100%"
+                                    height="32"
+                                    preserveAspectRatio="none"
+                                    className="overflow-visible"
+                                  >
+                                    <defs>
+                                      <linearGradient id="rainSparklineGrad" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="0%" stopColor="#0284c7" stopOpacity="0.1" />
+                                        <stop offset="100%" stopColor="#0284c7" stopOpacity="0" />
+                                      </linearGradient>
+                                    </defs>
+                                    <path
+                                      d={`M 50,32 ` + points.map(p => `L ${p.x},${p.y}`).join(' ') + ` L 1150,32 Z`}
+                                      fill="url(#rainSparklineGrad)"
+                                    />
+                                    <polyline
+                                      fill="none"
+                                      stroke="#0284c7"
+                                      strokeWidth="2"
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      points={pts}
+                                    />
+                                    {points.map((p, idx) => (
+                                      <circle
+                                        key={idx}
+                                        cx={p.x}
+                                        cy={p.y}
+                                        r="3.5"
+                                        fill="#0284c7"
+                                        stroke="#ffffff"
+                                        strokeWidth="2"
+                                      />
+                                    ))}
+                                  </svg>
+                                </div>
+                              );
+                            })()}
+                          </div>
                         </div>
                       )}
-                    </div>
-
-                    {/* Weather Icon Mapping Legend */}
-                    <div className="border-t border-border pt-4 mt-5">
-                      <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-slate-400 mb-2.5">
-                        Condition key
-                      </p>
-                      <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-[10px] text-slate-500">
-                        <div className="flex items-center gap-1.5">
-                          <span>☀️</span>
-                          <span>0: Clear / Sunny</span>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <span>🌤️</span>
-                          <span>1-3: Cloudy</span>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <span>🌫️</span>
-                          <span>45-48: Foggy</span>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <span>🌧️</span>
-                          <span>51-82: Rainy</span>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <span>🌨️</span>
-                          <span>71-86: Snowy</span>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <span>⛈️</span>
-                          <span>95-99: Storm</span>
-                        </div>
-                      </div>
                     </div>
                   </>
                 )}
