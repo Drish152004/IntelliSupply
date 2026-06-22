@@ -47,6 +47,7 @@ const DEFAULT_CATEGORIES = [
   'Furniture',
   'Groceries',
   'Toys',
+  'Clothing'
 ];
 
 const statuses = [

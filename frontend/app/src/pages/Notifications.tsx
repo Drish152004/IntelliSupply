@@ -448,15 +448,6 @@ export default function Notifications() {
                   </button>
                 )}
 
-                {role !== 'logistics_manager' && role !== 'courier' && (
-                  <button
-                    type="button"
-                    className="w-full rounded-2xl border border-border bg-white px-4 py-3 text-left text-sm font-medium text-foreground hover:border-slate-300 hover:bg-slate-50 transition"
-                  >
-                    Review inventory restock plan
-                  </button>
-                )}
-
                 <button
                   type="button"
                   onClick={loadNotifications}
