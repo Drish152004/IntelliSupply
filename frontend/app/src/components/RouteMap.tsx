@@ -378,7 +378,7 @@ export default function RouteMap({
         {hubMapMode && <MapBounds bounds={CHINA_BOUNDS} />}
         {fitPoints.length > 0 && <MapFitter points={fitPoints} />}
 
-        {hubMapMode &&
+        {hubMapMode && !displayRoute &&
           hubLocations.map((hub) => (
             <Marker
               key={String(hub.hub_id)}
