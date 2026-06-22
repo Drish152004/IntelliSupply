@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSessionStorageState } from '@/hooks/useSessionStorage';
 import Navbar from '@/components/Navbar';
 import RouteMap from '@/components/RouteMap';
@@ -34,6 +34,7 @@ import {
   type OrderDetail,
   type ShipmentListItem,
 } from '@/lib/api';
+import { routeForDisplay } from '@/lib/routeDisplay';
 import { useAuth } from '@/lib/auth';
 import {
   Plus,
@@ -119,6 +120,11 @@ export default function LogisticsDashboard() {
   const [routeResult, setRouteResult] = useState<CourierRouteResult | null>(null);
   const [routeLoading, setRouteLoading] = useState(false);
   const [routeError, setRouteError] = useState<string | null>(null);
+
+  const displayRoute = useMemo(
+    () => (routeResult ? routeForDisplay(routeResult) : null),
+    [routeResult],
+  );
 
   // ── Hub map + all shipments ────────────────────────────────────────────
   const [hubLocations, setHubLocations] = useState<HubMapLocation[]>([]);
@@ -1046,8 +1052,7 @@ export default function LogisticsDashboard() {
             <DialogDescription>
               {routeResult ? (
                 <>
-                  {routeResult.delivery_day} · Starting {formatRouteStartTime(routeResult.route_start_time)} ·{' '}
-                  {routeResult.total_eta_minutes} min total
+                  {routeResult.delivery_day} · Starting {formatRouteStartTime(routeResult.route_start_time)}
                   {routeResult.source === 'graphdb' && (
                     <span className="ml-2 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-800">
                       Saved route
@@ -1079,7 +1084,7 @@ export default function LogisticsDashboard() {
             </div>
           )}
 
-          {routeResult && !routeLoading && (
+          {displayRoute && !routeLoading && (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -1093,7 +1098,7 @@ export default function LogisticsDashboard() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {routeResult.stops.map((stop) => (
+                  {displayRoute.stops.map((stop) => (
                     <tr key={stop.order_id} className="text-sm">
                       <td className="py-2.5 pr-4 font-semibold text-muted-foreground">
                         {stop.sequence}
@@ -1114,16 +1119,6 @@ export default function LogisticsDashboard() {
                     </tr>
                   ))}
                 </tbody>
-                <tfoot>
-                  <tr className="border-t border-border">
-                    <td colSpan={3} className="pt-3 text-xs text-muted-foreground">
-                      Total estimated time
-                    </td>
-                    <td colSpan={3} className="pt-3 text-right font-semibold">
-                      {routeResult.total_eta_minutes} min
-                    </td>
-                  </tr>
-                </tfoot>
               </table>
             </div>
           )}

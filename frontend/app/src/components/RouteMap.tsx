@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/button';
 import { motion, AnimatePresence } from 'framer-motion';
 import { locations, routes, statsCards, aiInsights } from '@/data/mockData';
 import { predictCourierRoute, type CourierRouteResult, type HubMapLocation } from '@/lib/api';
+import { routeForDisplay } from '@/lib/routeDisplay';
 import { fetchRoadLegs, fetchRoadRoute } from '@/lib/roadRouting';
 import type { Route } from '@/data/mockData';
 
@@ -184,29 +185,34 @@ export default function RouteMap({
   const hubMapMode = chinaMapOnly || hubLocations.length > 0;
   const showMockDemo = demoMode && !hubMapMode;
 
+  const displayRoute = useMemo(
+    () => (activeCourierRoute ? routeForDisplay(activeCourierRoute) : null),
+    [activeCourierRoute],
+  );
+
   const livePath = useMemo<[number, number][]>(() => {
-    if (!activeCourierRoute?.path?.length) return [];
-    return activeCourierRoute.path
+    if (!displayRoute?.path?.length) return [];
+    return displayRoute.path
       .filter((pt) => pt.length === 2 && pt[0] != null && pt[1] != null)
       .map((pt) => [pt[0], pt[1]] as [number, number]);
-  }, [activeCourierRoute]);
+  }, [displayRoute]);
 
   const highlightLeg = useMemo<[number, number][]>(() => {
-    if (!activeCourierRoute || !highlightedOrderId) return [];
-    const stop = activeCourierRoute.stops.find((s) => s.order_id === highlightedOrderId);
+    if (!displayRoute || !highlightedOrderId) return [];
+    const stop = displayRoute.stops.find((s) => s.order_id === highlightedOrderId);
     return stop ? stopLegPoints(stop) : [];
-  }, [activeCourierRoute, highlightedOrderId]);
+  }, [displayRoute, highlightedOrderId]);
 
   const routeLegs = useMemo(() => {
-    if (!activeCourierRoute?.stops?.length) return [];
-    return activeCourierRoute.stops
+    if (!displayRoute?.stops?.length) return [];
+    return displayRoute.stops
       .map((stop) => ({
         orderId: stop.order_id,
         sequence: stop.sequence,
         points: stopLegPoints(stop),
       }))
       .filter((leg) => leg.points.length >= 2);
-  }, [activeCourierRoute]);
+  }, [displayRoute]);
 
   const [mlRoute, setMlRoute] = useState<CourierRouteResult | null>(null);
   const [roadLegPaths, setRoadLegPaths] = useState<Record<string, [number, number][]>>({});
@@ -242,7 +248,7 @@ export default function RouteMap({
   const mapZoom = hubMapMode ? CHINA_ZOOM : 6;
 
   useEffect(() => {
-    if (!activeCourierRoute) {
+    if (!displayRoute) {
       setRoadLegPaths({});
       setRoadLivePath([]);
       setRoadRouting(false);
@@ -286,7 +292,7 @@ export default function RouteMap({
     return () => {
       cancelled = true;
     };
-  }, [activeCourierRoute, routeLegs, livePath]);
+  }, [displayRoute, routeLegs, livePath]);
 
   const visibleStats = useMemo(
     () => statsCards.filter((stat) => stat.label !== 'Avg ETA' && stat.label !== 'Fuel Efficiency'),
@@ -341,7 +347,7 @@ export default function RouteMap({
   useEffect(() => {
     if (!mapObject) return;
     mapObject.invalidateSize();
-  }, [mapObject, activeCourierRoute]);
+  }, [mapObject, displayRoute]);
 
   return (
     <div className="relative h-full min-h-0 overflow-hidden bg-gradient-to-br from-slate-100 via-sky-50/40 to-slate-100">
@@ -428,7 +434,7 @@ export default function RouteMap({
             />
           ))}
 
-        {activeCourierRoute && routeLegs.length > 0 && (
+        {displayRoute && routeLegs.length > 0 && (
           <>
             {routeLegs.map((leg) => {
               const isHighlighted = leg.orderId === highlightedOrderId;
@@ -471,7 +477,7 @@ export default function RouteMap({
           </>
         )}
 
-        {activeCourierRoute && routeLegs.length === 0 && displayLivePath.length > 1 && (
+        {displayRoute && routeLegs.length === 0 && displayLivePath.length > 1 && (
           <>
             <Polyline
               positions={displayLivePath}
@@ -497,16 +503,16 @@ export default function RouteMap({
           </>
         )}
 
-        {activeCourierRoute?.courier_start && (
+        {displayRoute?.courier_start && (
           <Marker
-            position={[activeCourierRoute.courier_start.lat, activeCourierRoute.courier_start.lng]}
+            position={[displayRoute.courier_start.lat, displayRoute.courier_start.lng]}
             icon={createCourierStartIcon()}
           >
             <Popup>
               <div className="courier-popup">
                 <div className="courier-popup__badge courier-popup__badge--start">Start</div>
                 <p className="courier-popup__title">
-                  {activeCourierRoute.courier_name ?? activeCourierRoute.courier_id}
+                  {displayRoute.courier_name ?? displayRoute.courier_id}
                 </p>
                 <p className="courier-popup__route">Courier departure hub</p>
               </div>
@@ -514,7 +520,7 @@ export default function RouteMap({
           </Marker>
         )}
 
-        {activeCourierRoute?.stops.map((stop) => {
+        {displayRoute?.stops.map((stop) => {
           const position = stopMarkerPosition(stop);
           if (!position) return null;
           const highlighted = stop.order_id === highlightedOrderId;
@@ -548,7 +554,7 @@ export default function RouteMap({
             <div className="text-sm text-muted-foreground max-h-60 overflow-auto">
               <p className="text-xs mb-1">Sequence</p>
               <ol className="list-decimal list-inside space-y-1">
-                {mlRoute.predicted_sequence.map((oid) => (
+                {routeForDisplay(mlRoute).predicted_sequence.map((oid) => (
                   <li key={oid} className="text-[13px]">{oid}</li>
                 ))}
               </ol>
@@ -565,7 +571,7 @@ export default function RouteMap({
         </div>
       )}
 
-      {activeCourierRoute && (
+      {displayRoute && (
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
@@ -579,31 +585,28 @@ export default function RouteMap({
               </div>
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold text-slate-900">
-                  {activeCourierRoute.courier_name ?? activeCourierRoute.courier_id}
+                  {displayRoute.courier_name ?? displayRoute.courier_id}
                 </p>
-                <p className="text-[11px] text-slate-500">{activeCourierRoute.delivery_day}</p>
+                <p className="text-[11px] text-slate-500">{displayRoute.delivery_day}</p>
               </div>
             </div>
 
             <div className="mt-3 flex flex-wrap gap-1.5">
               <span className="rounded-full bg-sky-50 px-2.5 py-1 text-[10px] font-semibold text-sky-700">
-                {activeCourierRoute.stops.length} stops
-              </span>
-              <span className="rounded-full bg-violet-50 px-2.5 py-1 text-[10px] font-semibold text-violet-700">
-                {activeCourierRoute.total_eta_minutes} min ETA
+                {displayRoute.stops.length} stops
               </span>
               <span
                 className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${
-                  activeCourierRoute.source === 'graphdb'
+                  displayRoute.source === 'graphdb'
                     ? 'bg-emerald-50 text-emerald-700'
-                    : activeCourierRoute.source === 'graph_built'
+                    : displayRoute.source === 'graph_built'
                       ? 'bg-teal-50 text-teal-700'
                       : 'bg-amber-50 text-amber-700'
                 }`}
               >
-                {activeCourierRoute.source === 'graphdb'
+                {displayRoute.source === 'graphdb'
                   ? 'Aura route'
-                  : activeCourierRoute.source === 'graph_built'
+                  : displayRoute.source === 'graph_built'
                     ? 'Graph route'
                     : 'ML predicted'}
               </span>
@@ -619,7 +622,7 @@ export default function RouteMap({
             </div>
 
             <div className="mt-3 flex items-center gap-1">
-              {activeCourierRoute.stops.map((stop) => {
+              {displayRoute.stops.map((stop) => {
                 const active = stop.order_id === highlightedOrderId;
                 const palette = STOP_PALETTE[(stop.sequence - 1) % STOP_PALETTE.length];
                 return (
@@ -645,7 +648,7 @@ export default function RouteMap({
         </motion.div>
       )}
 
-      {activeCourierRoute && (
+      {displayRoute && (
         <motion.div
           initial={{ opacity: 0, x: 12 }}
           animate={{ opacity: 1, x: 0 }}

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSessionStorageState } from '@/hooks/useSessionStorage';
 import Navbar from '@/components/Navbar';
 import RouteMap from '@/components/RouteMap';
@@ -22,6 +22,7 @@ import {
   type CourierRouteResult,
   type HubMapLocation,
 } from '@/lib/api';
+import { routeForDisplay } from '@/lib/routeDisplay';
 import { useAuth } from '@/lib/auth';
 import {
   Calendar,
@@ -46,6 +47,11 @@ export default function Courier() {
 
   const [routeResult, setRouteResult] = useState<CourierRouteResult | null>(null);
   const [routeLoading, setRouteLoading] = useState(false);
+
+  const displayRoute = useMemo(
+    () => (routeResult ? routeForDisplay(routeResult) : null),
+    [routeResult],
+  );
 
   const [hubLocations, setHubLocations] = useState<HubMapLocation[]>([]);
   const [highlightedOrderId, setHighlightedOrderId] = useSessionStorageState<string | null>('courier_highlighted_order_id', null);
@@ -105,10 +111,6 @@ export default function Courier() {
     {
       label: 'Assigned deliveries',
       value: shipmentsLoading ? '—' : String(shipments.length),
-    },
-    {
-      label: 'Total duration',
-      value: routeLoading ? '—' : routeResult ? `${routeResult.total_eta_minutes} min` : '—',
     },
     {
       label: 'Total stops',
@@ -336,8 +338,8 @@ export default function Courier() {
                   </p>
                 )}
                 {!routeLoading &&
-                  routeResult &&
-                  routeResult.stops.map((stop) => (
+                  displayRoute &&
+                  displayRoute.stops.map((stop) => (
                     <div
                       key={stop.order_id}
                       onClick={() => setHighlightedOrderId(stop.order_id)}
