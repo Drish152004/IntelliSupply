@@ -70,7 +70,7 @@ def query(
         logger.exception("Copilot query failed")
         return {"status": "error", "message": str(exc)}
 
-
+"""
 @router.post("/debug", dependencies=[Depends(rate_limit(20, 60))])
 def debug(
     body: CopilotRequest,
@@ -102,3 +102,4 @@ def debug(
     except Exception as exc:
         logger.exception("Copilot debug failed")
         return {"status": "error", "message": str(exc)}
+"""
