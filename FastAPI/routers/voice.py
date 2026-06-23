@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
 from dependencies.auth import TokenUser, get_current_user
 from schemas.voice import VoiceTranscribeResponse
-from security import rate_limit
+from security import rate_limit, check_toxicity
 from services import voice as voice_service
 
 logger = logging.getLogger(__name__)
@@ -66,7 +66,20 @@ async def transcribe(
             content_type=audio.content_type,
             language_hint=language_hint,
         )
+        
+        # Check both original and translated text for toxicity
+        original_text = result.get("original_text", "") or ""
+        english_text = result.get("english_text", "") or ""
+        
+        if check_toxicity(english_text) or check_toxicity(original_text):
+            raise HTTPException(
+                status_code=400,
+                detail="Blocked transcription due to toxic/offensive content."
+            )
+            
         return VoiceTranscribeResponse(**result)
+    except HTTPException:
+        raise
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:

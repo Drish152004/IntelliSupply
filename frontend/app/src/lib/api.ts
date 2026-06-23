@@ -567,8 +567,11 @@ export async function transcribeVoice(audio: Blob) {
     credentials: 'include',
   });
 
-  const data = await res.json();
-  if (!res.ok) throw new ApiError('Voice transcription failed', res.status);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const detail = data.detail || data.message || 'Voice transcription failed';
+    throw new ApiError(detail, res.status);
+  }
 
   return data;
 }

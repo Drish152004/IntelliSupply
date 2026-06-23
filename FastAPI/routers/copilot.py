@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from dependencies.auth import TokenUser, get_current_user, user_to_authenticated_payload
 from orchestrator.graph import run_orchestrator
 from schemas.copilot import CopilotRequest
-from security import check_prompt_injection, mask_pii, validate_llm_input, rate_limit
+from security import check_prompt_injection, mask_pii, validate_llm_input, rate_limit, check_toxicity
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +61,10 @@ def query(
         if check_prompt_injection(body.query):
             raise HTTPException(status_code=400, detail="Blocked unsafe query.")
 
+        # 4. Toxicity checks
+        if check_toxicity(body.query):
+            raise HTTPException(status_code=400, detail="Blocked query due to toxic/offensive content.")
+
 
         result = _invoke_orchestrator(body, current_user)
         return _parse_final_response(result["final_response"])
@@ -89,6 +93,10 @@ def debug(
         # 3. Prompt injection checks
         if check_prompt_injection(body.query):
             raise HTTPException(status_code=400, detail="Blocked unsafe query.")
+
+        # 4. Toxicity checks
+        if check_toxicity(body.query):
+            raise HTTPException(status_code=400, detail="Blocked query due to toxic/offensive content.")
 
         result = _invoke_orchestrator(body, current_user)
         return {
